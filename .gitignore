@@ -1,0 +1,68 @@
+# -------------------------
+# Python artifacts
+# -------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.env
+.venv
+venv/
+ENV/
+env/
+
+# -------------------------
+# Packaging / build
+# -------------------------
+build/
+dist/
+develop-eggs/
+eggs/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# -------------------------
+# Testing / coverage
+# -------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# -------------------------
+# Jupyter
+# -------------------------
+.ipynb_checkpoints/
+
+# -------------------------
+# IDE / editor
+# -------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# -------------------------
+# OS files
+# -------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------
+# Logs & runtime files
+# -------------------------
+*.log
+*.pid
+
+# -------------------------
+# Generated data / plot files
+# -------------------------
+*.szplt
+*.plt
+*.dat
+*.bin
+*.tec
