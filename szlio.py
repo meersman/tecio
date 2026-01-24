@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ctypes
 from enum import Enum
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
@@ -205,11 +205,52 @@ tecio.tecZoneVarGetUInt8Values.argtypes = [
     ctypes.POINTER(ctypes.c_uint8),  # Values
 ]
 
+# ---- Reading SZL aux data ------------------------------------------
+tecio.tecDataSetAuxDataGetNumItems.restype = ctypes.c_int32
+tecio.tecDataSetAuxDataGetNumItems.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_int32),
+]
+tecio.tecDataSetAuxDataGetItem.restype = ctypes.c_int32
+tecio.tecDataSetAuxDataGetItem.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_char_p),
+    ctypes.POINTER(ctypes.c_char_p),
+]
+tecio.tecVarAuxDataGetNumItems.restype = ctypes.c_int32
+tecio.tecVarAuxDataGetNumItems.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+tecio.tecVarAuxDataGetItem.restype = ctypes.c_int32
+tecio.tecVarAuxDataGetItem.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_char_p),
+    ctypes.POINTER(ctypes.c_char_p),
+]
+tecio.tecZoneAuxDataGetNumItems.restype = ctypes.c_int32
+tecio.tecZoneAuxDataGetNumItems.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+tecio.tecZoneAuxDataGetItem.restype = ctypes.c_int32
+tecio.tecZoneAuxDataGetItem.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_char_p),
+    ctypes.POINTER(ctypes.c_char_p),
+]
+
 
 # --------------------------------------------------------------------
 # ---- Definition of Enums -------------------------------------------
 # --------------------------------------------------------------------
-
 
 class FileType(Enum):
     FULL = 0
@@ -264,7 +305,7 @@ def tec_file_reader_open(file_name: str) -> ctypes.c_void_p:
         ctypes.byref(handle),
     )
     if ret != 0:
-        raise Exception("SZLFile Initialization Error")
+        raise SzlioError("SZLFile Initialization Error")
 
     return handle
 
@@ -280,7 +321,7 @@ def tec_file_get_type(handle: ctypes.c_void_p) -> FileType:
 
     ret = tecio.tecFileGetType(handle, ctypes.byref(file_type))
     if ret != 0:
-        raise Exception("tecFileGetType Error")
+        raise SzlioError("tecFileGetType Error")
 
     return FileType(file_type.value)
 
@@ -296,7 +337,7 @@ def tec_data_set_get_title(handle: ctypes.c_void_p) -> str:
 
     ret = tecio.tecDataSetGetTitle(handle, ctypes.byref(title))
     if ret != 0:
-        raise Exception("tecDataSetGetTitle Error")
+        raise SzlioError("tecDataSetGetTitle Error")
 
     return title.value.decode("utf-8")
 
@@ -312,7 +353,7 @@ def tec_data_set_get_num_vars(handle: ctypes.c_void_p) -> int:
 
     ret = tecio.tecDataSetGetNumVars(handle, ctypes.byref(num_vars))
     if ret != 0:
-        raise Exception("tecDataGetNumVars Error")
+        raise SzlioError("tecDataGetNumVars Error")
 
     return num_vars.value
 
@@ -328,26 +369,9 @@ def tec_data_set_get_num_zones(handle: ctypes.c_void_p) -> int:
 
     ret = tecio.tecDataSetGetNumZones(handle, ctypes.byref(num_zones))
     if ret != 0:
-        raise Exception("tecDataGetNumZones Error")
+        raise SzlioError("tecDataGetNumZones Error")
 
     return num_zones.value
-
-
-def tec_data_set_aux_data_get_num_items(handle: ctypes.c_void_p) -> int:
-    """
-    Wrapper for tecDataSetAuxDataGetNumItems. Outputs integer number of
-    total auxiliary data tokens.
-
-    Input: file handle C pointer
-    Output: integer number of auxiliary data tokens
-    """
-    num_auxdata_items = ctypes.c_int32(0)
-
-    ret = tecio.tecDataSetAuxDataGetNumItems(handle, ctypes.byref(num_auxdata_items))
-    if ret != 0:
-        raise Exception("tecDataSetAuxDataGetNumItems Error")
-
-    return num_auxdata_items.value
 
 
 # ---- Reading SZL zones ---------------------------------------------
@@ -376,7 +400,7 @@ def tec_zone_get_ijk(handle: ctypes.c_void_p, zone_index: int) -> Tuple[int, int
         ctypes.byref(K),
     )
     if ret != 0:
-        raise Exception("tecZoneGetIJK Error")
+        raise SzlioError("tecZoneGetIJK Error")
 
     return I.value, J.value, K.value
 
@@ -395,7 +419,7 @@ def tec_zone_get_title(handle: ctypes.c_void_p, zone_index: int) -> str:
         handle, ctypes.c_int32(zone_index), ctypes.byref(zone_title)
     )
     if ret != 0:
-        raise Exception("tecZoneGetTitle Error")
+        raise SzlioError("tecZoneGetTitle Error")
 
     return zone_title.value.decode("utf-8")
 
@@ -413,7 +437,7 @@ def tec_zone_get_type(handle: ctypes.c_void_p, zone_index: int) -> ZoneType:
         handle, ctypes.c_int32(zone_index), ctypes.byref(zone_type)
     )
     if ret != 0:
-        raise Exception("tecZoneGetType Error")
+        raise SzlioError("tecZoneGetType Error")
 
     return ZoneType(zone_type.value)
 
@@ -432,12 +456,12 @@ def tec_zone_is_enabled(handle: ctypes.c_void_p, zone_index: int) -> bool:
         handle, ctypes.c_int32(zone_index), ctypes.byref(is_enabled)
     )
     if ret != 0:
-        raise Exception("tecZoneIsEnabled Error")
+        raise SzlioError("tecZoneIsEnabled Error")
 
     return bool(is_enabled.value)
 
 
-def tec_zone_get_solution_time(handle: ctypes.c_void_p, zone_index: int) -> int:
+def tec_zone_get_solution_time(handle: ctypes.c_void_p, zone_index: int) -> float:
     solution_time = ctypes.c_double(0)
 
     ret = tecio.tecZoneGetSolutionTime(
@@ -446,7 +470,7 @@ def tec_zone_get_solution_time(handle: ctypes.c_void_p, zone_index: int) -> int:
         ctypes.byref(solution_time),
     )
     if ret != 0:
-        raise Exception("tecZoneGetSolutionTime Error")
+        raise SzlioError("tecZoneGetSolutionTime Error")
 
     return solution_time.value
 
@@ -458,7 +482,7 @@ def tec_zone_get_strand_id(handle: ctypes.c_void_p, zone_index: int) -> int:
         handle, ctypes.c_int32(zone_index), ctypes.byref(strand_id)
     )
     if ret != 0:
-        raise Exception("tecZoneGetStrandID Error")
+        raise SzlioError("tecZoneGetStrandID Error")
 
     return strand_id.value
 
@@ -470,7 +494,7 @@ def is_64bit(handle: ctypes.c_void_p, zone_index: int) -> bool:
         handle, ctypes.c_int32(zone_index), ctypes.byref(is64bit)
     )
     if ret != 0:
-        raise Exception("tecZoneNodeMapIs64Bit Error")
+        raise SzlioError("tecZoneNodeMapIs64Bit Error")
 
     return bool(is64bit.value)
 
@@ -495,7 +519,7 @@ def tec_zone_node_map_get_64(
         ),
     )
     if ret != 0:
-        raise Exception("tecZoneNodeMapGet64 Error")
+        raise SzlioError("tecZoneNodeMapGet64 Error")
 
     return np.ctypeslib.as_array(nodemap).reshape(num_elements, nodes_per_cell)
 
@@ -520,7 +544,7 @@ def tec_zone_node_map_get(
         ),
     )
     if ret != 0:
-        raise Exception("tecZoneNodeMapGet64 Error")
+        raise SzlioError("tecZoneNodeMapGet64 Error")
 
     return np.ctypeslib.as_array(nodemap).reshape(num_elements, nodes_per_cell)
 
@@ -531,7 +555,7 @@ def tec_var_get_name(handle: ctypes.c_void_p, var_index: int) -> str:
 
     ret = tecio.tecVarGetName(handle, ctypes.c_int32(var_index), ctypes.byref(var_name))
     if ret != 0:
-        raise Exception("tecVarGetName Error")
+        raise SzlioError("tecVarGetName Error")
 
     return var_name.value.decode("utf-8")
 
@@ -543,7 +567,7 @@ def tec_var_is_enabled(handle: ctypes.c_void_p, var_index: int) -> bool:
         handle, ctypes.c_int32(var_index), ctypes.byref(is_enabled)
     )
     if ret != 0:
-        raise Exception("tecZoneIsEnabled Error")
+        raise SzlioError("tecZoneIsEnabled Error")
 
     return bool(is_enabled.value)
 
@@ -560,7 +584,7 @@ def tec_zone_var_get_type(
         ctypes.byref(var_type),
     )
     if ret != 0:
-        raise Exception("tecZoneVarGetType Error")
+        raise SzlioError("tecZoneVarGetType Error")
 
     return DataType(var_type.value)
 
@@ -577,7 +601,7 @@ def tec_zone_var_get_value_location(
         ctypes.byref(value_location),
     )
     if ret != 0:
-        raise Exception("tecZoneVarGetValueLocation Error")
+        raise SzlioError("tecZoneVarGetValueLocation Error")
 
     return ValueLocation(value_location.value)
 
@@ -594,14 +618,14 @@ def tec_zone_var_is_passive(
         ctypes.byref(is_passive),
     )
     if ret != 0:
-        raise Exception("tecZoneVarIsPassive Error")
+        raise SzlioError("tecZoneVarIsPassive Error")
 
     return bool(is_passive.value)
 
 
 def tec_zone_var_get_shared_zone(
     handle: ctypes.c_void_p, zone_index: int, var_index: int
-) -> int | None:
+) -> Optional[int]:
     """Wrapper for tecZoneVarGetSharedZone. Outputs shared zone index (0 if none)"""
     shared_zone = ctypes.c_int32(0)
 
@@ -612,7 +636,7 @@ def tec_zone_var_get_shared_zone(
         ctypes.byref(shared_zone),
     )
     if ret != 0:
-        raise Exception("tecZoneVarGetSharedZone Error")
+        raise SzlioError("tecZoneVarGetSharedZone Error")
 
     return shared_zone.value if shared_zone.value != 0 else None
 
@@ -629,7 +653,7 @@ def tec_zone_var_get_num_values(
         ctypes.byref(num_values),
     )
     if ret != 0:
-        raise Exception("tecZoneVarGetNumValues Error")
+        raise SzlioError("tecZoneVarGetNumValues Error")
 
     return num_values.value
 
@@ -655,7 +679,7 @@ def tec_zone_var_get_float_values(
         ),
     )
     if ret != 0:
-        raise Exception("tecZoneVarGetFloatValues Error")
+        raise SzlioError("tecZoneVarGetFloatValues Error")
 
     return np.ctypeslib.as_array(values)
 
@@ -681,7 +705,7 @@ def tec_zone_var_get_double_values(
         ),
     )
     if ret != 0:
-        raise Exception("tecZoneVarGetDoubleValues Error")
+        raise SzlioError("tecZoneVarGetDoubleValues Error")
 
     return np.ctypeslib.as_array(values)
 
@@ -707,7 +731,7 @@ def tec_zone_var_get_int32_values(
         ),
     )
     if ret != 0:
-        raise Exception("tecZoneVarGetInt32Values Error")
+        raise SzlioError("tecZoneVarGetInt32Values Error")
 
     return np.ctypeslib.as_array(values)
 
@@ -733,7 +757,7 @@ def tec_zone_var_get_int16_values(
         ),
     )
     if ret != 0:
-        raise Exception("tecZoneVarGetInt16Values Error")
+        raise SzlioError("tecZoneVarGetInt16Values Error")
 
     return np.ctypeslib.as_array(values)
 
@@ -759,6 +783,139 @@ def tec_zone_var_get_uint8_values(
         ),
     )
     if ret != 0:
-        raise Exception("tecZoneVarGetUInt8Values Error")
+        raise SzlioError("tecZoneVarGetUInt8Values Error")
 
     return np.ctypeslib.as_array(values)
+
+
+# ---- Reading SZL aux data ------------------------------------------
+def tec_data_set_aux_data_get_num_items(handle: ctypes.c_void_p) -> int:
+    """
+    Wrapper for tecDataSetAuxDataGetNumItems. Outputs integer number of
+    total auxiliary data tokens.
+
+    Input: file handle C pointer
+    Output: integer number of auxiliary data tokens
+    """
+    num_auxdata_items = ctypes.c_int32(0)
+
+    ret = tecio.tecDataSetAuxDataGetNumItems(handle, ctypes.byref(num_auxdata_items))
+    if ret != 0:
+        raise SzlioError("tecDataSetAuxDataGetNumItems Error")
+
+    return num_auxdata_items.value
+
+
+def tec_data_set_aux_data_get_item(
+    handle: ctypes.c_void_p, item_index: int
+) -> Tuple[str, str]:
+    """
+    Wrapper for tecDataSetAuxDataGetItem. Gets name and value for dataset
+    auxiliary data at specified index.
+
+    Input: file handle C pointer, item index (1-based)
+    Output: tuple of (name, value) as strings
+    """
+    name = ctypes.c_char_p(0)
+    value = ctypes.c_char_p(0)
+
+    ret = tecio.tecDataSetAuxDataGetItem(
+        handle,
+        ctypes.c_int32(item_index),
+        ctypes.byref(name),
+        ctypes.byref(value),
+    )
+    if ret != 0:
+        raise SzlioError("tecDataSetAuxDataGetItem Error")
+
+    return name.value.decode("utf-8"), value.value.decode("utf-8")
+
+
+def tec_var_aux_data_get_num_items(handle: ctypes.c_void_p, var_index: int) -> int:
+    """
+    Wrapper for tecVarAuxDataGetNumItems. Gets number of auxiliary data items
+    for a specific variable.
+
+    Input: file handle C pointer, variable index (1-based)
+    Output: integer number of auxiliary data items
+    """
+    num_items = ctypes.c_int32(0)
+
+    ret = tecio.tecVarAuxDataGetNumItems(
+        handle, ctypes.c_int32(var_index), ctypes.byref(num_items)
+    )
+    if ret != 0:
+        raise SzlioError("tecVarAuxDataGetNumItems Error")
+
+    return num_items.value
+
+
+def tec_var_aux_data_get_item(
+    handle: ctypes.c_void_p, var_index: int, item_index: int
+) -> Tuple[str, str]:
+    """
+    Wrapper for tecVarAuxDataGetItem. Gets name and value for variable
+    auxiliary data at specified indices.
+
+    Input: file handle C pointer, variable index (1-based), item index (1-based)
+    Output: tuple of (name, value) as strings
+    """
+    name = ctypes.c_char_p(0)
+    value = ctypes.c_char_p(0)
+
+    ret = tecio.tecVarAuxDataGetItem(
+        handle,
+        ctypes.c_int32(var_index),
+        ctypes.c_int32(item_index),
+        ctypes.byref(name),
+        ctypes.byref(value),
+    )
+    if ret != 0:
+        raise SzlioError("tecVarAuxDataGetItem Error")
+
+    return name.value.decode("utf-8"), value.value.decode("utf-8")
+
+
+def tec_zone_aux_data_get_num_items(handle: ctypes.c_void_p, zone_index: int) -> int:
+    """
+    Wrapper for tecZoneAuxDataGetNumItems. Gets number of auxiliary data items
+    for a specific zone.
+
+    Input: file handle C pointer, zone index (1-based)
+    Output: integer number of auxiliary data items
+    """
+    num_items = ctypes.c_int32(0)
+
+    ret = tecio.tecZoneAuxDataGetNumItems(
+        handle, ctypes.c_int32(zone_index), ctypes.byref(num_items)
+    )
+    if ret != 0:
+        raise SzlioError("tecZoneAuxDataGetNumItems Error")
+
+    return num_items.value
+
+
+def tec_zone_aux_data_get_item(
+    handle: ctypes.c_void_p, zone_index: int, item_index: int
+) -> Tuple[str, str]:
+    """
+    Wrapper for tecZoneAuxDataGetItem. Gets name and value for zone
+    auxiliary data at specified indices.
+
+    Input: file handle C pointer, zone index (1-based), item index (1-based)
+    Output: tuple of (name, value) as strings
+    """
+    name = ctypes.c_char_p(0)
+    value = ctypes.c_char_p(0)
+
+    ret = tecio.tecZoneAuxDataGetItem(
+        handle,
+        ctypes.c_int32(zone_index),
+        ctypes.c_int32(item_index),
+        ctypes.byref(name),
+        ctypes.byref(value),
+    )
+    if ret != 0:
+        raise SzlioError("tecZoneAuxDataGetItem Error")
+
+    return name.value.decode("utf-8"), value.value.decode("utf-8")
