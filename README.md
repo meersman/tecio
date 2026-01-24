@@ -1,4 +1,4 @@
-# Project README
+# tecio Python API
 
 This repository provides Python helpers for reading Tecplot SZL (.szplt) files using the TecIO C/C++ library shipped with Tecplot360EX.
 
