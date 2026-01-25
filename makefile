@@ -31,11 +31,12 @@ install-dev:
 
 # Format code with black and isort
 format:
-	@echo "Running isort..."
-	isort .
-	@echo ""
 	@echo "Running black..."
 	black .
+	@echo ""
+	isort .
+	@echo "Running isort..."
+	isort .
 	@echo ""
 	@echo "✓ Code formatting complete"
 

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import ctypes
-import numpy as np
 from dataclasses import dataclass
-from typing import Any, Dict, List, Iterator, Tuple, Optional, Union
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+
+import numpy as np
 import numpy.typing as npt
 
 import szlio
-from szlio import FileType, ZoneType, DataType, ValueLocation
+from szlio import DataType, FileType, ValueLocation, ZoneType
 
 
 class SzlFile:
@@ -56,7 +57,7 @@ class SzlFile:
     def var_auxdata(self) -> List[AuxData]:
         """
         Get list of variable-level auxiliary data.
-        
+
         Returns:
             List of AuxData objects, one per variable (1-indexed to match Tecplot)
         """
@@ -92,7 +93,7 @@ class Zone:
     _auxdata: Optional[AuxData] = None
     _variables: Optional[List[Variable]] = None
     _node_map: Optional[npt.NDArray[np.int64]] = None
-    # Note: could cache all properties if they are shown as bottlenecks in profiling. Or could leave everything as methods and save data in a more flexible data structure. 
+    # Note: could cache all properties if they are shown as bottlenecks in profiling. Or could leave everything as methods and save data in a more flexible data structure.
 
     def __post_init__(self) -> Tuple[int, int, int]:
         self.I, self.J, self.K = szlio.tec_zone_get_ijk(self._handle, self.zone_index)
@@ -106,7 +107,7 @@ class Zone:
                 for i in range(self.num_vars)
             ]
         return self._variables
-    
+
     @property
     def title(self) -> str:
         return szlio.tec_zone_get_title(self._handle, self.zone_index)
@@ -164,14 +165,20 @@ class Zone:
     def node_map(self) -> npt.NDArray[np.int64]:
         if self._node_map is None:
             is64bit = szlio.is_64bit(self._handle, self.zone_index)
-            
+
             if is64bit:
                 self._node_map = szlio.tec_zone_node_map_get_64(
-                    self._handle, self.zone_index, self.num_elements, self.nodes_per_cell
+                    self._handle,
+                    self.zone_index,
+                    self.num_elements,
+                    self.nodes_per_cell,
                 )
             else:
                 self._node_map = szlio.tec_zone_node_map_get(
-                    self._handle, self.zone_index, self.num_elements, self.nodes_per_cell
+                    self._handle,
+                    self.zone_index,
+                    self.num_elements,
+                    self.nodes_per_cell,
                 ).astype(np.int64)
         return self._node_map
 
@@ -198,7 +205,9 @@ class Variable:
 
     @property
     def type(self) -> DataType:
-        return szlio.tec_zone_var_get_type(self._handle, self.zone_index, self.var_index)
+        return szlio.tec_zone_var_get_type(
+            self._handle, self.zone_index, self.var_index
+        )
 
     @property
     def value_location(self) -> ValueLocation:
@@ -226,19 +235,19 @@ class Variable:
 
     @property
     def values(
-            self
+        self,
     ) -> Union[
         npt.NDArray[np.float32],
         npt.NDArray[np.float64],
         npt.NDArray[np.int32],
         npt.NDArray[np.int16],
-        npt.NDArray[np.uint8]
+        npt.NDArray[np.uint8],
     ]:
         """Get all values for this variable."""
         return self.get_values()
 
     def get_values(
-            self, value_range: Tuple[Optional[int], Optional[int]] = (None, None)
+        self, value_range: Tuple[Optional[int], Optional[int]] = (None, None)
     ) -> Union[
         npt.NDArray[np.float32],
         npt.NDArray[np.float64],
@@ -264,10 +273,10 @@ class Variable:
         else:
             start_index = value_range[0]
             end_index = value_range[1]
-            
+
             if start_index is None or end_index is None:
                 raise ValueError("Both start and end indices must be specified")
-            
+
             num_values = end_index - start_index
 
             if start_index > self.num_values or start_index < 1:
@@ -275,9 +284,7 @@ class Variable:
                     f"Start index {start_index} out of range [1, {self.num_values}]"
                 )
             if num_values < 0 or end_index > self.num_values:
-                raise ValueError(
-                    f"Invalid value range: ({start_index}, {end_index})"
-                )
+                raise ValueError(f"Invalid value range: ({start_index}, {end_index})")
 
         if data_type == DataType.FLOAT:
             return szlio.tec_zone_var_get_float_values(
@@ -306,12 +313,12 @@ class Variable:
 
         raise ValueError(f"Unknown data type: {data_type}")
 
-    
+
 class AuxData:
     """
     AuxData provides a dictionary-like interface for accessing Tecplot
     auxiliary data with automatic type conversion.
-    
+
     Values are stored as strings in the SZL file but can be retrieved
     as integers or floats using the as_int() and as_float() methods.
     """
@@ -345,17 +352,13 @@ class AuxData:
         if self._aux_type == "dataset":
             num_items = szlio.tec_data_set_aux_data_get_num_items(self._handle)
             for i in range(num_items):
-                name, value = szlio.tec_data_set_aux_data_get_item(
-                    self._handle, i + 1
-                )
+                name, value = szlio.tec_data_set_aux_data_get_item(self._handle, i + 1)
                 self._data[name] = value
 
         elif self._aux_type == "var":
             if self._index is None:
                 raise ValueError("Variable index required for variable aux data")
-            num_items = szlio.tec_var_aux_data_get_num_items(
-                self._handle, self._index
-            )
+            num_items = szlio.tec_var_aux_data_get_num_items(self._handle, self._index)
             for i in range(num_items):
                 name, value = szlio.tec_var_aux_data_get_item(
                     self._handle, self._index, i + 1
@@ -365,9 +368,7 @@ class AuxData:
         elif self._aux_type == "zone":
             if self._index is None:
                 raise ValueError("Zone index required for zone aux data")
-            num_items = szlio.tec_zone_aux_data_get_num_items(
-                self._handle, self._index
-            )
+            num_items = szlio.tec_zone_aux_data_get_num_items(self._handle, self._index)
             for i in range(num_items):
                 name, value = szlio.tec_zone_aux_data_get_item(
                     self._handle, self._index, i + 1
@@ -464,9 +465,9 @@ class AuxData:
         """
         try:
             value = self[key].lower().strip()
-            if value in ('true', 't', 'yes', 'y', '1'):
+            if value in ("true", "t", "yes", "y", "1"):
                 return True
-            elif value in ('false', 'f', 'no', 'n', '0'):
+            elif value in ("false", "f", "no", "n", "0"):
                 return False
             else:
                 return default

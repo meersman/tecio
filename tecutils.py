@@ -75,7 +75,9 @@ def _find_tec_executable() -> str:
                     app_base_name = os.path.splitext(d)[0]
                     expected_exe = os.path.join(macos_dir, app_base_name)
 
-                    if os.path.isfile(expected_exe) and os.access(expected_exe, os.X_OK):
+                    if os.path.isfile(expected_exe) and os.access(
+                        expected_exe, os.X_OK
+                    ):
                         return os.path.realpath(expected_exe)
 
                     # Fallback: choose executable files that are NOT libraries
@@ -180,9 +182,7 @@ def get_tecio_lib() -> str:
     libpath = os.path.join(bin_dir, libname)
 
     if not os.path.isfile(libpath):
-        raise TecplotNotFoundError(
-            f"TecIO library not found:\n  {libpath}"
-        )
+        raise TecplotNotFoundError(f"TecIO library not found:\n  {libpath}")
 
     return libpath
 
