@@ -393,10 +393,16 @@ tecio.tecZoneVarWriteUInt8Values.argtypes = [
 # ---- Reading SZL files ---------------------------------------------
 def tec_file_reader_open(file_name: str) -> ctypes.c_void_p:
     """
-    Wrapper for tecFileReaderOpen. Modifies generated file handle C pointer
+    Open an SZL reader file.
 
-    Input: file name path string
-    Output: C pointer to file handle (used for other tecio functions)
+    Inputs:
+    - file_name: path to the .szplt file (string).
+
+    Returns:
+    - ctypes.c_void_p: a handle used by other tecio functions.
+
+    Raises:
+    - TecioError if the underlying tecio.tecFileReaderOpen returns non-zero.
     """
     handle = ctypes.c_void_p(0)
 
@@ -414,10 +420,16 @@ def tec_file_reader_open(file_name: str) -> ctypes.c_void_p:
 
 def tec_file_get_type(handle: ctypes.c_void_p) -> FileType:
     """
-    Wrapper for tecFileGetType. Outputs file type. Either full, grid, or solution.
+    Get the FileType for an opened SZL file.
 
-    Input: file handle C pointer
-    Output: FileType (class defined above)
+    Inputs:
+    - handle: ctypes.c_void_p returned by tec_file_reader_open.
+
+    Returns:
+    - FileType enum indicating FULL, GRID or SOLUTION.
+
+    Raises:
+    - TecioError on non-zero return code from tecio.
     """
     file_type = ctypes.c_int32(0)
 
@@ -430,10 +442,16 @@ def tec_file_get_type(handle: ctypes.c_void_p) -> FileType:
 
 def tec_data_set_get_title(handle: ctypes.c_void_p) -> str:
     """
-    Wrapper for tecDataSetGetTitle. Outputs dataset title string.
+    Read the dataset title string.
 
-    Input: file handle C pointer
-    Output: title string
+    Inputs:
+    - handle: ctypes.c_void_p file handle.
+
+    Returns:
+    - str: UTF-8 decoded dataset title.
+
+    Raises:
+    - TecioError on failure.
     """
     title = ctypes.c_char_p(0)
 
@@ -448,10 +466,16 @@ def tec_data_set_get_title(handle: ctypes.c_void_p) -> str:
 
 def tec_data_set_get_num_vars(handle: ctypes.c_void_p) -> int:
     """
-    Wrapper for tecDataSetGetNumVars. Outputs integer number of variables.
+    Query the number of variables in the dataset.
 
-    Input: file handle C pointer
-    Output: integer number of variables
+    Inputs:
+    - handle: ctypes.c_void_p file handle.
+
+    Returns:
+    - int: number of variables.
+
+    Raises:
+    - TecioError on failure.
     """
     num_vars = ctypes.c_int32(0)
 
@@ -466,10 +490,16 @@ def tec_data_set_get_num_vars(handle: ctypes.c_void_p) -> int:
 
 def tec_data_set_get_num_zones(handle: ctypes.c_void_p) -> int:
     """
-    Wrapper for tecDataSetGetNumZones. Outputs integer number of zones.
+    Query the number of zones in the dataset.
 
-    Input: file handle C pointer
-    Output: integer number of zones
+    Inputs:
+    - handle: ctypes.c_void_p file handle.
+
+    Returns:
+    - int: number of zones.
+
+    Raises:
+    - TecioError on failure.
     """
     num_zones = ctypes.c_int32(0)
 
@@ -485,16 +515,19 @@ def tec_data_set_get_num_zones(handle: ctypes.c_void_p) -> int:
 # ---- Reading SZL zones ---------------------------------------------
 def tec_zone_get_ijk(handle: ctypes.c_void_p, zone_index: int) -> Tuple[int, int, int]:
     """
-    Wrapper for tecZoneGetIJK. Gets zone indices. Different behavior
-    for FE vs Ordered, see below.
+    Get zone dimensions or FE counts.
 
-    Input: file handle C pointer, zone index integer
-    Output: integer number of auxiliary data tokens
-    For Ordered zones, I, J, K are the dimensions of the zone
-    For FE Zones:
-    - I = number of points
-    - J = number of elements
-    - K = 0 / not used
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based zone index (int)
+
+    Returns:
+    - tuple (I, J, K):
+      * For ORDERED zones: I,J,K are the zone dimensions.
+      * For FE zones: I = number of nodes, J = number of elements, K unused.
+
+    Raises:
+    - TecioError on failure.
     """
     I = ctypes.c_int64(0)
     J = ctypes.c_int64(0)
@@ -517,11 +550,17 @@ def tec_zone_get_ijk(handle: ctypes.c_void_p, zone_index: int) -> Tuple[int, int
 
 def tec_zone_get_title(handle: ctypes.c_void_p, zone_index: int) -> str:
     """
-    Wrapper for tecZoneGetTitle. Returns zone tile string for input
-    index.
+    Read the title for a given zone.
 
-    Input: file handle C pointer, zone index integer
-    Output: zone title string
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based zone index
+
+    Returns:
+    - str: zone title (UTF-8 decoded)
+
+    Raises:
+    - TecioError on failure.
     """
     zone_title = ctypes.c_char_p(0)
 
@@ -538,10 +577,17 @@ def tec_zone_get_title(handle: ctypes.c_void_p, zone_index: int) -> str:
 
 def tec_zone_get_type(handle: ctypes.c_void_p, zone_index: int) -> ZoneType:
     """
-    Wrapper for tecZoneGetType. Returns zone type (see enum def).
+    Query the ZoneType for the specified zone.
 
-    Input: file handle C pointer, zone index integer
-    Output: type of zone
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based index
+
+    Returns:
+    - ZoneType enum
+
+    Raises:
+    - TecioError on failure.
     """
     zone_type = ctypes.c_int32(0)
 
@@ -558,11 +604,17 @@ def tec_zone_get_type(handle: ctypes.c_void_p, zone_index: int) -> ZoneType:
 
 def tec_zone_is_enabled(handle: ctypes.c_void_p, zone_index: int) -> bool:
     """
-    Wrapper for tecZoneIsEnabled. Returns True/False if zone is
-    suppressed or not.
+    Check whether a zone is enabled (not suppressed).
 
-    Input: file handle C pointer, zone index integer
-    Output: True/False
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based index
+
+    Returns:
+    - bool: True if enabled, False if suppressed.
+
+    Raises:
+    - TecioError on failure.
     """
     is_enabled = ctypes.c_int32(0)
 
@@ -578,6 +630,19 @@ def tec_zone_is_enabled(handle: ctypes.c_void_p, zone_index: int) -> bool:
 
 
 def tec_zone_get_solution_time(handle: ctypes.c_void_p, zone_index: int) -> float:
+    """
+    Read the solution time for an unsteady zone.
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based index
+
+    Returns:
+    - float: solution time (double precision)
+
+    Raises:
+    - TecioError on failure.
+    """
     solution_time = ctypes.c_double(0)
 
     ret = tecio.tecZoneGetSolutionTime(
@@ -594,6 +659,19 @@ def tec_zone_get_solution_time(handle: ctypes.c_void_p, zone_index: int) -> floa
 
 
 def tec_zone_get_strand_id(handle: ctypes.c_void_p, zone_index: int) -> int:
+    """
+    Get the strand ID for an unsteady zone.
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based index
+
+    Returns:
+    - int: strand id
+
+    Raises:
+    - TecioError on failure.
+    """
     strand_id = ctypes.c_int32(0)
 
     ret = tecio.tecZoneGetStrandID(
@@ -608,7 +686,19 @@ def tec_zone_get_strand_id(handle: ctypes.c_void_p, zone_index: int) -> int:
 
 
 def is_64bit(handle: ctypes.c_void_p, zone_index: int) -> bool:
+    """
+    Determine whether the zone's node-map indices are 64-bit.
 
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based index
+
+    Returns:
+    - bool: True if node-map uses 64-bit indices, False if 32-bit.
+
+    Raises:
+    - TecioError on failure.
+    """
     is64bit = ctypes.c_int32(0)
     ret = tecio.tecZoneNodeMapIs64Bit(
         handle, ctypes.c_int32(zone_index), ctypes.byref(is64bit)
@@ -627,6 +717,21 @@ def tec_zone_node_map_get_64(
     num_elements: int,
     nodes_per_cell: int,
 ) -> npt.NDArray[np.int64]:
+    """
+    Read a 64-bit node-map for an FE zone.
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based index
+    - num_elements: number of elements/rows to read
+    - nodes_per_cell: number of node indices per element (columns)
+
+    Returns:
+    - numpy.ndarray of shape (num_elements, nodes_per_cell) with dtype int64
+
+    Raises:
+    - TecioError on failure.
+    """
     size_of_array = num_elements * nodes_per_cell
     nodemap = (ctypes.c_int64 * size_of_array)()
 
@@ -655,6 +760,21 @@ def tec_zone_node_map_get(
     num_elements: int,
     nodes_per_cell: int,
 ) -> npt.NDArray[np.int32]:
+    """
+    Read a 32-bit node-map for an FE zone.
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based index
+    - num_elements: number of elements/rows to read
+    - nodes_per_cell: number of node indices per element (columns)
+
+    Returns:
+    - numpy.ndarray of shape (num_elements, nodes_per_cell) with dtype int32
+
+    Raises:
+    - TecioError on failure.
+    """
     size_of_array = num_elements * nodes_per_cell
     nodemap = (ctypes.c_int32 * size_of_array)()
 
@@ -679,6 +799,19 @@ def tec_zone_node_map_get(
 
 # ---- Reading SZL variable data -------------------------------------
 def tec_var_get_name(handle: ctypes.c_void_p, var_index: int) -> str:
+    """
+    Get the name of a variable by index.
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - var_index: 1-based variable index
+
+    Returns:
+    - str: variable name
+
+    Raises:
+    - TecioError on failure.
+    """
     var_name = ctypes.c_char_p(0)
 
     ret = tecio.tecVarGetName(handle, ctypes.c_int32(var_index), ctypes.byref(var_name))
@@ -691,6 +824,19 @@ def tec_var_get_name(handle: ctypes.c_void_p, var_index: int) -> str:
 
 
 def tec_var_is_enabled(handle: ctypes.c_void_p, var_index: int) -> bool:
+    """
+    Check whether a variable is enabled.
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - var_index: 1-based index
+
+    Returns:
+    - bool: True if enabled
+
+    Raises:
+    - TecioError on failure.
+    """
     is_enabled = ctypes.c_int32(0)
 
     ret = tecio.tecVarIsEnabled(
@@ -707,6 +853,20 @@ def tec_var_is_enabled(handle: ctypes.c_void_p, var_index: int) -> bool:
 def tec_zone_var_get_type(
     handle: ctypes.c_void_p, zone_index: int, var_index: int
 ) -> DataType:
+    """
+    Get the DataType for a variable in a zone.
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based zone index
+    - var_index: 1-based variable index
+
+    Returns:
+    - DataType enum
+
+    Raises:
+    - TecioError on failure.
+    """
     var_type = ctypes.c_int32(0)
 
     ret = tecio.tecZoneVarGetType(
@@ -727,6 +887,20 @@ def tec_zone_var_get_type(
 def tec_zone_var_get_value_location(
     handle: ctypes.c_void_p, zone_index: int, var_index: int
 ) -> ValueLocation:
+    """
+    Get the value location (cell-centered or nodal) for a zone variable.
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based zone index
+    - var_index: 1-based variable index
+
+    Returns:
+    - ValueLocation enum
+
+    Raises:
+    - TecioError on failure.
+    """
     value_location = ctypes.c_int32(0)
 
     ret = tecio.tecZoneVarGetValueLocation(
@@ -747,6 +921,20 @@ def tec_zone_var_get_value_location(
 def tec_zone_var_is_passive(
     handle: ctypes.c_void_p, zone_index: int, var_index: int
 ) -> bool:
+    """
+    Check whether a zone variable is passive.
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based zone index
+    - var_index: 1-based variable index
+
+    Returns:
+    - bool: True if variable is passive
+
+    Raises:
+    - TecioError on failure.
+    """
     is_passive = ctypes.c_int32(0)
 
     ret = tecio.tecZoneVarIsPassive(
@@ -767,7 +955,19 @@ def tec_zone_var_is_passive(
 def tec_zone_var_get_shared_zone(
     handle: ctypes.c_void_p, zone_index: int, var_index: int
 ) -> Optional[int]:
-    """Wrapper for tecZoneVarGetSharedZone. Outputs shared zone index (0 if none)"""
+    """Wrapper for tecZoneVarGetSharedZone. Outputs shared zone index (0 if none)
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based zone index
+    - var_index: 1-based variable index
+
+    Returns:
+    - int | None: shared zone index (None if no shared zone)
+
+    Raises:
+    - TecioError on failure.
+    """
     shared_zone = ctypes.c_int32(0)
 
     ret = tecio.tecZoneVarGetSharedZone(
@@ -787,6 +987,20 @@ def tec_zone_var_get_shared_zone(
 def tec_zone_var_get_num_values(
     handle: ctypes.c_void_p, zone_index: int, var_index: int
 ) -> int:
+    """
+    Query how many values are available for a zone variable.
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based zone index
+    - var_index: 1-based variable index
+
+    Returns:
+    - int: number of values for that variable in the zone
+
+    Raises:
+    - TecioError on failure.
+    """
     num_values = ctypes.c_int32(0)
 
     ret = tecio.tecZoneVarGetNumValues(
@@ -810,6 +1024,22 @@ def tec_zone_var_get_float_values(
     start_index: int,
     num_values: int,
 ) -> npt.NDArray[np.float32]:
+    """
+    Read float32 values for a zone variable.
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based zone index
+    - var_index: 1-based variable index
+    - start_index: 1-based start index to read from
+    - num_values: number of values to read
+
+    Returns:
+    - numpy.ndarray (float32) of length num_values
+
+    Raises:
+    - TecioError on failure.
+    """
     values = (ctypes.c_float * num_values)()
 
     ret = tecio.tecZoneVarGetFloatValues(
@@ -839,6 +1069,22 @@ def tec_zone_var_get_double_values(
     start_index: int,
     num_values: int,
 ) -> npt.NDArray[np.float64]:
+    """
+    Read float64 (double) values for a zone variable.
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based zone index
+    - var_index: 1-based variable index
+    - start_index: 1-based start index
+    - num_values: number of values to read
+
+    Returns:
+    - numpy.ndarray (float64) of length num_values
+
+    Raises:
+    - TecioError on failure.
+    """
     values = (ctypes.c_double * num_values)()
 
     ret = tecio.tecZoneVarGetDoubleValues(
@@ -868,6 +1114,22 @@ def tec_zone_var_get_int32_values(
     start_index: int,
     num_values: int,
 ) -> npt.NDArray[np.int32]:
+    """
+    Read int32 values for a zone variable.
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based zone index
+    - var_index: 1-based variable index
+    - start_index: 1-based start index
+    - num_values: number of values to read
+
+    Returns:
+    - numpy.ndarray (int32) of length num_values
+
+    Raises:
+    - TecioError on failure.
+    """
     values = (ctypes.c_int32 * num_values)()
 
     ret = tecio.tecZoneVarGetInt32Values(
@@ -897,6 +1159,22 @@ def tec_zone_var_get_int16_values(
     start_index: int,
     num_values: int,
 ) -> npt.NDArray[np.int16]:
+    """
+    Read int16 values for a zone variable.
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based zone index
+    - var_index: 1-based variable index
+    - start_index: 1-based start index
+    - num_values: number of values to read
+
+    Returns:
+    - numpy.ndarray (int16) of length num_values
+
+    Raises:
+    - TecioError on failure.
+    """
     values = (ctypes.c_int16 * num_values)()
 
     ret = tecio.tecZoneVarGetInt16Values(
@@ -926,6 +1204,22 @@ def tec_zone_var_get_uint8_values(
     start_index: int,
     num_values: int,
 ) -> npt.NDArray[np.uint8]:
+    """
+    Read uint8 values for a zone variable.
+
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based zone index
+    - var_index: 1-based variable index
+    - start_index: 1-based start index
+    - num_values: number of values to read
+
+    Returns:
+    - numpy.ndarray (uint8) of length num_values
+
+    Raises:
+    - TecioError on failure.
+    """
     values = (ctypes.c_uint8 * num_values)()
 
     ret = tecio.tecZoneVarGetUInt8Values(
@@ -951,11 +1245,16 @@ def tec_zone_var_get_uint8_values(
 # ---- Reading SZL aux data ------------------------------------------
 def tec_data_set_aux_data_get_num_items(handle: ctypes.c_void_p) -> int:
     """
-    Wrapper for tecDataSetAuxDataGetNumItems. Outputs integer number of
-    total auxiliary data tokens.
+    Get the number of dataset-level auxiliary data items.
 
-    Input: file handle C pointer
-    Output: integer number of auxiliary data tokens
+    Inputs:
+    - handle: ctypes.c_void_p
+
+    Returns:
+    - int: number of aux-data items
+
+    Raises:
+    - TecioError on failure.
     """
     num_auxdata_items = ctypes.c_int32(0)
 
@@ -972,11 +1271,17 @@ def tec_data_set_aux_data_get_item(
     handle: ctypes.c_void_p, item_index: int
 ) -> Tuple[str, str]:
     """
-    Wrapper for tecDataSetAuxDataGetItem. Gets name and value for dataset
-    auxiliary data at specified index.
+    Read a dataset-level auxiliary data item.
 
-    Input: file handle C pointer, item index (1-based)
-    Output: tuple of (name, value) as strings
+    Inputs:
+    - handle: ctypes.c_void_p
+    - item_index: 1-based item index
+
+    Returns:
+    - (name, value): tuple of strings
+
+    Raises:
+    - TecioError on failure.
     """
     name = ctypes.c_char_p(0)
     value = ctypes.c_char_p(0)
@@ -997,11 +1302,17 @@ def tec_data_set_aux_data_get_item(
 
 def tec_var_aux_data_get_num_items(handle: ctypes.c_void_p, var_index: int) -> int:
     """
-    Wrapper for tecVarAuxDataGetNumItems. Gets number of auxiliary data items
-    for a specific variable.
+    Get number of auxiliary data items attached to a variable.
 
-    Input: file handle C pointer, variable index (1-based)
-    Output: integer number of auxiliary data items
+    Inputs:
+    - handle: ctypes.c_void_p
+    - var_index: 1-based variable index
+
+    Returns:
+    - int: number of aux-data items
+
+    Raises:
+    - TecioError on failure.
     """
     num_items = ctypes.c_int32(0)
 
@@ -1020,11 +1331,18 @@ def tec_var_aux_data_get_item(
     handle: ctypes.c_void_p, var_index: int, item_index: int
 ) -> Tuple[str, str]:
     """
-    Wrapper for tecVarAuxDataGetItem. Gets name and value for variable
-    auxiliary data at specified indices.
+    Read a variable-level auxiliary data item.
 
-    Input: file handle C pointer, variable index (1-based), item index (1-based)
-    Output: tuple of (name, value) as strings
+    Inputs:
+    - handle: ctypes.c_void_p
+    - var_index: 1-based variable index
+    - item_index: 1-based item index
+
+    Returns:
+    - (name, value): tuple of strings
+
+    Raises:
+    - TecioError on failure.
     """
     name = ctypes.c_char_p(0)
     value = ctypes.c_char_p(0)
@@ -1046,11 +1364,17 @@ def tec_var_aux_data_get_item(
 
 def tec_zone_aux_data_get_num_items(handle: ctypes.c_void_p, zone_index: int) -> int:
     """
-    Wrapper for tecZoneAuxDataGetNumItems. Gets number of auxiliary data items
-    for a specific zone.
+    Get number of auxiliary data items attached to a zone.
 
-    Input: file handle C pointer, zone index (1-based)
-    Output: integer number of auxiliary data items
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based zone index
+
+    Returns:
+    - int: number of aux-data items
+
+    Raises:
+    - TecioError on failure.
     """
     num_items = ctypes.c_int32(0)
 
@@ -1069,11 +1393,18 @@ def tec_zone_aux_data_get_item(
     handle: ctypes.c_void_p, zone_index: int, item_index: int
 ) -> Tuple[str, str]:
     """
-    Wrapper for tecZoneAuxDataGetItem. Gets name and value for zone
-    auxiliary data at specified indices.
+    Read a zone-level auxiliary data item.
 
-    Input: file handle C pointer, zone index (1-based), item index (1-based)
-    Output: tuple of (name, value) as strings
+    Inputs:
+    - handle: ctypes.c_void_p
+    - zone_index: 1-based zone index
+    - item_index: 1-based item index
+
+    Returns:
+    - (name, value): tuple of strings
+
+    Raises:
+    - TecioError on failure.
     """
     name = ctypes.c_char_p(0)
     value = ctypes.c_char_p(0)
@@ -1103,8 +1434,22 @@ def _prepare_array_for_ctypes(
     values: npt.ArrayLike, np_dtype, ctype
 ) -> tuple[ctypes.POINTER, int, npt.NDArray]:
     """
-    Ensure 'values' is a contiguous numpy array with dtype np_dtype and
-    return (ctypes_ptr, count, backing_array).
+    Convert an input array-like to a contiguous numpy array and return a ctypes pointer.
+
+    Inputs:
+    - values: array-like (list, tuple, numpy array)
+    - np_dtype: numpy dtype object or type (e.g. np.float32)
+    - ctype: corresponding ctypes scalar type (e.g. ctypes.c_float)
+
+    Returns:
+    - (ptr, count, backing_array)
+      * ptr: ctypes pointer suitable for passing to the C API
+      * count: int number of elements
+      * backing_array: the numpy array object (returned to keep it alive)
+
+    Notes:
+    - Caller should keep the returned backing_array alive until the native call completes.
+    - This function enforces dtype and C-contiguity.
     """
     arr = np.ascontiguousarray(values, dtype=np_dtype)
     count = int(arr.size)
@@ -1121,9 +1466,24 @@ def tec_file_writer_open(
     use_szl: int = 1,
     grid_file_handle: Optional[ctypes.c_void_p] = None,
 ) -> ctypes.c_void_p:
-    """Open a writer handle. Returns ctypes.c_void_p handle.
+    """
+    Open a writer handle for creating SZL (.szplt) files.
 
-    file_type must be a szlio.FileType enum.
+    Inputs:
+    - file_name: output file path
+    - dataset_title: dataset title string
+    - var_names_csv: comma-separated variable names
+    - file_type: FileType enum (FULL/GRID/SOLUTION)
+    - use_szl: integer flag (1 to use SZL)
+    - grid_file_handle: optional ctypes.c_void_p handle for a grid-only file when writing
+      a solution file that references an existing grid.
+
+    Returns:
+    - ctypes.c_void_p: writer handle (to pass to other writer functions)
+
+    Raises:
+    - TypeError if file_type is not FileType
+    - TecioError on non-zero tecio return code
     """
     if not isinstance(file_type, FileType):
         raise TypeError("file_type must be a szlio.FileType enum")
@@ -1150,7 +1510,18 @@ def tec_file_writer_open(
 
 
 def tec_file_writer_close(handle: ctypes.c_void_p) -> None:
-    """Close writer handle in-place (expects ctypes.c_void_p)."""
+    """
+    Close a writer handle and finalize the output file.
+
+    Inputs:
+    - handle: ctypes.c_void_p returned from tec_file_writer_open
+
+    Returns:
+    - None
+
+    Raises:
+    - TecioError on non-zero return code.
+    """
     ret = tecio.tecFileWriterClose(ctypes.byref(handle))
     if ret != 0:
         raise TecioError(
@@ -1168,10 +1539,24 @@ def tec_zone_create_ijk(
     var_sharing: Optional[Sequence[int]] = None,
     value_locations: Optional[Sequence[ValueLocation]] = None,
 ) -> int:
-    """Create ordered zone (I,J,K). Returns zone index (int).
+    """
+    Create an ordered I x J x K zone for writing.
 
-    var_types must be a sequence of szlio.DataType enums (if provided).
-    value_locations must be a sequence of szlio.ValueLocation enums (if provided).
+    Inputs:
+    - handle: ctypes.c_void_p writer handle
+    - zone_title: zone title string
+    - I, J, K: zone dimensions (integers)
+    - var_types: optional sequence of DataType enums specifying storage type
+      per variable (length should match dataset variables if provided)
+    - var_sharing: optional sequence indicating variable sharing (per-var)
+    - value_locations: optional sequence of ValueLocation enums per variable
+
+    Returns:
+    - int: created zone index (1-based) as returned by TecIO
+
+    Raises:
+    - TypeError if enum sequences are of incorrect type
+    - TecioError on non-zero tecio return code
     """
     zone_out = ctypes.c_int32()
 
@@ -1228,7 +1613,21 @@ def tec_zone_create_ijk(
 def tec_zone_set_unsteady_options(
     handle: ctypes.c_void_p, zone: int, strand: int = 0, solution_time: float = 0.0
 ) -> None:
+    """
+    Set unsteady (time/strand) metadata for a zone.
 
+    Inputs:
+    - handle: ctypes.c_void_p writer handle
+    - zone: zone index (1-based)
+    - strand: integer strand id
+    - solution_time: double precision solution time
+
+    Returns:
+    - None
+
+    Raises:
+    - TecioError on non-zero return code.
+    """
     ret = tecio.tecZoneSetUnsteadyOptions(
         handle,
         ctypes.c_int32(zone),
@@ -1246,6 +1645,21 @@ def tec_zone_set_unsteady_options(
 def tec_zone_var_write_double_values(
     handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
 ) -> None:
+    """
+    Write double-precision (float64) values for a zone variable.
+
+    Inputs:
+    - handle: ctypes.c_void_p writer handle
+    - zone: 1-based zone index
+    - var: 1-based variable index
+    - values: array-like of float64 values (will be converted to contiguous np.float64)
+
+    Returns:
+    - None
+
+    Raises:
+    - TecioError on non-zero return code.
+    """
     ptr, count, _backing = _prepare_array_for_ctypes(
         values, np.float64, ctypes.c_double
     )
@@ -1268,6 +1682,21 @@ def tec_zone_var_write_double_values(
 def tec_zone_var_write_float_values(
     handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
 ) -> None:
+    """
+    Write single-precision (float32) values for a zone variable.
+
+    Inputs:
+    - handle: ctypes.c_void_p writer handle
+    - zone: 1-based zone index
+    - var: 1-based variable index
+    - values: array-like of float32 values (converted to contiguous np.float32)
+
+    Returns:
+    - None
+
+    Raises:
+    - TecioError on non-zero return code.
+    """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.float32, ctypes.c_float)
 
     ret = tecio.tecZoneVarWriteFloatValues(
@@ -1286,11 +1715,24 @@ def tec_zone_var_write_float_values(
 
 
 def tec_zone_var_write_int32_values(
-    handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLikea
+    handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
 ) -> None:
-    # count = len(values)
-    # vals = (ctypes.c_int32 * count)(*list(values))
-    ptr, count, _backing = _prepare_array_for_ctypes(values, np.int32, ctypes.c_float)
+    """
+    Write int32 values for a zone variable.
+
+    Inputs:
+    - handle: ctypes.c_void_p writer handle
+    - zone: 1-based zone index
+    - var: 1-based variable index
+    - values: array-like of int32 values (converted to contiguous np.int32)
+
+    Returns:
+    - None
+
+    Raises:
+    - TecioError on non-zero return code.
+    """
+    ptr, count, _backing = _prepare_array_for_ctypes(values, np.int32, ctypes.c_int32)
 
     ret = tecio.tecZoneVarWriteInt32Values(
         handle,
@@ -1310,9 +1752,22 @@ def tec_zone_var_write_int32_values(
 def tec_zone_var_write_int16_values(
     handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
 ) -> None:
-    # count = len(values)
-    # vals = (ctypes.c_int16 * count)(*list(values))
-    ptr, count, _backing = _prepare_array_for_ctypes(values, np.int16, ctypes.c_float)
+    """
+    Write int16 values for a zone variable.
+
+    Inputs:
+    - handle: ctypes.c_void_p writer handle
+    - zone: 1-based zone index
+    - var: 1-based variable index
+    - values: array-like of int16 values (converted to contiguous np.int16)
+
+    Returns:
+    - None
+
+    Raises:
+    - TecioError on non-zero return code.
+    """
+    ptr, count, _backing = _prepare_array_for_ctypes(values, np.int16, ctypes.c_int16)
 
     ret = tecio.tecZoneVarWriteInt16Values(
         handle,
@@ -1332,9 +1787,22 @@ def tec_zone_var_write_int16_values(
 def tec_zone_var_write_uint8_values(
     handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
 ) -> None:
-    # count = len(values)
-    # vals = (ctypes.c_uint8 * count)(*list(values))
-    ptr, count, _backing = _prepare_array_for_ctypes(values, np.uint8, ctypes.c_float)
+    """
+    Write unsigned 8-bit values for a zone variable.
+
+    Inputs:
+    - handle: ctypes.c_void_p writer handle
+    - zone: 1-based zone index
+    - var: 1-based variable index
+    - values: array-like of uint8 values (converted to contiguous np.uint8)
+
+    Returns:
+    - None
+
+    Raises:
+    - TecioError on non-zero return code.
+    """
+    ptr, count, _backing = _prepare_array_for_ctypes(values, np.uint8, ctypes.c_uint8)
 
     ret = tecio.tecZoneVarWriteUInt8Values(
         handle,
