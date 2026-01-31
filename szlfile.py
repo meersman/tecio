@@ -11,16 +11,16 @@ import szlio
 from szlio import DataType, FileType, ValueLocation, ZoneType
 
 
-class SzlFile:
+class Read:
     """
-    SZLFile provides an interface to read information and data from Tecplot
-    SZPLT files.
+    Read provides an interface to read information and data from
+    Tecplot szplt formatted binary files.
     """
 
     def __init__(self, file_name):
         self.handle = szlio.tec_file_reader_open(file_name)
         self.zones = [
-            Zone(self.handle, i + 1, self.num_vars) for i in range(self.num_zones)
+            ReadZone(self.handle, i + 1, self.num_vars) for i in range(self.num_zones)
         ]
         self._auxdata: Optional[AuxData] = None
         self._var_auxdata: Optional[List[AuxData]] = None
@@ -50,7 +50,7 @@ class SzlFile:
     def auxdata(self) -> AuxData:
         """Get dataset-level auxiliary data."""
         if self._auxdata is None:
-            self._auxdata = AuxData(self.handle, "dataset")
+            self._auxdata = ReadAuxData(self.handle, "dataset")
         return self._auxdata
 
     @property
@@ -65,7 +65,7 @@ class SzlFile:
             # Create list with None at index 0 for 1-based indexing
             self._var_auxdata = [None]
             for i in range(self.num_vars):
-                self._var_auxdata.append(AuxData(self.handle, "var", i + 1))
+                self._var_auxdata.append(ReadAuxData(self.handle, "var", i + 1))
         return self._var_auxdata
 
     def get_var_auxdata(self, var_index: int) -> AuxData:
@@ -86,7 +86,11 @@ class SzlFile:
 
 
 @dataclass
-class Zone:
+class ReadZone:
+    """
+    ReadZone provides a high level API with tecio functions to read
+    szplt binary formatted zone data.
+    """
     _handle: ctypes.c_void_p
     zone_index: int
     num_vars: int
@@ -103,7 +107,7 @@ class Zone:
         # Check cached private variables -> don't run C functions each time this is called if already defined
         if self._variables is None:
             self._variables = [
-                Variable(self._handle, self.zone_index, i + 1)
+                ReadVariable(self._handle, self.zone_index, i + 1)
                 for i in range(self.num_vars)
             ]
         return self._variables
@@ -186,12 +190,16 @@ class Zone:
     def auxdata(self) -> AuxData:
         """Get zone-level auxiliary data."""
         if self._auxdata is None:
-            self._auxdata = AuxData(self._handle, "zone", self.zone_index)
+            self._auxdata = ReadAuxData(self._handle, "zone", self.zone_index)
         return self._auxdata
 
 
 @dataclass
-class Variable:
+class ReadVariable:
+    """
+    ReadVariable provides a high level API with tecio functions to read
+    szplt binary formatted zone data.
+    """
     _handle: ctypes.c_void_p
     zone_index: int
     var_index: int
@@ -314,12 +322,12 @@ class Variable:
         raise ValueError(f"Unknown data type: {data_type}")
 
 
-class AuxData:
+class ReadAuxData:
     """
-    AuxData provides a dictionary-like interface for accessing Tecplot
-    auxiliary data with automatic type conversion.
+    ReadAuxData provides a dictionary-like interface for accessing
+    Tecplot auxiliary data with automatic type conversion.
 
-    Values are stored as strings in the SZL file but can be retrieved
+    Values are accessed as strings in the SZL file but can be retrieved
     as integers or floats using the as_int() and as_float() methods.
     """
 
@@ -476,8 +484,125 @@ class AuxData:
 
     def __repr__(self) -> str:
         """Return string representation of AuxData."""
-        return f"AuxData({self.data})"
+        return f"ReadAuxData({self.data})"
 
     def __str__(self) -> str:
         """Return string representation of AuxData."""
         return str(self.data)
+
+    
+class Write()
+    """
+    Write provides a high level API to write data to Tecplot szplt
+    formatted binary files.
+    """
+    def __init__(self,
+                 path: str,
+                 dataset_title: str = "Untitled",
+                 var_names: Iterable[str],
+                 file_type: FileType = FileType.FULL,
+                 grid_file_handle: Optional[ctypes.c_void_p] = None,
+                 ):
+        if not isinstance(file_type, FileType):
+            raise TypeError("file_type must be a szlio.FileType enum")
+        
+        self._var_names_csv = ",".join(var_names)
+        self._handle =  szlio.tec_file_writer_open(
+            file_name,
+            dataset_title,
+            self._var_names_csv,
+            file_type,
+            use_szl=1,
+            grid_file_handle=grid_file_handle,
+        )
+
+        self._handle = szlio.tec_file_writer_open(
+            path, dataset_title, self._var_string, file_type, use_szl=1, grid_file_handle=grid_file_handle
+        )
+
+    def __enter__(self) -> Write:
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self._handle is not None:
+            szlio.tec_file_writer_close(self._handle)
+            self._handle = None
+
+
+class WriteZone():
+    """
+    WriteZone provides a high level API with tecio functions to write
+    szplt binary formatted zone data.
+    """
+
+    def zone_write_solution_time(
+            file_handle: ctypes.c_void_p, zone: int, strand: int = 0, solution_time: float = 0.0
+    ) -> None:
+        """Set unsteady options (strand id and solution time) for a zone."""
+        szlio.tec_zone_set_unsteady_options(
+            file_handle, zone, strand=strand, solution_time=solution_time
+        )
+        
+    def write_zone_ordered(
+            file_handle: ctypes.c_void_p,
+            zone_name: str,
+            shape: Sequence[int],
+            var_sharing: Optional[Sequence[int]] = None,
+            var_data_types: Optional[Sequence[DataType]] = None,
+            value_locations: Optional[Sequence[ValueLocation]] = None,
+    ) -> int:
+        """
+        Create an ordered zone. `shape` is (I,J,K).
+        Returns zone index (int).
+        
+        var_data_types must be a sequence of szlio.DataType enums (if provided).
+        value_locations must be a sequence of szlio.ValueLocation enums (if provided).
+        """
+        I, J, K = shape
+        return szlio.tec_zone_create_ijk(
+            file_handle,
+            zone_name,
+            int(I),
+            int(J),
+            int(K),
+            var_types=var_data_types,
+            var_sharing=var_sharing,
+            value_locations=value_locations,
+        )
+
+    def _zone_write_double_values(
+            file_handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
+    ) -> None:
+        # accept numpy arrays or lists; enforce float64
+        arr = np.ascontiguousarray(values, dtype=np.float64)
+        szlio.tec_zone_var_write_double_values(file_handle, zone, var, arr)
+        
+        
+    def _zone_write_float_values(
+            file_handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
+    ) -> None:
+        arr = np.ascontiguousarray(values, dtype=np.float32)
+        szlio.tec_zone_var_write_float_values(file_handle, zone, var, arr)
+        
+        
+    def _zone_write_int32_values(
+            file_handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
+    ) -> None:
+        arr = np.ascontiguousarray(values, dtype=np.int32)
+        szlio.tec_zone_var_write_int32_values(file_handle, zone, var, arr)
+        
+        
+    def _zone_write_int16_values(
+            file_handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
+    ) -> None:
+        arr = np.ascontiguousarray(values, dtype=np.int16)
+        szlio.tec_zone_var_write_int16_values(file_handle, zone, var, arr)
+        
+    def _zone_write_uint8_values(
+            file_handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
+    ) -> None:
+        arr = np.ascontiguousarray(values, dtype=np.uint8)
+        szlio.tec_zone_var_write_uint8_values(file_handle, zone, var, arr)

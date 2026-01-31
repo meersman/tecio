@@ -1,115 +1,557 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence, Union
 
 import numpy as np
 import numpy.typing as npt
 
-from szlio import ValueLocation, ZoneType
+import szlio
+import szlfile
+from szlio import DataType, FileType, ValueLocation, ZoneType
+
+
+@dataclass
+class TecVariable:
+    """
+    Variable metadata.
+    
+    Mirrors variable properties from SZL files but mutable.
+    All fields populated from input file during load.
+    """
+
+    name: str
+    data_type: DataType = DataType.DOUBLE
+    value_location: ValueLocation = ValueLocation.NODAL
+    auxdata: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class TecZone:
+    """
+    Mutable zone with all data loaded in memory.
+    
+    Mirrors zone properties from SZL files but fully mutable.
+    Data is stored in memory, not read on-demand.
+    """
+
+    title: str
+    zone_type: ZoneType
+    dimensions: tuple[int, int, int]  # (I, J, K)
+    solution_time: float = 0.0
+    strand_id: int = 0
+    parent_zone: int = -1
+    auxdata: Dict[str, str] = field(default_factory=dict)
+    node_map: Optional[npt.NDArray[np.int64]] = None
+    _data: Dict[int, npt.NDArray] = field(default_factory=dict)
+
+    @property
+    def num_points(self) -> int:
+        """Calculate number of points based on zone type."""
+        if self.zone_type == ZoneType.ORDERED:
+            return self.dimensions[0] * self.dimensions[1] * self.dimensions[2]
+        else:
+            return self.dimensions[0]
+
+    @property
+    def num_elements(self) -> int:
+        """Calculate number of elements based on zone type."""
+        if self.zone_type == ZoneType.ORDERED:
+            # For ordered zones, elements = cells
+            i, j, k = self.dimensions
+            return max(i - 1, 1) * max(j - 1, 1) * max(k - 1, 1)
+        else:
+            return self.dimensions[1]
+
+    def get_variable_data(self, var_index: int) -> Optional[npt.NDArray]:
+        """
+        Get variable data by index (0-based).
+
+        Args:
+            var_index: Variable index (0-based)
+
+        Returns:
+            NumPy array of variable data, or None if not loaded
+        """
+        return self._data.get(var_index)
+
+    def set_variable_data(self, var_index: int, values: npt.NDArray) -> None:
+        """
+        Set variable data by index (0-based).
+
+        Args:
+            var_index: Variable index (0-based)
+            values: NumPy array of values
+        """
+        self._data[var_index] = values
+
+    def has_variable_data(self, var_index: int) -> bool:
+        """Check if variable data is loaded for this zone."""
+        return var_index in self._data
 
 
 class TecData:
     """
-    Unified mutable Tecplot data structure.
+    Mutable in-memory Tecplot dataset.
 
-    Can be:
-    - Created empty and populated
-    - Loaded from SZL files (binary)
-    - Loaded from PLT files (binary) - future
-    - Loaded from DAT files (ASCII) - future
-
-    Can be written to:
-    - SZL files (binary) - future
-    - PLT files (binary) - future
-    - DAT files (ASCII) - future
+    This class loads all requested data into memory (not on-demand caching).
+    All properties are mutable and directly accessible.
+    
+    The structure mirrors SzlFile but with data fully loaded and mutable.
     """
 
-    def __init__(self, title: str = ""):
-        self.title = title
+    def __init__(
+        self,
+        file_path: Optional[str] = None,
+        zones: Optional[Sequence[int]] = None,
+        vars: Optional[Union[Sequence[int], Sequence[str]]] = None,
+    ):
+        """
+        Initialize TecData, optionally loading from file.
+
+        Args:
+            file_path: Path to input file (.szplt, .plt, .dat). If None, creates empty.
+            zones: Zone indices to load (0-based). If None, loads all zones.
+                   If empty list, loads no zones (metadata only).
+            vars: Variable indices (0-based) or names to load. If None, loads all.
+
+        Examples:
+            >>> data = TecData()  # Empty dataset
+            >>> data = TecData("flow.szplt")  # Full load
+            >>> data = TecData("flow.szplt", zones=[0, 1, 2])  # Zones 0-2 only
+            >>> data = TecData("flow.szplt", vars=[0, 1, 2])  # Variables 0-2 only
+            >>> data = TecData("flow.szplt", vars=["X", "Y", "Z"])  # By name
+            >>> data = TecData("flow.szplt", zones=[])  # Metadata only, no zones
+        """
+        # All properties are public and mutable
+        self.title: str = ""
+        self.file_type: FileType = FileType.FULL
+        self.num_vars: int = 0
+        self.num_zones: int = 0
         self.variables: List[TecVariable] = []
         self.zones: List[TecZone] = []
         self.auxdata: Dict[str, str] = {}
 
-    @classmethod
-    def from_szl_file(
-        cls,
+        # Load from file if provided
+        if file_path is not None:
+            # Detect file type and load appropriately
+            if file_path.endswith('.szplt'):
+                self._load_from_szl(file_path, zones, vars)
+            elif file_path.endswith('.plt'):
+                self._load_from_plt(file_path, zones, vars)
+            elif file_path.endswith('.dat'):
+                self._load_from_dat(file_path, zones, vars)
+            else:
+                # Try SZL as default
+                self._load_from_szl(file_path, zones, vars)
+
+    def _load_from_szl(
+        self,
         file_path: str,
-        load_data: bool = True,
-        zones: Optional[List[int]] = None,
-        variables: Optional[List[int]] = None,
-    ) -> TecData:
+        zone_filter: Optional[Sequence[int]],
+        var_filter: Optional[Union[Sequence[int], Sequence[str]]],
+    ) -> None:
         """
-        Create TecData from SZL file.
+        Load data from SZL file into memory.
+
+        All requested data is loaded immediately, not cached or read on-demand.
 
         Args:
             file_path: Path to .szplt file
-            load_data: If True, load all variable data into memory.
-                      If False, create structure but defer data loading.
-            zones: List of zone indices to load (1-based). None = all zones.
-            variables: List of variable indices to load (1-based). None = all variables.
+            zone_filter: Zone indices to load (0-based), or None for all
+            var_filter: Variable indices (0-based) or names, or None for all
+        """
+        # Open SZL file (read-only interface)
+        szl = szlfile.Read(file_path)
+
+        # Load dataset-level metadata
+        self.title = szl.title
+        self.file_type = szl.type
+        self.auxdata = dict(szl.auxdata.items())
+
+        # Process variable filter to get indices
+        var_indices = self._resolve_var_filter(szl, var_filter)
+
+        # Load variable metadata for requested variables
+        self.variables = []
+        for var_idx in var_indices:
+            # Get variable info from first zone (all zones share variable names)
+            szl_var = szl.zones[0].variables[var_idx]
+            
+            # Get variable-level auxiliary data
+            var_aux = dict(szl.get_var_auxdata(var_idx + 1).items())
+            
+            # Create TecVariable with all metadata loaded
+            tec_var = TecVariable(
+                name=szl_var.name,
+                data_type=szl_var.type,
+                value_location=szl_var.value_location,
+                auxdata=var_aux
+            )
+            self.variables.append(tec_var)
+
+        # Update num_vars
+        self.num_vars = len(self.variables)
+
+        # Process zone filter
+        if zone_filter is None:
+            # Load all zones
+            zone_indices = list(range(szl.num_zones))
+        elif len(zone_filter) == 0:
+            # Empty list = load no zones (metadata only)
+            zone_indices = []
+        else:
+            # Load specified zones (0-based)
+            zone_indices = list(zone_filter)
+
+        # Load zones with all data into memory
+        self.zones = []
+        for zone_idx in zone_indices:
+            if zone_idx < 0 or zone_idx >= szl.num_zones:
+                raise IndexError(
+                    f"Zone index {zone_idx} out of range [0, {szl.num_zones})"
+                )
+
+            szl_zone = szl.zones[zone_idx]
+
+            # Create zone with all metadata
+            zone = TecZone(
+                title=szl_zone.title,
+                zone_type=szl_zone.type,
+                dimensions=szl_zone.dimensions,
+                solution_time=szl_zone.solution_time,
+                strand_id=szl_zone.strand_id,
+                auxdata=dict(szl_zone.auxdata.items()),
+            )
+
+            # Load node map for FE zones
+            if szl_zone.type != ZoneType.ORDERED:
+                zone.node_map = szl_zone.node_map.copy()
+
+            # Load ALL variable data into memory (not cached, fully loaded)
+            for local_idx, global_idx in enumerate(var_indices):
+                var_data = szl_zone.variables[global_idx].values.copy()
+                zone.set_variable_data(local_idx, var_data)
+
+            self.zones.append(zone)
+
+        # Update num_zones
+        self.num_zones = len(self.zones)
+
+    def _load_from_plt(
+        self,
+        file_path: str,
+        zone_filter: Optional[Sequence[int]],
+        var_filter: Optional[Union[Sequence[int], Sequence[str]]],
+    ) -> None:
+        """
+        Load data from PLT binary file into memory.
+
+        Future implementation - will use pltfile module.
+
+        Args:
+            file_path: Path to .plt file
+            zone_filter: Zone indices to load (0-based), or None for all
+            var_filter: Variable indices (0-based) or names, or None for all
+        """
+        raise NotImplementedError("PLT file loading not yet implemented")
+
+    def _load_from_dat(
+        self,
+        file_path: str,
+        zone_filter: Optional[Sequence[int]],
+        var_filter: Optional[Union[Sequence[int], Sequence[str]]],
+    ) -> None:
+        """
+        Load data from ASCII DAT file into memory.
+
+        Future implementation - will produce same TecData structure.
+
+        Args:
+            file_path: Path to .dat file
+            zone_filter: Zone indices to load (0-based), or None for all
+            var_filter: Variable indices (0-based) or names, or None for all
+        """
+        raise NotImplementedError("ASCII DAT file loading not yet implemented")
+
+    def _resolve_var_filter(
+        self,
+        szl: szlfile.Read,
+        var_filter: Optional[Union[Sequence[int], Sequence[str]]],
+    ) -> List[int]:
+        """
+        Resolve variable filter to list of 0-based indices.
+
+        Args:
+            szl: SzlFile object
+            var_filter: Variable indices (0-based) or names, or None for all
 
         Returns:
-            TecData object with data from file
+            List of 0-based variable indices to load
         """
-        from szlfile import SzlFile
+        if var_filter is None:
+            # Load all variables
+            return list(range(szl.num_vars))
 
-        szl = SzlFile(file_path)
-        tecdata = cls(title=szl.title)
+        # Check if filter is list of strings (names) or integers (indices)
+        if len(var_filter) == 0:
+            return []
 
-        # Determine which zones and variables to load
-        zone_indices = zones if zones is not None else list(range(1, szl.num_zones + 1))
-        var_indices = (
-            variables if variables is not None else list(range(1, szl.num_vars + 1))
+        first_item = var_filter[0]
+
+        if isinstance(first_item, str):
+            # Filter by variable names
+            var_indices = []
+            all_var_names = [
+                szl.zones[0].variables[i].name for i in range(szl.num_vars)
+            ]
+
+            for var_name in var_filter:
+                if var_name not in all_var_names:
+                    raise ValueError(f"Variable '{var_name}' not found in file")
+                var_indices.append(all_var_names.index(var_name))
+
+            return var_indices
+        else:
+            # Filter by indices (0-based)
+            var_indices = list(var_filter)
+
+            # Validate indices
+            for idx in var_indices:
+                if idx < 0 or idx >= szl.num_vars:
+                    raise IndexError(
+                        f"Variable index {idx} out of range [0, {szl.num_vars})"
+                    )
+
+            return var_indices
+
+    def _infer_file_type(self) -> FileType:
+        """
+        Automatically determine FileType based on dataset content.
+
+        Returns:
+            FileType.FULL - Always returns FULL for complete datasets
+        """
+        # Could be enhanced to detect GRID vs SOLUTION based on variables
+        return self.file_type if self.file_type else FileType.FULL
+
+    def _infer_data_type(self, data: npt.NDArray) -> DataType:
+        """
+        Automatically determine DataType from numpy array dtype.
+
+        Args:
+            data: NumPy array
+
+        Returns:
+            Appropriate DataType enum
+
+        Raises:
+            ValueError: If dtype is not supported
+        """
+        dtype_map = {
+            np.dtype(np.float64): DataType.DOUBLE,
+            np.dtype(np.float32): DataType.FLOAT,
+            np.dtype(np.int32): DataType.INT32,
+            np.dtype(np.int16): DataType.INT16,
+            np.dtype(np.uint8): DataType.BYTE,
+        }
+
+        if data.dtype in dtype_map:
+            return dtype_map[data.dtype]
+        
+        # Try to match by kind and size
+        if data.dtype.kind == 'f':
+            if data.dtype.itemsize == 8:
+                return DataType.DOUBLE
+            elif data.dtype.itemsize == 4:
+                return DataType.FLOAT
+        elif data.dtype.kind == 'i':
+            if data.dtype.itemsize == 4:
+                return DataType.INT32
+            elif data.dtype.itemsize == 2:
+                return DataType.INT16
+            elif data.dtype.itemsize == 1:
+                return DataType.BYTE
+        elif data.dtype.kind == 'u':
+            if data.dtype.itemsize == 1:
+                return DataType.BYTE
+
+        # Default to DOUBLE for safety
+        return DataType.DOUBLE
+
+    def write_szl(self, file_path: str) -> None:
+        """
+        Write dataset to SZL (.szplt) file.
+
+        Automatically determines FileType, ZoneType, DataType, and ValueLocation
+        from the TecData object. Simply provide the output filename.
+
+        Args:
+            file_path: Output file path
+
+        Example:
+            >>> data = TecData("input.szplt")
+            >>> data.write_szl("output.szplt")
+
+        Raises:
+            ValueError: If dataset has no variables or zones
+        """
+        # Validation
+        if self.num_vars == 0 or len(self.variables) == 0:
+            raise ValueError("Cannot write dataset with no variables")
+        if self.num_zones == 0 or len(self.zones) == 0:
+            raise ValueError("Cannot write dataset with no zones")
+
+        # Automatically determine file type
+        file_type = self._infer_file_type()
+
+        # Prepare variable names as comma-separated string
+        var_names_csv = ",".join([v.name for v in self.variables])
+
+        # Open file for writing
+        handle = szlio.tec_file_writer_open(
+            file_name=file_path,
+            dataset_title=self.title,
+            var_names_csv=var_names_csv,
+            file_type=file_type,
         )
 
-        # Load variable metadata
-        for var_idx in var_indices:
-            var_name = (
-                szl.zones[0].variables[var_idx - 1].name
-            )  # All zones share var names
-            tecdata.add_variable(var_name)
+        try:
+            # Write each zone
+            for zone in self.zones:
+                self._write_zone(handle, zone)
+        finally:
+            # Always close the file
+            szlio.tec_file_writer_close(handle)
 
-        # Load dataset auxiliary data
-        tecdata.auxdata = dict(szl.auxdata)
+    def _write_zone(self, handle, zone: TecZone) -> None:
+        """
+        Write a single zone to the output file.
 
-        # Load zones
-        for zone_idx in zone_indices:
-            szl_zone = szl.zones[zone_idx - 1]
-            tec_zone = TecZone.from_szl_zone(szl_zone, var_indices, load_data)
-            tecdata.zones.append(tec_zone)
+        Automatically determines variable types and value locations from data.
 
-        return tecdata
+        Args:
+            handle: TecIO file handle
+            zone: TecZone to write
+        """
+        # Automatically determine variable types from actual data
+        var_types = []
+        value_locations = []
+
+        for i, var in enumerate(self.variables):
+            # Get value location from variable metadata
+            value_locations.append(var.value_location)
+
+            # Determine data type from actual data
+            if zone.has_variable_data(i):
+                data = zone.get_variable_data(i)
+                var_types.append(self._infer_data_type(data))
+            else:
+                raise ValueError(
+                    f"Zone '{zone.title}' missing data for variable '{var.name}'"
+                )
+
+        # Create zone (automatically handles ORDERED, FE types, etc.)
+        zone_num = szlio.tec_zone_create_ijk(
+            handle=handle,
+            zone_title=zone.title,
+            I=zone.dimensions[0],
+            J=zone.dimensions[1],
+            K=zone.dimensions[2],
+            var_types=var_types,
+            value_locations=value_locations,
+        )
+
+        # Set unsteady options if needed (automatically detect from zone metadata)
+        if zone.strand_id > 0 or zone.solution_time != 0.0:
+            szlio.tec_zone_set_unsteady_options(
+                handle=handle,
+                zone=zone_num,
+                strand=zone.strand_id,
+                solution_time=zone.solution_time,
+            )
+
+        # Write variable data (automatically uses correct write function)
+        for i in range(self.num_vars):
+            data = zone.get_variable_data(i)
+            data_type = var_types[i]
+            self._write_variable_data(handle, zone_num, i + 1, data, data_type)
+
+    def _write_variable_data(
+        self,
+        handle,
+        zone_num: int,
+        var_num: int,
+        data: npt.NDArray,
+        data_type: DataType,
+    ) -> None:
+        """
+        Write variable data to file using appropriate data type.
+
+        Args:
+            handle: TecIO file handle
+            zone_num: Zone number (1-based)
+            var_num: Variable number (1-based)
+            data: NumPy array of data
+            data_type: DataType enum
+        """
+        if data_type == DataType.DOUBLE:
+            szlio.tec_zone_var_write_double_values(handle, zone_num, var_num, data)
+        elif data_type == DataType.FLOAT:
+            szlio.tec_zone_var_write_float_values(handle, zone_num, var_num, data)
+        elif data_type == DataType.INT32:
+            szlio.tec_zone_var_write_int32_values(handle, zone_num, var_num, data)
+        elif data_type == DataType.INT16:
+            szlio.tec_zone_var_write_int16_values(handle, zone_num, var_num, data)
+        elif data_type == DataType.BYTE:
+            szlio.tec_zone_var_write_uint8_values(handle, zone_num, var_num, data)
+        else:
+            raise ValueError(f"Unsupported data type: {data_type}")
 
     def add_variable(
-        self, name: str, location: ValueLocation = ValueLocation.NODAL
+        self,
+        name: str,
+        data_type: DataType = DataType.DOUBLE,
+        location: ValueLocation = ValueLocation.NODAL,
     ) -> int:
         """
         Add a new variable to the dataset.
 
         Args:
             name: Variable name
-            location: Where values are stored (NODAL or CELL_CENTERED)
+            data_type: Data type for storage
+            location: Value location (NODAL or CELL_CENTERED)
 
         Returns:
-            Index of new variable (0-based)
+            Index of added variable (0-based)
+
+        Example:
+            >>> data = TecData()
+            >>> x_idx = data.add_variable("X")
+            >>> p_idx = data.add_variable("Pressure", DataType.FLOAT)
         """
-        var = TecVariable(name=name, location=location)
+        var = TecVariable(name=name, data_type=data_type, value_location=location)
         self.variables.append(var)
-
-        # Add placeholder to all existing zones
-        for zone in self.zones:
-            zone.add_variable_slot()
-
-        return len(self.variables) - 1
+        self.num_vars = len(self.variables)
+        return self.num_vars - 1
 
     def get_variable_index(self, name: str) -> int:
-        """Get variable index by name. Returns -1 if not found."""
+        """
+        Get variable index by name.
+
+        Args:
+            name: Variable name
+
+        Returns:
+            Variable index (0-based)
+
+        Raises:
+            ValueError: If variable not found
+        """
         for i, var in enumerate(self.variables):
             if var.name == name:
                 return i
-        return -1
+        raise ValueError(f"Variable '{name}' not found")
 
     def add_zone(
         self,
@@ -124,13 +566,19 @@ class TecData:
 
         Args:
             title: Zone title
-            zone_type: Type of zone (ORDERED, FETRIANGLE, etc.)
-            dimensions: (I, J, K) for ordered or (num_points, num_elements, 0) for FE
-            solution_time: Solution time for transient data
-            strand_id: Strand ID for transient data
+            zone_type: ZoneType enum
+            dimensions: (I, J, K) dimensions
+            solution_time: Solution time for unsteady data
+            strand_id: Strand ID for unsteady data
 
         Returns:
-            The newly created zone
+            Created TecZone object
+
+        Example:
+            >>> data = TecData()
+            >>> data.add_variable("X")
+            >>> data.add_variable("Y")
+            >>> zone = data.add_zone("Grid", ZoneType.ORDERED, (10, 10, 1))
         """
         zone = TecZone(
             title=title,
@@ -138,225 +586,85 @@ class TecData:
             dimensions=dimensions,
             solution_time=solution_time,
             strand_id=strand_id,
-            num_variables=len(self.variables),
         )
         self.zones.append(zone)
+        self.num_zones = len(self.zones)
         return zone
 
-    def normalize_variable(self, var_index: int, reference_value: float) -> None:
-        """
-        Normalize a variable by a reference value in all zones.
-
-        Args:
-            var_index: Variable index (0-based)
-            reference_value: Value to divide by
-        """
-        for zone in self.zones:
-            values = zone.get_variable_data(var_index)
-            if values is not None:
-                zone.set_variable_data(var_index, values / reference_value)
-
-    def compute_magnitude(
-        self, component_indices: tuple[int, int, int], result_name: str = "Magnitude"
-    ) -> int:
-        """
-        Compute magnitude from vector components.
-
-        Args:
-            component_indices: (x_idx, y_idx, z_idx) - 0-based indices
-            result_name: Name for the new magnitude variable
-
-        Returns:
-            Index of new magnitude variable
-        """
-        mag_idx = self.add_variable(result_name)
-
-        for zone in self.zones:
-            x = zone.get_variable_data(component_indices[0])
-            y = zone.get_variable_data(component_indices[1])
-            z = zone.get_variable_data(component_indices[2])
-
-            if x is not None and y is not None and z is not None:
-                magnitude = np.sqrt(x**2 + y**2 + z**2)
-                zone.set_variable_data(mag_idx, magnitude)
-
-        return mag_idx
-
     def __repr__(self) -> str:
+        """String representation of dataset."""
         return (
             f"TecData(title='{self.title}', "
-            f"num_vars={len(self.variables)}, "
-            f"num_zones={len(self.zones)})"
+            f"num_vars={self.num_vars}, "
+            f"num_zones={self.num_zones})"
         )
 
-
-@dataclass
-class TecVariable:
-    """Metadata for a variable in the dataset."""
-
-    name: str
-    location: ValueLocation = ValueLocation.NODAL
-    auxdata: Dict[str, str] = field(default_factory=dict)
-
-
-@dataclass
-class TecZone:
-    """
-    Mutable zone that stores all data in memory.
-    """
-
-    title: str
-    zone_type: ZoneType
-    dimensions: tuple[int, int, int]  # (I, J, K) or (num_points, num_elements, 0)
-    solution_time: float = 0.0
-    strand_id: int = 0
-    num_variables: int = 0
-    auxdata: Dict[str, str] = field(default_factory=dict)
-
-    # Data storage
-    _variable_data: List[Optional[npt.NDArray]] = field(default_factory=list)
-    _node_map: Optional[npt.NDArray[np.int64]] = None
-
-    def __post_init__(self):
-        """Initialize variable data slots."""
-        if len(self._variable_data) == 0:
-            self._variable_data = [None] * self.num_variables
-
-    @classmethod
-    def from_szl_zone(
-        cls, szl_zone, var_indices: List[int], load_data: bool = True
-    ) -> TecZone:
+    def summary(self) -> str:
         """
-        Create TecZone from SzlFile Zone.
-
-        Args:
-            szl_zone: Zone object from SzlFile
-            var_indices: List of variable indices to load (1-based)
-            load_data: If True, load variable data. If False, defer loading.
+        Generate detailed summary of dataset for debugging/inspection.
 
         Returns:
-            TecZone with data loaded or ready to load
+            Multi-line string with dataset information
+
+        Example:
+            >>> data = TecData("flow.szplt")
+            >>> print(data.summary())
         """
-        zone = cls(
-            title=szl_zone.title,
-            zone_type=szl_zone.type,
-            dimensions=szl_zone.dimensions,
-            solution_time=szl_zone.solution_time,
-            strand_id=szl_zone.strand_id,
-            num_variables=len(var_indices),
-            auxdata=dict(szl_zone.auxdata),
-        )
-
-        # Load variable data if requested
-        if load_data:
-            for i, var_idx in enumerate(var_indices):
-                var = szl_zone.variables[var_idx - 1]
-                zone._variable_data[i] = var.values.copy()
-
-        # Load node map for FE zones
-        if szl_zone.type != ZoneType.ORDERED:
-            zone._node_map = szl_zone.node_map.copy()
-
-        return zone
-
-    @property
-    def num_points(self) -> int:
-        """Number of points/nodes in zone."""
-        if self.zone_type == ZoneType.ORDERED:
-            return self.dimensions[0] * self.dimensions[1] * self.dimensions[2]
-        else:
-            return self.dimensions[0]
-
-    @property
-    def num_elements(self) -> int:
-        """Number of elements/cells in zone."""
-        if self.zone_type == ZoneType.ORDERED:
-            i_max = max(1, self.dimensions[0] - 1)
-            j_max = max(1, self.dimensions[1] - 1)
-            k_max = max(1, self.dimensions[2] - 1)
-            return i_max * j_max * k_max
-        else:
-            return self.dimensions[1]
-
-    def add_variable_slot(self) -> None:
-        """Add a slot for a new variable (initialized to None)."""
-        self._variable_data.append(None)
-        self.num_variables += 1
-
-    def get_variable_data(self, var_index: int) -> Optional[npt.NDArray]:
-        """
-        Get variable data array.
-
-        Args:
-            var_index: Variable index (0-based)
-
-        Returns:
-            NumPy array of values, or None if not loaded
-        """
-        if var_index < 0 or var_index >= self.num_variables:
-            raise IndexError(
-                f"Variable index {var_index} out of range [0, {self.num_variables})"
+        lines = []
+        lines.append("=" * 70)
+        lines.append(f"TecData Summary: {self.title}")
+        lines.append("=" * 70)
+        
+        # File type
+        file_type = self._infer_file_type()
+        lines.append(f"File Type: {file_type.name}")
+        
+        # Variables
+        lines.append(f"\nVariables ({self.num_vars}):")
+        for i, var in enumerate(self.variables):
+            lines.append(
+                f"  [{i}] {var.name:20s} {var.data_type.name:8s} {var.value_location.name}"
             )
-        return self._variable_data[var_index]
-
-    def set_variable_data(self, var_index: int, values: npt.NDArray) -> None:
-        """
-        Set variable data array.
-
-        Args:
-            var_index: Variable index (0-based)
-            values: NumPy array of values
-        """
-        if var_index < 0 or var_index >= self.num_variables:
-            raise IndexError(
-                f"Variable index {var_index} out of range [0, {self.num_variables})"
-            )
-
-        expected_size = self.num_points  # Could be num_elements for cell-centered
-        if len(values) != expected_size:
-            raise ValueError(
-                f"Array size {len(values)} doesn't match expected {expected_size}"
-            )
-
-        self._variable_data[var_index] = values.copy()
-
-    @property
-    def node_map(self) -> Optional[npt.NDArray[np.int64]]:
-        """Get node connectivity map for FE zones."""
-        return self._node_map
-
-    @node_map.setter
-    def node_map(self, connectivity: npt.NDArray[np.int64]) -> None:
-        """Set node connectivity map for FE zones."""
-        if self.zone_type == ZoneType.ORDERED:
-            raise ValueError("Ordered zones do not use node maps")
-
-        expected_shape = (self.num_elements, self._nodes_per_element())
-        if connectivity.shape != expected_shape:
-            raise ValueError(
-                f"Node map shape {connectivity.shape} doesn't match "
-                f"expected {expected_shape}"
-            )
-
-        self._node_map = connectivity.copy()
-
-    def _nodes_per_element(self) -> int:
-        """Get number of nodes per element based on zone type."""
-        if self.zone_type == ZoneType.FELINESEG:
-            return 2
-        elif self.zone_type == ZoneType.FETRIANGLE:
-            return 3
-        elif self.zone_type == ZoneType.FEQUADRILATERAL:
-            return 4
-        elif self.zone_type == ZoneType.FETETRAHEDRON:
-            return 4
-        elif self.zone_type == ZoneType.FEBRICK:
-            return 8
-        else:
-            raise ValueError(f"Cannot determine nodes per element for {self.zone_type}")
-
-    def __repr__(self) -> str:
-        return (
-            f"TecZone(title='{self.title}', type={self.zone_type}, "
-            f"dims={self.dimensions}, vars={self.num_variables})"
-        )
+            if var.auxdata:
+                for name, value in var.auxdata.items():
+                    lines.append(f"      aux: {name} = {value}")
+        
+        # Zones
+        lines.append(f"\nZones ({self.num_zones}):")
+        for i, zone in enumerate(self.zones):
+            lines.append(f"  [{i}] {zone.title}")
+            lines.append(f"      Type: {zone.zone_type.name}")
+            lines.append(f"      Dimensions: {zone.dimensions}")
+            lines.append(f"      Points: {zone.num_points:,}")
+            lines.append(f"      Elements: {zone.num_elements:,}")
+            
+            if zone.strand_id > 0 or zone.solution_time != 0.0:
+                lines.append(f"      Strand ID: {zone.strand_id}")
+                lines.append(f"      Solution Time: {zone.solution_time}")
+            
+            # Check data types
+            lines.append(f"      Variable Data:")
+            for j, var in enumerate(self.variables):
+                if zone.has_variable_data(j):
+                    data = zone.get_variable_data(j)
+                    data_type = self._infer_data_type(data)
+                    lines.append(
+                        f"        {var.name:20s} {data_type.name:8s} "
+                        f"({data.dtype}, {data.nbytes:,} bytes)"
+                    )
+                else:
+                    lines.append(f"        {var.name:20s} NOT LOADED")
+            
+            if zone.auxdata:
+                lines.append(f"      Zone Auxiliary Data:")
+                for name, value in zone.auxdata.items():
+                    lines.append(f"        {name}: {value}")
+        
+        # Auxiliary data
+        if self.auxdata:
+            lines.append(f"\nDataset Auxiliary Data:")
+            for name, value in self.auxdata.items():
+                lines.append(f"  {name}: {value}")
+        
+        lines.append("=" * 70)
+        return "\n".join(lines)

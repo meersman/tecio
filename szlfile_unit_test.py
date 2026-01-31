@@ -2,7 +2,8 @@
 
 import szlfile
 
-szl = szlfile.SzlFile("Onera.szplt")
+# Create szl reader object
+szl = szlfile.Read("Onera.szplt")
 
 print(f"file type: {szl.type}")
 print(f"dataset title: {szl.title}")
