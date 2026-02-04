@@ -11,7 +11,7 @@ import tecutils
 
 # Load tecio library
 TECIO_LIB_PATH = tecutils.get_tecio_lib()
-tecio = ctypes.cdll.LoadLibrary(TECIO_LIB_PATH)
+lib = ctypes.cdll.LoadLibrary(TECIO_LIB_PATH)
 
 
 # --------------------------------------------------------------------
@@ -56,7 +56,7 @@ class DataType(Enum):
 
 class ValueLocation(Enum):
     CELL_CENTERED = 0
-    NODAL = 1
+    NODE_CENTERED = 1
 
 
 class VarStatus(Enum):
@@ -101,8 +101,8 @@ class DataFormat(Enum):
 # --------------------------------------------------------------------
 
 # ---- File initialization and finalization --------------------------
-tecio.TECINI142.restype = ctypes.c_int32
-tecio.TECINI142.argtypes = [
+lib.tecini142.restype = ctypes.c_int32
+lib.tecini142.argtypes = [
     ctypes.c_char_p,  # Title
     ctypes.c_char_p,  # Variables
     ctypes.c_char_p,  # FName
@@ -113,28 +113,28 @@ tecio.TECINI142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # VIsDouble
 ]
 
-tecio.TECEND142.restype = ctypes.c_int32
-tecio.TECEND142.argtypes = []
+lib.tecend142.restype = ctypes.c_int32
+lib.tecend142.argtypes = []
 
-tecio.TECFLUSH142.restype = ctypes.c_int32
-tecio.TECFLUSH142.argtypes = [
+lib.tecflush142.restype = ctypes.c_int32
+lib.tecflush142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # NumZonesToRetain
     ctypes.POINTER(ctypes.c_int32),  # ZonesToRetain
 ]
 
-tecio.TECFIL142.restype = ctypes.c_int32
-tecio.TECFIL142.argtypes = [
+lib.tecfil142.restype = ctypes.c_int32
+lib.tecfil142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # OutputFileHandle
 ]
 
-tecio.TECFOREIGN142.restype = ctypes.c_int32
-tecio.TECFOREIGN142.argtypes = [
+lib.tecforeign142.restype = ctypes.c_int32
+lib.tecforeign142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # OutputForeignByteOrder
 ]
 
 # ---- Zone creation -------------------------------------------------
-tecio.TECZNE142.restype = ctypes.c_int32
-tecio.TECZNE142.argtypes = [
+lib.teczne142.restype = ctypes.c_int32
+lib.teczne142.argtypes = [
     ctypes.c_char_p,  # ZoneTitle
     ctypes.POINTER(ctypes.c_int32),  # ZoneType
     ctypes.POINTER(ctypes.c_int32),  # IMx (or NumNodes for FE)
@@ -158,8 +158,8 @@ tecio.TECZNE142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # ShareConnectivityFromZone
 ]
 
-tecio.TECPOLYZNE142.restype = ctypes.c_int32
-tecio.TECPOLYZNE142.argtypes = [
+lib.tecpolyzne142.restype = ctypes.c_int32
+lib.tecpolyzne142.argtypes = [
     ctypes.c_char_p,  # ZoneTitle
     ctypes.POINTER(ctypes.c_int32),  # ZoneType (FEPOLYGON or FEPOLYHEDRON)
     ctypes.POINTER(ctypes.c_int32),  # NumNodes
@@ -178,8 +178,8 @@ tecio.TECPOLYZNE142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # ShareConnectivityFromZone
 ]
 
-tecio.TECZNEFEMIXED142.restype = ctypes.c_int32
-tecio.TECZNEFEMIXED142.argtypes = [
+lib.tecznefemixed142.restype = ctypes.c_int32
+lib.tecznefemixed142.argtypes = [
     ctypes.c_char_p,  # ZoneTitle
     ctypes.POINTER(ctypes.c_int32),  # NumNodes
     ctypes.POINTER(ctypes.c_int32),  # NumElements
@@ -197,8 +197,8 @@ tecio.TECZNEFEMIXED142.argtypes = [
 ]
 
 # ---- Partitioned zone creation -------------------------------------
-tecio.TECIJKPTN142.restype = ctypes.c_int32
-tecio.TECIJKPTN142.argtypes = [
+lib.tecijkptn142.restype = ctypes.c_int32
+lib.tecijkptn142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # PartitionOwnerZone
     ctypes.POINTER(ctypes.c_int32),  # IMin
     ctypes.POINTER(ctypes.c_int32),  # JMin
@@ -208,15 +208,15 @@ tecio.TECIJKPTN142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # KMax
 ]
 
-tecio.TECFEPTN142.restype = ctypes.c_int32
-tecio.TECFEPTN142.argtypes = [
+lib.tecfeptn142.restype = ctypes.c_int32
+lib.tecfeptn142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # PartitionOwnerZone
     ctypes.POINTER(ctypes.c_int32),  # NumNodes
     ctypes.POINTER(ctypes.c_int32),  # NumElements
 ]
 
-tecio.TECFEMIXEDPTN142.restype = ctypes.c_int32
-tecio.TECFEMIXEDPTN142.argtypes = [
+lib.tecfemixedptn142.restype = ctypes.c_int32
+lib.tecfemixedptn142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # PartitionOwnerZone
     ctypes.POINTER(ctypes.c_int32),  # NumNodes
     ctypes.POINTER(ctypes.c_int32),  # NumElements
@@ -224,38 +224,38 @@ tecio.TECFEMIXEDPTN142.argtypes = [
 ]
 
 # ---- Data writing --------------------------------------------------
-tecio.TECDAT142.restype = ctypes.c_int32
-tecio.TECDAT142.argtypes = [
+lib.tecdat142.restype = ctypes.c_int32
+lib.tecdat142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # N (number of values)
     ctypes.c_void_p,  # FieldData (void pointer for flexibility)
     ctypes.POINTER(ctypes.c_int32),  # IsDouble (1=double, 0=float)
 ]
 
 # ---- Connectivity writing ------------------------------------------
-tecio.TECNOD142.restype = ctypes.c_int32
-tecio.TECNOD142.argtypes = [
+lib.tecnod142.restype = ctypes.c_int32
+lib.tecnod142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # NData (connectivity array)
 ]
 
-tecio.TECNODE142.restype = ctypes.c_int32
-tecio.TECNODE142.argtypes = [
+lib.tecnode142.restype = ctypes.c_int32
+lib.tecnode142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # N (number of values)
     ctypes.POINTER(ctypes.c_int32),  # NData (connectivity array)
 ]
 
-tecio.TECZNEMAP142.restype = ctypes.c_int32
-tecio.TECZNEMAP142.argtypes = [
+lib.tecznemap142.restype = ctypes.c_int32
+lib.tecznemap142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # N (number of values)
     ctypes.POINTER(ctypes.c_int32),  # NodeMap
 ]
 
-tecio.TECFACE142.restype = ctypes.c_int32
-tecio.TECFACE142.argtypes = [
+lib.tecface142.restype = ctypes.c_int32
+lib.tecface142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # FaceConnections
 ]
 
-tecio.TECPOLYFACE142.restype = ctypes.c_int32
-tecio.TECPOLYFACE142.argtypes = [
+lib.tecpolyface142.restype = ctypes.c_int32
+lib.tecpolyface142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # NumFaces
     ctypes.POINTER(ctypes.c_int32),  # FaceNodeCounts
     ctypes.POINTER(ctypes.c_int32),  # FaceNodes
@@ -263,8 +263,8 @@ tecio.TECPOLYFACE142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # FaceRightElems
 ]
 
-tecio.TECPOLYBCONN142.restype = ctypes.c_int32
-tecio.TECPOLYBCONN142.argtypes = [
+lib.tecpolybconn142.restype = ctypes.c_int32
+lib.tecpolybconn142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # NumBoundaryFaces
     ctypes.POINTER(ctypes.c_int32),  # BoundaryConnectionCounts
     ctypes.POINTER(ctypes.c_int32),  # BoundaryConnectionElems
@@ -272,35 +272,35 @@ tecio.TECPOLYBCONN142.argtypes = [
 ]
 
 # ---- Auxiliary data ------------------------------------------------
-tecio.TECAUXSTR142.restype = ctypes.c_int32
-tecio.TECAUXSTR142.argtypes = [
+lib.tecauxstr142.restype = ctypes.c_int32
+lib.tecauxstr142.argtypes = [
     ctypes.c_char_p,  # Name
     ctypes.c_char_p,  # Value
 ]
 
-tecio.TECVAUXSTR142.restype = ctypes.c_int32
-tecio.TECVAUXSTR142.argtypes = [
+lib.tecvauxstr142.restype = ctypes.c_int32
+lib.tecvauxstr142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # Var (1-based variable index)
     ctypes.c_char_p,  # Name
     ctypes.c_char_p,  # Value
 ]
 
-tecio.TECZAUXSTR142.restype = ctypes.c_int32
-tecio.TECZAUXSTR142.argtypes = [
+lib.teczauxstr142.restype = ctypes.c_int32
+lib.teczauxstr142.argtypes = [
     ctypes.c_char_p,  # Name
     ctypes.c_char_p,  # Value
 ]
 
 # ---- MPI initialization (for parallel I/O) -------------------------
-tecio.TECMPIINIT142.restype = ctypes.c_int32
-tecio.TECMPIINIT142.argtypes = [
+lib.tecmpiinit142.restype = ctypes.c_int32
+lib.tecmpiinit142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # Communicator
     ctypes.POINTER(ctypes.c_int32),  # MainRank
 ]
 
 # ---- User-defined data (custom records) ----------------------------
-tecio.TECUSR142.restype = ctypes.c_int32
-tecio.TECUSR142.argtypes = [
+lib.tecusr142.restype = ctypes.c_int32
+lib.tecusr142.argtypes = [
     ctypes.c_char_p,  # UserRec
 ]
 
@@ -371,7 +371,7 @@ def tecini142(
     debug_c = ctypes.c_int32(_to_int_value(debug))
     vis_double_c = ctypes.c_int32(1 if _to_int_value(vis_double) == DataType.DOUBLE.value else 0)
 
-    ret = tecio.TECINI142(
+    ret = lib.tecini142(
         ctypes.c_char_p(title.encode("utf-8")),
         ctypes.c_char_p(variables.encode("utf-8")),
         ctypes.c_char_p(fname.encode("utf-8")),
@@ -383,7 +383,7 @@ def tecini142(
     )
     if ret != 0:
         raise TecioError(
-            f"TECINI142 Error: fname={fname!r}, return_code={ret}"
+            f"tecini142 Error: fname={fname!r}, return_code={ret}"
         )
 
 
@@ -401,9 +401,9 @@ def tecend142() -> None:
     - Must be called after all data has been written
     - Flushes all pending data and closes the file
     """
-    ret = tecio.TECEND142()
+    ret = lib.tecend142()
     if ret != 0:
-        raise TecioError(f"TECEND142 Error: return_code={ret}")
+        raise TecioError(f"tecend142 Error: return_code={ret}")
 
 
 def tecflush142(
@@ -436,12 +436,12 @@ def tecflush142(
     else:
         zones_ptr = ctypes.POINTER(ctypes.c_int32)()
 
-    ret = tecio.TECFLUSH142(
+    ret = lib.tecflush142(
         ctypes.byref(num_zones_c),
         zones_ptr,
     )
     if ret != 0:
-        raise TecioError(f"TECFLUSH142 Error: return_code={ret}")
+        raise TecioError(f"tecflush142 Error: return_code={ret}")
 
 
 def tecfil142() -> int:
@@ -459,9 +459,9 @@ def tecfil142() -> int:
     """
     output_file_handle = ctypes.c_int32(0)
 
-    ret = tecio.TECFIL142(ctypes.byref(output_file_handle))
+    ret = lib.tecfil142(ctypes.byref(output_file_handle))
     if ret != 0:
-        raise TecioError(f"TECFIL142 Error: return_code={ret}")
+        raise TecioError(f"tecfil142 Error: return_code={ret}")
 
     return output_file_handle.value
 
@@ -484,9 +484,9 @@ def tecforeign142(output_foreign_byte_order: int) -> None:
     """
     foreign_c = ctypes.c_int32(output_foreign_byte_order)
 
-    ret = tecio.TECFOREIGN142(ctypes.byref(foreign_c))
+    ret = lib.tecforeign142(ctypes.byref(foreign_c))
     if ret != 0:
-        raise TecioError(f"TECFOREIGN142 Error: return_code={ret}")
+        raise TecioError(f"tecforeign142 Error: return_code={ret}")
 
 
 # ---- Zone creation -------------------------------------------------
@@ -577,7 +577,7 @@ def teczne142(
     share_var_array = _process_sequence(share_var_from_zone)
     share_var_ptr = ctypes.cast(share_var_array, ctypes.POINTER(ctypes.c_int32)) if share_var_array else ctypes.POINTER(ctypes.c_int32)()
 
-    ret = tecio.TECZNE142(
+    ret = lib.teczne142(
         ctypes.c_char_p(zone_title.encode("utf-8")),
         ctypes.byref(zone_type_c),
         ctypes.byref(imx_c),
@@ -602,7 +602,7 @@ def teczne142(
     )
     if ret != 0:
         raise TecioError(
-            f"TECZNE142 Error: zone_title={zone_title!r}, return_code={ret}"
+            f"teczne142 Error: zone_title={zone_title!r}, return_code={ret}"
         )
 
 
@@ -674,7 +674,7 @@ def tecpolyzne142(
     share_var_array = _process_sequence(share_var_from_zone)
     share_var_ptr = ctypes.cast(share_var_array, ctypes.POINTER(ctypes.c_int32)) if share_var_array else ctypes.POINTER(ctypes.c_int32)()
 
-    ret = tecio.TECPOLYZNE142(
+    ret = lib.tecpolyzne142(
         ctypes.c_char_p(zone_title.encode("utf-8")),
         ctypes.byref(zone_type_c),
         ctypes.byref(num_nodes_c),
@@ -694,7 +694,7 @@ def tecpolyzne142(
     )
     if ret != 0:
         raise TecioError(
-            f"TECPOLYZNE142 Error: zone_title={zone_title!r}, return_code={ret}"
+            f"tecpolyzne142 Error: zone_title={zone_title!r}, return_code={ret}"
         )
 
 
@@ -760,7 +760,7 @@ def tecznefemixed142(
     share_var_array = _process_sequence(share_var_from_zone)
     share_var_ptr = ctypes.cast(share_var_array, ctypes.POINTER(ctypes.c_int32)) if share_var_array else ctypes.POINTER(ctypes.c_int32)()
 
-    ret = tecio.TECZNEFEMIXED142(
+    ret = lib.tecznefemixed142(
         ctypes.c_char_p(zone_title.encode("utf-8")),
         ctypes.byref(num_nodes_c),
         ctypes.byref(num_elements_c),
@@ -778,7 +778,7 @@ def tecznefemixed142(
     )
     if ret != 0:
         raise TecioError(
-            f"TECZNEFEMIXED142 Error: zone_title={zone_title!r}, return_code={ret}"
+            f"tecznefemixed142 Error: zone_title={zone_title!r}, return_code={ret}"
         )
 
 
@@ -821,7 +821,7 @@ def tecijkptn142(
     jmax_c = ctypes.c_int32(jmax)
     kmax_c = ctypes.c_int32(kmax)
 
-    ret = tecio.TECIJKPTN142(
+    ret = lib.tecijkptn142(
         ctypes.byref(partition_owner_zone_c),
         ctypes.byref(imin_c),
         ctypes.byref(jmin_c),
@@ -832,7 +832,7 @@ def tecijkptn142(
     )
     if ret != 0:
         raise TecioError(
-            f"TECIJKPTN142 Error: partition_owner_zone={partition_owner_zone}, "
+            f"tecijkptn142 Error: partition_owner_zone={partition_owner_zone}, "
             f"return_code={ret}"
         )
 
@@ -860,14 +860,14 @@ def tecfeptn142(
     num_nodes_c = ctypes.c_int32(num_nodes)
     num_elements_c = ctypes.c_int32(num_elements)
 
-    ret = tecio.TECFEPTN142(
+    ret = lib.tecfeptn142(
         ctypes.byref(partition_owner_zone_c),
         ctypes.byref(num_nodes_c),
         ctypes.byref(num_elements_c),
     )
     if ret != 0:
         raise TecioError(
-            f"TECFEPTN142 Error: partition_owner_zone={partition_owner_zone}, "
+            f"tecfeptn142 Error: partition_owner_zone={partition_owner_zone}, "
             f"return_code={ret}"
         )
 
@@ -898,7 +898,7 @@ def tecfemixedptn142(
     num_elements_c = ctypes.c_int32(num_elements)
     num_nodes_per_element_c = ctypes.c_int32(num_nodes_per_element)
 
-    ret = tecio.TECFEMIXEDPTN142(
+    ret = lib.tecfemixedptn142(
         ctypes.byref(partition_owner_zone_c),
         ctypes.byref(num_nodes_c),
         ctypes.byref(num_elements_c),
@@ -906,7 +906,7 @@ def tecfemixedptn142(
     )
     if ret != 0:
         raise TecioError(
-            f"TECFEMIXEDPTN142 Error: partition_owner_zone={partition_owner_zone}, "
+            f"tecfemixedptn142 Error: partition_owner_zone={partition_owner_zone}, "
             f"return_code={ret}"
         )
 
@@ -945,14 +945,14 @@ def tecdat142(
     n = ctypes.c_int32(arr.size)
     is_double_c = ctypes.c_int32(1 if is_double else 0)
 
-    ret = tecio.TECDAT142(
+    ret = lib.tecdat142(
         ctypes.byref(n),
         data_ptr,
         ctypes.byref(is_double_c),
     )
     if ret != 0:
         raise TecioError(
-            f"TECDAT142 Error: n={arr.size}, is_double={is_double}, return_code={ret}"
+            f"tecdat142 Error: n={arr.size}, is_double={is_double}, return_code={ret}"
         )
 
 
@@ -976,9 +976,9 @@ def tecnod142(connectivity: Sequence[int]) -> None:
     conn_array = (ctypes.c_int32 * len(connectivity))(*connectivity)
     conn_ptr = ctypes.cast(conn_array, ctypes.POINTER(ctypes.c_int32))
 
-    ret = tecio.TECNOD142(conn_ptr)
+    ret = lib.tecnod142(conn_ptr)
     if ret != 0:
-        raise TecioError(f"TECNOD142 Error: return_code={ret}")
+        raise TecioError(f"tecnod142 Error: return_code={ret}")
 
 
 def tecnode142(connectivity: npt.ArrayLike) -> None:
@@ -1004,12 +1004,12 @@ def tecnode142(connectivity: npt.ArrayLike) -> None:
     n = ctypes.c_int32(conn_array.size)
     conn_ptr = conn_array.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
 
-    ret = tecio.TECNODE142(
+    ret = lib.tecnode142(
         ctypes.byref(n),
         conn_ptr,
     )
     if ret != 0:
-        raise TecioError(f"TECNODE142 Error: n={conn_array.size}, return_code={ret}")
+        raise TecioError(f"tecnode142 Error: n={conn_array.size}, return_code={ret}")
 
 
 def tecznemap142(node_map: npt.ArrayLike) -> None:
@@ -1032,13 +1032,13 @@ def tecznemap142(node_map: npt.ArrayLike) -> None:
     n = ctypes.c_int32(node_map_array.size)
     node_map_ptr = node_map_array.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
 
-    ret = tecio.TECZNEMAP142(
+    ret = lib.tecznemap142(
         ctypes.byref(n),
         node_map_ptr,
     )
     if ret != 0:
         raise TecioError(
-            f"TECZNEMAP142 Error: n={node_map_array.size}, return_code={ret}"
+            f"tecznemap142 Error: n={node_map_array.size}, return_code={ret}"
         )
 
 
@@ -1061,9 +1061,9 @@ def tecface142(face_connections: npt.ArrayLike) -> None:
     face_conn_array = np.ascontiguousarray(face_connections, dtype=np.int32)
     face_conn_ptr = face_conn_array.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
 
-    ret = tecio.TECFACE142(face_conn_ptr)
+    ret = lib.tecface142(face_conn_ptr)
     if ret != 0:
-        raise TecioError(f"TECFACE142 Error: return_code={ret}")
+        raise TecioError(f"tecface142 Error: return_code={ret}")
 
 
 def tecpolyface142(
@@ -1109,7 +1109,7 @@ def tecpolyface142(
         ctypes.POINTER(ctypes.c_int32)
     )
 
-    ret = tecio.TECPOLYFACE142(
+    ret = lib.tecpolyface142(
         ctypes.byref(num_faces),
         face_node_counts_ptr,
         face_nodes_ptr,
@@ -1118,7 +1118,7 @@ def tecpolyface142(
     )
     if ret != 0:
         raise TecioError(
-            f"TECPOLYFACE142 Error: num_faces={face_node_counts_array.size}, "
+            f"tecpolyface142 Error: num_faces={face_node_counts_array.size}, "
             f"return_code={ret}"
         )
 
@@ -1166,7 +1166,7 @@ def tecpolybconn142(
     else:
         bconn_zones_ptr = ctypes.POINTER(ctypes.c_int16)()
 
-    ret = tecio.TECPOLYBCONN142(
+    ret = lib.tecpolybconn142(
         ctypes.byref(num_boundary_faces),
         bconn_counts_ptr,
         bconn_elems_ptr,
@@ -1174,7 +1174,7 @@ def tecpolybconn142(
     )
     if ret != 0:
         raise TecioError(
-            f"TECPOLYBCONN142 Error: num_boundary_faces={bconn_counts_array.size}, "
+            f"tecpolybconn142 Error: num_boundary_faces={bconn_counts_array.size}, "
             f"return_code={ret}"
         )
 
@@ -1197,13 +1197,13 @@ def tecauxstr142(name: str, value: str) -> None:
     Notes:
     - Must be called after tecini142() but before first teczne142()
     """
-    ret = tecio.TECAUXSTR142(
+    ret = lib.tecauxstr142(
         ctypes.c_char_p(name.encode("utf-8")),
         ctypes.c_char_p(value.encode("utf-8")),
     )
     if ret != 0:
         raise TecioError(
-            f"TECAUXSTR142 Error: name={name!r}, value={value!r}, return_code={ret}"
+            f"tecauxstr142 Error: name={name!r}, value={value!r}, return_code={ret}"
         )
 
 
@@ -1227,14 +1227,14 @@ def tecvauxstr142(var: int, name: str, value: str) -> None:
     """
     var_c = ctypes.c_int32(var)
 
-    ret = tecio.TECVAUXSTR142(
+    ret = lib.tecvauxstr142(
         ctypes.byref(var_c),
         ctypes.c_char_p(name.encode("utf-8")),
         ctypes.c_char_p(value.encode("utf-8")),
     )
     if ret != 0:
         raise TecioError(
-            f"TECVAUXSTR142 Error: var={var}, name={name!r}, value={value!r}, "
+            f"tecvauxstr142 Error: var={var}, name={name!r}, value={value!r}, "
             f"return_code={ret}"
         )
 
@@ -1256,13 +1256,13 @@ def teczauxstr142(name: str, value: str) -> None:
     Notes:
     - Must be called after teczne142() for the current zone
     """
-    ret = tecio.TECZAUXSTR142(
+    ret = lib.teczauxstr142(
         ctypes.c_char_p(name.encode("utf-8")),
         ctypes.c_char_p(value.encode("utf-8")),
     )
     if ret != 0:
         raise TecioError(
-            f"TECZAUXSTR142 Error: name={name!r}, value={value!r}, return_code={ret}"
+            f"teczauxstr142 Error: name={name!r}, value={value!r}, return_code={ret}"
         )
 
 
@@ -1288,13 +1288,13 @@ def tecmpiinit142(communicator: int, main_rank: int) -> None:
     communicator_c = ctypes.c_int32(communicator)
     main_rank_c = ctypes.c_int32(main_rank)
 
-    ret = tecio.TECMPIINIT142(
+    ret = lib.tecmpiinit142(
         ctypes.byref(communicator_c),
         ctypes.byref(main_rank_c),
     )
     if ret != 0:
         raise TecioError(
-            f"TECMPIINIT142 Error: communicator={communicator}, "
+            f"tecmpiinit142 Error: communicator={communicator}, "
             f"main_rank={main_rank}, return_code={ret}"
         )
 
@@ -1317,8 +1317,8 @@ def tecusr142(user_rec: str) -> None:
     - Used to write custom data records into the file
     - Data is preserved but not interpreted by Tecplot
     """
-    ret = tecio.TECUSR142(ctypes.c_char_p(user_rec.encode("utf-8")))
+    ret = lib.tecusr142(ctypes.c_char_p(user_rec.encode("utf-8")))
     if ret != 0:
         raise TecioError(
-            f"TECUSR142 Error: user_rec={user_rec!r}, return_code={ret}"
+            f"tecusr142 Error: user_rec={user_rec!r}, return_code={ret}"
         )

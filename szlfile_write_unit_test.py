@@ -45,7 +45,7 @@ def test_gridandsolution(grid_file="grid.szplt", solution_template="solution.szp
     grid_file_handle = szlw.open_file(
         grid_file, "Title", ["x", "y"], file_type=FileType.GRID
     )
-    value_locations = [ValueLocation.NODAL, ValueLocation.NODAL]
+    value_locations = [ValueLocation.NODE_CENTERED, ValueLocation.NODE_CENTERED]
     z = szlw.create_ordered_zone(
         grid_file_handle,
         "Zone",
@@ -112,9 +112,9 @@ def test_ordered_ijk(file_name: str, ijk_dim: tuple[int, int, int]):
     var_names = ["x", "y", "z", "c"]
     file_handle = szlw.open_file(file_name, "Title", var_names)
     value_locations = [
-        ValueLocation.NODAL,
-        ValueLocation.NODAL,
-        ValueLocation.NODAL,
+        ValueLocation.NODE_CENTERED,
+        ValueLocation.NODE_CENTERED,
+        ValueLocation.NODE_CENTERED,
         ValueLocation.CELL_CENTERED,
     ]
     var_data_types = [DataType.FLOAT] * len(var_names)

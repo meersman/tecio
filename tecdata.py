@@ -22,7 +22,7 @@ class TecVariable:
 
     name: str
     data_type: DataType = DataType.DOUBLE
-    value_location: ValueLocation = ValueLocation.NODAL
+    value_location: ValueLocation = ValueLocation.NODE_CENTERED
     auxdata: Dict[str, str] = field(default_factory=dict)
 
 
@@ -512,7 +512,7 @@ class TecData:
         self,
         name: str,
         data_type: DataType = DataType.DOUBLE,
-        location: ValueLocation = ValueLocation.NODAL,
+        location: ValueLocation = ValueLocation.NODE_CENTERED,
     ) -> int:
         """
         Add a new variable to the dataset.
@@ -520,7 +520,7 @@ class TecData:
         Args:
             name: Variable name
             data_type: Data type for storage
-            location: Value location (NODAL or CELL_CENTERED)
+            location: Value location (NODE_CENTERED or CELL_CENTERED)
 
         Returns:
             Index of added variable (0-based)

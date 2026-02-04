@@ -11,7 +11,7 @@ import tecutils
 
 # Load tecio library
 TECIO_LIB_PATH = tecutils.get_tecio_lib()
-tecio = ctypes.cdll.LoadLibrary(TECIO_LIB_PATH)
+lib = ctypes.cdll.LoadLibrary(TECIO_LIB_PATH)
 
 
 # --------------------------------------------------------------------
@@ -56,7 +56,7 @@ class DataType(Enum):
 
 class ValueLocation(Enum):
     CELL_CENTERED = 0
-    NODAL = 1
+    NODE_CENTERED = 1
 
 
 # --------------------------------------------------------------------
@@ -64,92 +64,92 @@ class ValueLocation(Enum):
 # --------------------------------------------------------------------
 
 # ---- Reading SZL files ---------------------------------------------
-tecio.tecFileReaderOpen.restype = ctypes.c_int32
-tecio.tecFileReaderOpen.argtypes = [
+lib.tecFileReaderOpen.restype = ctypes.c_int32
+lib.tecFileReaderOpen.argtypes = [
     ctypes.c_char_p,
     ctypes.POINTER(ctypes.c_void_p),
 ]
-tecio.tecFileGetType.restype = ctypes.c_int32
-tecio.tecFileGetType.argtypes = [
+lib.tecFileGetType.restype = ctypes.c_int32
+lib.tecFileGetType.argtypes = [
     ctypes.c_void_p,
     ctypes.POINTER(ctypes.c_int32),
 ]
-tecio.tecDataSetGetTitle.restype = ctypes.c_int32
-tecio.tecDataSetGetTitle.argtypes = [
+lib.tecDataSetGetTitle.restype = ctypes.c_int32
+lib.tecDataSetGetTitle.argtypes = [
     ctypes.c_void_p,
     ctypes.POINTER(ctypes.c_char_p),
 ]
-tecio.tecDataSetGetNumVars.restype = ctypes.c_int32
-tecio.tecDataSetGetNumVars.argtypes = [
+lib.tecDataSetGetNumVars.restype = ctypes.c_int32
+lib.tecDataSetGetNumVars.argtypes = [
     ctypes.c_void_p,
     ctypes.POINTER(ctypes.c_int32),
 ]
-tecio.tecDataSetGetNumZones.restype = ctypes.c_int32
-tecio.tecDataSetGetNumZones.argtypes = [
+lib.tecDataSetGetNumZones.restype = ctypes.c_int32
+lib.tecDataSetGetNumZones.argtypes = [
     ctypes.c_void_p,
     ctypes.POINTER(ctypes.c_int32),
 ]
-tecio.tecDataSetAuxDataGetNumItems.restype = ctypes.c_int32
-tecio.tecDataSetAuxDataGetNumItems.argtypes = [
+lib.tecDataSetAuxDataGetNumItems.restype = ctypes.c_int32
+lib.tecDataSetAuxDataGetNumItems.argtypes = [
     ctypes.c_void_p,
     ctypes.POINTER(ctypes.c_int32),
 ]
 
 # ---- Reading SZL zones ---------------------------------------------
-tecio.tecZoneGetIJK.restype = ctypes.c_int32
-tecio.tecZoneGetIJK.argtypes = [
+lib.tecZoneGetIJK.restype = ctypes.c_int32
+lib.tecZoneGetIJK.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_int64),
     ctypes.POINTER(ctypes.c_int64),
     ctypes.POINTER(ctypes.c_int64),
 ]
-tecio.tecZoneGetTitle.restype = ctypes.c_int32
-tecio.tecZoneGetTitle.argtypes = [
+lib.tecZoneGetTitle.restype = ctypes.c_int32
+lib.tecZoneGetTitle.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_char_p),
 ]
-tecio.tecZoneGetType.restype = ctypes.c_int32
-tecio.tecZoneGetType.argtypes = [
+lib.tecZoneGetType.restype = ctypes.c_int32
+lib.tecZoneGetType.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_int32),
 ]
-tecio.tecZoneIsEnabled.restype = ctypes.c_int32
-tecio.tecZoneIsEnabled.argtypes = [
+lib.tecZoneIsEnabled.restype = ctypes.c_int32
+lib.tecZoneIsEnabled.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_int32),
 ]
-tecio.tecZoneGetSolutionTime.restype = ctypes.c_int32
-tecio.tecZoneGetSolutionTime.argtypes = [
+lib.tecZoneGetSolutionTime.restype = ctypes.c_int32
+lib.tecZoneGetSolutionTime.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_double),
 ]
-tecio.tecZoneGetStrandID.restype = ctypes.c_int32
-tecio.tecZoneGetStrandID.argtypes = [
+lib.tecZoneGetStrandID.restype = ctypes.c_int32
+lib.tecZoneGetStrandID.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_int32),
 ]
-tecio.tecZoneNodeMapIs64Bit.restype = ctypes.c_int32
-tecio.tecZoneNodeMapIs64Bit.argtypes = [
+lib.tecZoneNodeMapIs64Bit.restype = ctypes.c_int32
+lib.tecZoneNodeMapIs64Bit.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_int32),
 ]
-tecio.tecZoneNodeMapGet64.restype = ctypes.c_int32
-tecio.tecZoneNodeMapGet64.argtypes = [
+lib.tecZoneNodeMapGet64.restype = ctypes.c_int32
+lib.tecZoneNodeMapGet64.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.c_int64,
     ctypes.c_int64,
     ctypes.POINTER(ctypes.c_int64),
 ]
-tecio.tecZoneNodeMapGet.restype = ctypes.c_int32
-tecio.tecZoneNodeMapGet.argtypes = [
+lib.tecZoneNodeMapGet.restype = ctypes.c_int32
+lib.tecZoneNodeMapGet.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.c_int64,
@@ -158,55 +158,55 @@ tecio.tecZoneNodeMapGet.argtypes = [
 ]
 
 # ---- Reading SZL variable data -------------------------------------
-tecio.tecVarGetName.restype = ctypes.c_int32
-tecio.tecVarGetName.argtypes = [
+lib.tecVarGetName.restype = ctypes.c_int32
+lib.tecVarGetName.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_char_p),
 ]
-tecio.tecVarIsEnabled.restype = ctypes.c_int32
-tecio.tecVarIsEnabled.argtypes = [
+lib.tecVarIsEnabled.restype = ctypes.c_int32
+lib.tecVarIsEnabled.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_int32),
 ]
-tecio.tecZoneVarGetType.restype = ctypes.c_int32
-tecio.tecZoneVarGetType.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_int32,
-    ctypes.c_int32,
-    ctypes.POINTER(ctypes.c_int32),
-]
-tecio.tecZoneVarGetValueLocation.restype = ctypes.c_int32
-tecio.tecZoneVarGetValueLocation.argtypes = [
+lib.tecZoneVarGetType.restype = ctypes.c_int32
+lib.tecZoneVarGetType.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_int32),
 ]
-tecio.tecZoneVarIsPassive.restype = ctypes.c_int32
-tecio.tecZoneVarIsPassive.argtypes = [
+lib.tecZoneVarGetValueLocation.restype = ctypes.c_int32
+lib.tecZoneVarGetValueLocation.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_int32),
 ]
-tecio.tecZoneVarGetSharedZone.restype = ctypes.c_int32
-tecio.tecZoneVarGetSharedZone.argtypes = [
+lib.tecZoneVarIsPassive.restype = ctypes.c_int32
+lib.tecZoneVarIsPassive.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_int32),
 ]
-tecio.tecZoneVarGetNumValues.restype = ctypes.c_int32
-tecio.tecZoneVarGetNumValues.argtypes = [
+lib.tecZoneVarGetSharedZone.restype = ctypes.c_int32
+lib.tecZoneVarGetSharedZone.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_int32),
 ]
-tecio.tecZoneVarGetFloatValues.restype = ctypes.c_int32
-tecio.tecZoneVarGetFloatValues.argtypes = [
+lib.tecZoneVarGetNumValues.restype = ctypes.c_int32
+lib.tecZoneVarGetNumValues.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecZoneVarGetFloatValues.restype = ctypes.c_int32
+lib.tecZoneVarGetFloatValues.argtypes = [
     ctypes.c_void_p,  # File Handle
     ctypes.c_int32,  # Zone index
     ctypes.c_int32,  # Variable index
@@ -214,8 +214,8 @@ tecio.tecZoneVarGetFloatValues.argtypes = [
     ctypes.c_int64,  # Number of values
     ctypes.POINTER(ctypes.c_float),  # Values
 ]
-tecio.tecZoneVarGetDoubleValues.restype = ctypes.c_int32
-tecio.tecZoneVarGetDoubleValues.argtypes = [
+lib.tecZoneVarGetDoubleValues.restype = ctypes.c_int32
+lib.tecZoneVarGetDoubleValues.argtypes = [
     ctypes.c_void_p,  # File Handle
     ctypes.c_int32,  # Zone index
     ctypes.c_int32,  # Variable index
@@ -223,8 +223,8 @@ tecio.tecZoneVarGetDoubleValues.argtypes = [
     ctypes.c_int64,  # Number of values
     ctypes.POINTER(ctypes.c_double),  # Values
 ]
-tecio.tecZoneVarGetInt32Values.restype = ctypes.c_int32
-tecio.tecZoneVarGetInt32Values.argtypes = [
+lib.tecZoneVarGetInt32Values.restype = ctypes.c_int32
+lib.tecZoneVarGetInt32Values.argtypes = [
     ctypes.c_void_p,  # File Handle
     ctypes.c_int32,  # Zone index
     ctypes.c_int32,  # Variable index
@@ -232,8 +232,8 @@ tecio.tecZoneVarGetInt32Values.argtypes = [
     ctypes.c_int64,  # Number of values
     ctypes.POINTER(ctypes.c_int32),  # Values
 ]
-tecio.tecZoneVarGetInt16Values.restype = ctypes.c_int32
-tecio.tecZoneVarGetInt16Values.argtypes = [
+lib.tecZoneVarGetInt16Values.restype = ctypes.c_int32
+lib.tecZoneVarGetInt16Values.argtypes = [
     ctypes.c_void_p,  # File Handle
     ctypes.c_int32,  # Zone index
     ctypes.c_int32,  # Variable index
@@ -241,8 +241,8 @@ tecio.tecZoneVarGetInt16Values.argtypes = [
     ctypes.c_int64,  # Number of values
     ctypes.POINTER(ctypes.c_int16),  # Values
 ]
-tecio.tecZoneVarGetUInt8Values.restype = ctypes.c_int32
-tecio.tecZoneVarGetUInt8Values.argtypes = [
+lib.tecZoneVarGetUInt8Values.restype = ctypes.c_int32
+lib.tecZoneVarGetUInt8Values.argtypes = [
     ctypes.c_void_p,  # File Handle
     ctypes.c_int32,  # Zone index
     ctypes.c_int32,  # Variable index
@@ -252,40 +252,40 @@ tecio.tecZoneVarGetUInt8Values.argtypes = [
 ]
 
 # ---- Reading SZL aux data ------------------------------------------
-tecio.tecDataSetAuxDataGetNumItems.restype = ctypes.c_int32
-tecio.tecDataSetAuxDataGetNumItems.argtypes = [
+lib.tecDataSetAuxDataGetNumItems.restype = ctypes.c_int32
+lib.tecDataSetAuxDataGetNumItems.argtypes = [
     ctypes.c_void_p,
     ctypes.POINTER(ctypes.c_int32),
 ]
-tecio.tecDataSetAuxDataGetItem.restype = ctypes.c_int32
-tecio.tecDataSetAuxDataGetItem.argtypes = [
+lib.tecDataSetAuxDataGetItem.restype = ctypes.c_int32
+lib.tecDataSetAuxDataGetItem.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_char_p),
     ctypes.POINTER(ctypes.c_char_p),
 ]
-tecio.tecVarAuxDataGetNumItems.restype = ctypes.c_int32
-tecio.tecVarAuxDataGetNumItems.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_int32,
-    ctypes.POINTER(ctypes.c_int32),
-]
-tecio.tecVarAuxDataGetItem.restype = ctypes.c_int32
-tecio.tecVarAuxDataGetItem.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_int32,
-    ctypes.c_int32,
-    ctypes.POINTER(ctypes.c_char_p),
-    ctypes.POINTER(ctypes.c_char_p),
-]
-tecio.tecZoneAuxDataGetNumItems.restype = ctypes.c_int32
-tecio.tecZoneAuxDataGetNumItems.argtypes = [
+lib.tecVarAuxDataGetNumItems.restype = ctypes.c_int32
+lib.tecVarAuxDataGetNumItems.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_int32),
 ]
-tecio.tecZoneAuxDataGetItem.restype = ctypes.c_int32
-tecio.tecZoneAuxDataGetItem.argtypes = [
+lib.tecVarAuxDataGetItem.restype = ctypes.c_int32
+lib.tecVarAuxDataGetItem.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_char_p),
+    ctypes.POINTER(ctypes.c_char_p),
+]
+lib.tecZoneAuxDataGetNumItems.restype = ctypes.c_int32
+lib.tecZoneAuxDataGetNumItems.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecZoneAuxDataGetItem.restype = ctypes.c_int32
+lib.tecZoneAuxDataGetItem.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.c_int32,
@@ -298,8 +298,8 @@ tecio.tecZoneAuxDataGetItem.argtypes = [
 # --------------------------------------------------------------------
 
 # ---- Create SZL objects --------------------------------------------
-tecio.tecFileWriterOpen.restype = ctypes.c_int32
-tecio.tecFileWriterOpen.argtypes = [
+lib.tecFileWriterOpen.restype = ctypes.c_int32
+lib.tecFileWriterOpen.argtypes = [
     ctypes.c_char_p,  # fileName
     ctypes.c_char_p,  # dataSetTitle
     ctypes.c_char_p,  # varNames (comma separated)
@@ -309,12 +309,12 @@ tecio.tecFileWriterOpen.argtypes = [
     ctypes.c_void_p,  # gridFileHandle (optional)
     ctypes.POINTER(ctypes.c_void_p),  # out fileHandle
 ]
-tecio.tecFileWriterClose.restype = ctypes.c_int32
-tecio.tecFileWriterClose.argtypes = [
+lib.tecFileWriterClose.restype = ctypes.c_int32
+lib.tecFileWriterClose.argtypes = [
     ctypes.POINTER(ctypes.c_void_p),
 ]
-tecio.tecZoneCreateIJK.restype = ctypes.c_int32
-tecio.tecZoneCreateIJK.argtypes = [
+lib.tecZoneCreateIJK.restype = ctypes.c_int32
+lib.tecZoneCreateIJK.argtypes = [
     ctypes.c_void_p,  # file_handle
     ctypes.c_char_p,  # zoneTitle
     ctypes.c_int64,  # I
@@ -329,8 +329,8 @@ tecio.tecZoneCreateIJK.argtypes = [
     ctypes.c_int32,  # faceNeighborMode
     ctypes.POINTER(ctypes.c_int32),  # out zone
 ]
-tecio.tecZoneSetUnsteadyOptions.restype = ctypes.c_int32
-tecio.tecZoneSetUnsteadyOptions.argtypes = [
+lib.tecZoneSetUnsteadyOptions.restype = ctypes.c_int32
+lib.tecZoneSetUnsteadyOptions.argtypes = [
     ctypes.c_void_p,  # file_handle
     ctypes.c_int32,  # zone
     ctypes.c_double,  # solutionTime
@@ -338,8 +338,8 @@ tecio.tecZoneSetUnsteadyOptions.argtypes = [
 ]
 
 # ---- Write variable value functions --------------------------------
-tecio.tecZoneVarWriteDoubleValues.restype = ctypes.c_int32
-tecio.tecZoneVarWriteDoubleValues.argtypes = [
+lib.tecZoneVarWriteDoubleValues.restype = ctypes.c_int32
+lib.tecZoneVarWriteDoubleValues.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.c_int32,
@@ -347,8 +347,8 @@ tecio.tecZoneVarWriteDoubleValues.argtypes = [
     ctypes.c_int64,  # count
     ctypes.POINTER(ctypes.c_double),
 ]
-tecio.tecZoneVarWriteFloatValues.restype = ctypes.c_int32
-tecio.tecZoneVarWriteFloatValues.argtypes = [
+lib.tecZoneVarWriteFloatValues.restype = ctypes.c_int32
+lib.tecZoneVarWriteFloatValues.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.c_int32,
@@ -356,8 +356,8 @@ tecio.tecZoneVarWriteFloatValues.argtypes = [
     ctypes.c_int64,
     ctypes.POINTER(ctypes.c_float),
 ]
-tecio.tecZoneVarWriteInt32Values.restype = ctypes.c_int32
-tecio.tecZoneVarWriteInt32Values.argtypes = [
+lib.tecZoneVarWriteInt32Values.restype = ctypes.c_int32
+lib.tecZoneVarWriteInt32Values.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.c_int32,
@@ -365,8 +365,8 @@ tecio.tecZoneVarWriteInt32Values.argtypes = [
     ctypes.c_int64,
     ctypes.POINTER(ctypes.c_int32),
 ]
-tecio.tecZoneVarWriteInt16Values.restype = ctypes.c_int32
-tecio.tecZoneVarWriteInt16Values.argtypes = [
+lib.tecZoneVarWriteInt16Values.restype = ctypes.c_int32
+lib.tecZoneVarWriteInt16Values.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.c_int32,
@@ -374,8 +374,8 @@ tecio.tecZoneVarWriteInt16Values.argtypes = [
     ctypes.c_int64,
     ctypes.POINTER(ctypes.c_int16),
 ]
-tecio.tecZoneVarWriteUInt8Values.restype = ctypes.c_int32
-tecio.tecZoneVarWriteUInt8Values.argtypes = [
+lib.tecZoneVarWriteUInt8Values.restype = ctypes.c_int32
+lib.tecZoneVarWriteUInt8Values.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.c_int32,
@@ -402,11 +402,11 @@ def tec_file_reader_open(file_name: str) -> ctypes.c_void_p:
     - ctypes.c_void_p: a handle used by other tecio functions.
 
     Raises:
-    - TecioError if the underlying tecio.tecFileReaderOpen returns non-zero.
+    - TecioError if the underlying lib.tecFileReaderOpen returns non-zero.
     """
     handle = ctypes.c_void_p(0)
 
-    ret = tecio.tecFileReaderOpen(
+    ret = lib.tecFileReaderOpen(
         ctypes.c_char_p(bytes(file_name, encoding="UTF-8")),
         ctypes.byref(handle),
     )
@@ -429,11 +429,11 @@ def tec_file_get_type(handle: ctypes.c_void_p) -> FileType:
     - FileType enum indicating FULL, GRID or SOLUTION.
 
     Raises:
-    - TecioError on non-zero return code from tecio.
+    - TecioError on non-zero return code from lib.
     """
     file_type = ctypes.c_int32(0)
 
-    ret = tecio.tecFileGetType(handle, ctypes.byref(file_type))
+    ret = lib.tecFileGetType(handle, ctypes.byref(file_type))
     if ret != 0:
         raise TecioError(f"Error getting file type: handle:{handle}, return_code={ret}")
 
@@ -455,7 +455,7 @@ def tec_data_set_get_title(handle: ctypes.c_void_p) -> str:
     """
     title = ctypes.c_char_p(0)
 
-    ret = tecio.tecDataSetGetTitle(handle, ctypes.byref(title))
+    ret = lib.tecDataSetGetTitle(handle, ctypes.byref(title))
     if ret != 0:
         raise TecioError(
             f"Error getting data set title: handle={handle}, return_code={ret}"
@@ -479,7 +479,7 @@ def tec_data_set_get_num_vars(handle: ctypes.c_void_p) -> int:
     """
     num_vars = ctypes.c_int32(0)
 
-    ret = tecio.tecDataSetGetNumVars(handle, ctypes.byref(num_vars))
+    ret = lib.tecDataSetGetNumVars(handle, ctypes.byref(num_vars))
     if ret != 0:
         raise TecioError(
             f"Error getting number of variables: handle={handle}, return_code={ret}"
@@ -503,7 +503,7 @@ def tec_data_set_get_num_zones(handle: ctypes.c_void_p) -> int:
     """
     num_zones = ctypes.c_int32(0)
 
-    ret = tecio.tecDataSetGetNumZones(handle, ctypes.byref(num_zones))
+    ret = lib.tecDataSetGetNumZones(handle, ctypes.byref(num_zones))
     if ret != 0:
         raise TecioError(
             f"Error getting number of zones: handle={handle}, return_code={ret}"
@@ -533,7 +533,7 @@ def tec_zone_get_ijk(handle: ctypes.c_void_p, zone_index: int) -> Tuple[int, int
     J = ctypes.c_int64(0)
     K = ctypes.c_int64(0)
 
-    ret = tecio.tecZoneGetIJK(
+    ret = lib.tecZoneGetIJK(
         handle,
         ctypes.c_int32(zone_index),
         ctypes.byref(I),
@@ -564,7 +564,7 @@ def tec_zone_get_title(handle: ctypes.c_void_p, zone_index: int) -> str:
     """
     zone_title = ctypes.c_char_p(0)
 
-    ret = tecio.tecZoneGetTitle(
+    ret = lib.tecZoneGetTitle(
         handle, ctypes.c_int32(zone_index), ctypes.byref(zone_title)
     )
     if ret != 0:
@@ -591,7 +591,7 @@ def tec_zone_get_type(handle: ctypes.c_void_p, zone_index: int) -> ZoneType:
     """
     zone_type = ctypes.c_int32(0)
 
-    ret = tecio.tecZoneGetType(
+    ret = lib.tecZoneGetType(
         handle, ctypes.c_int32(zone_index), ctypes.byref(zone_type)
     )
     if ret != 0:
@@ -618,7 +618,7 @@ def tec_zone_is_enabled(handle: ctypes.c_void_p, zone_index: int) -> bool:
     """
     is_enabled = ctypes.c_int32(0)
 
-    ret = tecio.tecZoneIsEnabled(
+    ret = lib.tecZoneIsEnabled(
         handle, ctypes.c_int32(zone_index), ctypes.byref(is_enabled)
     )
     if ret != 0:
@@ -645,7 +645,7 @@ def tec_zone_get_solution_time(handle: ctypes.c_void_p, zone_index: int) -> floa
     """
     solution_time = ctypes.c_double(0)
 
-    ret = tecio.tecZoneGetSolutionTime(
+    ret = lib.tecZoneGetSolutionTime(
         handle,
         ctypes.c_int32(zone_index),
         ctypes.byref(solution_time),
@@ -674,7 +674,7 @@ def tec_zone_get_strand_id(handle: ctypes.c_void_p, zone_index: int) -> int:
     """
     strand_id = ctypes.c_int32(0)
 
-    ret = tecio.tecZoneGetStrandID(
+    ret = lib.tecZoneGetStrandID(
         handle, ctypes.c_int32(zone_index), ctypes.byref(strand_id)
     )
     if ret != 0:
@@ -700,7 +700,7 @@ def is_64bit(handle: ctypes.c_void_p, zone_index: int) -> bool:
     - TecioError on failure.
     """
     is64bit = ctypes.c_int32(0)
-    ret = tecio.tecZoneNodeMapIs64Bit(
+    ret = lib.tecZoneNodeMapIs64Bit(
         handle, ctypes.c_int32(zone_index), ctypes.byref(is64bit)
     )
     if ret != 0:
@@ -735,7 +735,7 @@ def tec_zone_node_map_get_64(
     size_of_array = num_elements * nodes_per_cell
     nodemap = (ctypes.c_int64 * size_of_array)()
 
-    ret = tecio.tecZoneNodeMapGet64(
+    ret = lib.tecZoneNodeMapGet64(
         handle,
         ctypes.c_int32(zone_index),
         ctypes.c_int64(1),
@@ -778,7 +778,7 @@ def tec_zone_node_map_get(
     size_of_array = num_elements * nodes_per_cell
     nodemap = (ctypes.c_int32 * size_of_array)()
 
-    ret = tecio.tecZoneNodeMapGet(
+    ret = lib.tecZoneNodeMapGet(
         handle,
         ctypes.c_int32(zone_index),
         ctypes.c_int64(1),
@@ -814,7 +814,7 @@ def tec_var_get_name(handle: ctypes.c_void_p, var_index: int) -> str:
     """
     var_name = ctypes.c_char_p(0)
 
-    ret = tecio.tecVarGetName(handle, ctypes.c_int32(var_index), ctypes.byref(var_name))
+    ret = lib.tecVarGetName(handle, ctypes.c_int32(var_index), ctypes.byref(var_name))
     if ret != 0:
         raise TecioError(
             f"tecVarGetName Error: handle={handle}, var_index={var_index}, return_code={ret}"
@@ -839,7 +839,7 @@ def tec_var_is_enabled(handle: ctypes.c_void_p, var_index: int) -> bool:
     """
     is_enabled = ctypes.c_int32(0)
 
-    ret = tecio.tecVarIsEnabled(
+    ret = lib.tecVarIsEnabled(
         handle, ctypes.c_int32(var_index), ctypes.byref(is_enabled)
     )
     if ret != 0:
@@ -869,7 +869,7 @@ def tec_zone_var_get_type(
     """
     var_type = ctypes.c_int32(0)
 
-    ret = tecio.tecZoneVarGetType(
+    ret = lib.tecZoneVarGetType(
         handle,
         ctypes.c_int32(zone_index),
         ctypes.c_int32(var_index),
@@ -903,7 +903,7 @@ def tec_zone_var_get_value_location(
     """
     value_location = ctypes.c_int32(0)
 
-    ret = tecio.tecZoneVarGetValueLocation(
+    ret = lib.tecZoneVarGetValueLocation(
         handle,
         ctypes.c_int32(zone_index),
         ctypes.c_int32(var_index),
@@ -937,7 +937,7 @@ def tec_zone_var_is_passive(
     """
     is_passive = ctypes.c_int32(0)
 
-    ret = tecio.tecZoneVarIsPassive(
+    ret = lib.tecZoneVarIsPassive(
         handle,
         ctypes.c_int32(zone_index),
         ctypes.c_int32(var_index),
@@ -970,7 +970,7 @@ def tec_zone_var_get_shared_zone(
     """
     shared_zone = ctypes.c_int32(0)
 
-    ret = tecio.tecZoneVarGetSharedZone(
+    ret = lib.tecZoneVarGetSharedZone(
         handle,
         ctypes.c_int32(zone_index),
         ctypes.c_int32(var_index),
@@ -1003,7 +1003,7 @@ def tec_zone_var_get_num_values(
     """
     num_values = ctypes.c_int32(0)
 
-    ret = tecio.tecZoneVarGetNumValues(
+    ret = lib.tecZoneVarGetNumValues(
         handle,
         ctypes.c_int32(zone_index),
         ctypes.c_int32(var_index),
@@ -1042,7 +1042,7 @@ def tec_zone_var_get_float_values(
     """
     values = (ctypes.c_float * num_values)()
 
-    ret = tecio.tecZoneVarGetFloatValues(
+    ret = lib.tecZoneVarGetFloatValues(
         handle,
         ctypes.c_int32(zone_index),
         ctypes.c_int32(var_index),
@@ -1087,7 +1087,7 @@ def tec_zone_var_get_double_values(
     """
     values = (ctypes.c_double * num_values)()
 
-    ret = tecio.tecZoneVarGetDoubleValues(
+    ret = lib.tecZoneVarGetDoubleValues(
         handle,
         ctypes.c_int32(zone_index),
         ctypes.c_int32(var_index),
@@ -1132,7 +1132,7 @@ def tec_zone_var_get_int32_values(
     """
     values = (ctypes.c_int32 * num_values)()
 
-    ret = tecio.tecZoneVarGetInt32Values(
+    ret = lib.tecZoneVarGetInt32Values(
         handle,
         ctypes.c_int32(zone_index),
         ctypes.c_int32(var_index),
@@ -1177,7 +1177,7 @@ def tec_zone_var_get_int16_values(
     """
     values = (ctypes.c_int16 * num_values)()
 
-    ret = tecio.tecZoneVarGetInt16Values(
+    ret = lib.tecZoneVarGetInt16Values(
         handle,
         ctypes.c_int32(zone_index),
         ctypes.c_int32(var_index),
@@ -1222,7 +1222,7 @@ def tec_zone_var_get_uint8_values(
     """
     values = (ctypes.c_uint8 * num_values)()
 
-    ret = tecio.tecZoneVarGetUInt8Values(
+    ret = lib.tecZoneVarGetUInt8Values(
         handle,
         ctypes.c_int32(zone_index),
         ctypes.c_int32(var_index),
@@ -1258,7 +1258,7 @@ def tec_data_set_aux_data_get_num_items(handle: ctypes.c_void_p) -> int:
     """
     num_auxdata_items = ctypes.c_int32(0)
 
-    ret = tecio.tecDataSetAuxDataGetNumItems(handle, ctypes.byref(num_auxdata_items))
+    ret = lib.tecDataSetAuxDataGetNumItems(handle, ctypes.byref(num_auxdata_items))
     if ret != 0:
         raise TecioError(
             f"tecDataSetAuxDataGetNumItems Error: handle={handle}, return_code={ret}"
@@ -1286,7 +1286,7 @@ def tec_data_set_aux_data_get_item(
     name = ctypes.c_char_p(0)
     value = ctypes.c_char_p(0)
 
-    ret = tecio.tecDataSetAuxDataGetItem(
+    ret = lib.tecDataSetAuxDataGetItem(
         handle,
         ctypes.c_int32(item_index),
         ctypes.byref(name),
@@ -1316,7 +1316,7 @@ def tec_var_aux_data_get_num_items(handle: ctypes.c_void_p, var_index: int) -> i
     """
     num_items = ctypes.c_int32(0)
 
-    ret = tecio.tecVarAuxDataGetNumItems(
+    ret = lib.tecVarAuxDataGetNumItems(
         handle, ctypes.c_int32(var_index), ctypes.byref(num_items)
     )
     if ret != 0:
@@ -1347,7 +1347,7 @@ def tec_var_aux_data_get_item(
     name = ctypes.c_char_p(0)
     value = ctypes.c_char_p(0)
 
-    ret = tecio.tecVarAuxDataGetItem(
+    ret = lib.tecVarAuxDataGetItem(
         handle,
         ctypes.c_int32(var_index),
         ctypes.c_int32(item_index),
@@ -1378,7 +1378,7 @@ def tec_zone_aux_data_get_num_items(handle: ctypes.c_void_p, zone_index: int) ->
     """
     num_items = ctypes.c_int32(0)
 
-    ret = tecio.tecZoneAuxDataGetNumItems(
+    ret = lib.tecZoneAuxDataGetNumItems(
         handle, ctypes.c_int32(zone_index), ctypes.byref(num_items)
     )
     if ret != 0:
@@ -1409,7 +1409,7 @@ def tec_zone_aux_data_get_item(
     name = ctypes.c_char_p(0)
     value = ctypes.c_char_p(0)
 
-    ret = tecio.tecZoneAuxDataGetItem(
+    ret = lib.tecZoneAuxDataGetItem(
         handle,
         ctypes.c_int32(zone_index),
         ctypes.c_int32(item_index),
@@ -1491,7 +1491,7 @@ def tec_file_writer_open(
     handle = ctypes.c_void_p()
     ft_int = int(file_type.value)
 
-    ret = tecio.tecFileWriterOpen(
+    ret = lib.tecFileWriterOpen(
         ctypes.c_char_p(file_name.encode("utf-8")),
         ctypes.c_char_p(dataset_title.encode("utf-8")),
         ctypes.c_char_p(var_names_csv.encode("utf-8")),
@@ -1522,7 +1522,7 @@ def tec_file_writer_close(handle: ctypes.c_void_p) -> None:
     Raises:
     - TecioError on non-zero return code.
     """
-    ret = tecio.tecFileWriterClose(ctypes.byref(handle))
+    ret = lib.tecFileWriterClose(ctypes.byref(handle))
     if ret != 0:
         raise TecioError(
             f"tecFileWriterClose Error: handle={handle}, return_code={ret}"
@@ -1587,7 +1587,7 @@ def tec_zone_create_ijk(
         arr = (ctypes.c_int32 * len(vl_list))(*vl_list)
         value_locations_ptr = arr
 
-    ret = tecio.tecZoneCreateIJK(
+    ret = lib.tecZoneCreateIJK(
         handle,
         ctypes.c_char_p(zone_title.encode("utf-8")),
         ctypes.c_int64(I),
@@ -1628,7 +1628,7 @@ def tec_zone_set_unsteady_options(
     Raises:
     - TecioError on non-zero return code.
     """
-    ret = tecio.tecZoneSetUnsteadyOptions(
+    ret = lib.tecZoneSetUnsteadyOptions(
         handle,
         ctypes.c_int32(zone),
         ctypes.c_double(solution_time),
@@ -1664,7 +1664,7 @@ def tec_zone_var_write_double_values(
         values, np.float64, ctypes.c_double
     )
 
-    ret = tecio.tecZoneVarWriteDoubleValues(
+    ret = lib.tecZoneVarWriteDoubleValues(
         handle,
         ctypes.c_int32(zone),
         ctypes.c_int32(var),
@@ -1699,7 +1699,7 @@ def tec_zone_var_write_float_values(
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.float32, ctypes.c_float)
 
-    ret = tecio.tecZoneVarWriteFloatValues(
+    ret = lib.tecZoneVarWriteFloatValues(
         handle,
         ctypes.c_int32(zone),
         ctypes.c_int32(var),
@@ -1734,7 +1734,7 @@ def tec_zone_var_write_int32_values(
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.int32, ctypes.c_int32)
 
-    ret = tecio.tecZoneVarWriteInt32Values(
+    ret = lib.tecZoneVarWriteInt32Values(
         handle,
         ctypes.c_int32(zone),
         ctypes.c_int32(var),
@@ -1769,7 +1769,7 @@ def tec_zone_var_write_int16_values(
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.int16, ctypes.c_int16)
 
-    ret = tecio.tecZoneVarWriteInt16Values(
+    ret = lib.tecZoneVarWriteInt16Values(
         handle,
         ctypes.c_int32(zone),
         ctypes.c_int32(var),
@@ -1804,7 +1804,7 @@ def tec_zone_var_write_uint8_values(
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.uint8, ctypes.c_uint8)
 
-    ret = tecio.tecZoneVarWriteUInt8Values(
+    ret = lib.tecZoneVarWriteUInt8Values(
         handle,
         ctypes.c_int32(zone),
         ctypes.c_int32(var),
