@@ -6,8 +6,8 @@ from typing import Iterable, Optional, Sequence
 import numpy as np
 import numpy.typing as npt
 
-import szlio
-from szlio import DataType, FileType, ValueLocation
+from . import szlio
+from .szlio import DataType, FileType, ValueLocation
 
 
 def open_file(

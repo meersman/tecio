@@ -7,7 +7,7 @@ from typing import Optional, Sequence, Union
 import numpy as np
 import numpy.typing as npt
 
-import tecutils
+from . import tecutils
 
 # Load tecio library
 TECIO_LIB_PATH = tecutils.get_tecio_lib()

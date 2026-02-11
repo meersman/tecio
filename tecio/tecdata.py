@@ -6,9 +6,9 @@ from typing import Dict, List, Optional, Sequence, Union
 import numpy as np
 import numpy.typing as npt
 
-import szlio
-import szlfile
-from szlio import DataType, FileType, ValueLocation, ZoneType
+from . import szlio
+from . import szlfile
+from .szlio import DataType, FileType, ValueLocation, ZoneType
 
 
 @dataclass

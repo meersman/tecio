@@ -7,7 +7,7 @@ from typing import Optional, Sequence, Tuple
 import numpy as np
 import numpy.typing as npt
 
-import tecutils
+from . import tecutils
 
 # Load tecio library
 TECIO_LIB_PATH = tecutils.get_tecio_lib()
@@ -57,6 +57,55 @@ class DataType(Enum):
 class ValueLocation(Enum):
     CELL_CENTERED = 0
     NODE_CENTERED = 1
+
+
+# --------------------------------------------------------------------
+# ---- Helper functions ----------------------------------
+# --------------------------------------------------------------------
+
+# ---- helper to prepare numpy arrays for ctypes -----------------------
+def _prepare_array_for_ctypes(
+    values: npt.ArrayLike, np_dtype, ctype
+) -> tuple[ctypes.POINTER, int, npt.NDArray]:
+    """
+    Convert an input array-like to a contiguous numpy array and return a ctypes pointer.
+
+    Inputs:
+    - values: array-like (list, tuple, numpy array)
+    - np_dtype: numpy dtype object or type (e.g. np.float32)
+    - ctype: corresponding ctypes scalar type (e.g. ctypes.c_float)
+
+    Returns:
+    - (ptr, count, backing_array)
+      * ptr: ctypes pointer suitable for passing to the C API
+      * count: int number of elements
+      * backing_array: the numpy array object (returned to keep it alive)
+
+    Notes:
+    - Caller should keep the returned backing_array alive until the native call completes.
+    - This function enforces dtype and C-contiguity.
+    """
+    arr = np.ascontiguousarray(values, dtype=np_dtype)
+    count = int(arr.size)
+    ptr = arr.ctypes.data_as(ctypes.POINTER(ctype))
+    return ptr, count, arr
+
+
+def _to_int_value(value: Union[int, Enum]) -> int:
+    """Convert Enum or int to int value."""
+    if isinstance(value, Enum):
+        return value.value
+    return int(value)
+
+
+def _process_sequence(
+    seq: Optional[Sequence[Union[int, Enum]]]
+) -> Optional[ctypes.Array]:
+    """Convert sequence of int/Enum to ctypes array, handling None."""
+    if seq is None:
+        return None
+    values = [_to_int_value(v) for v in seq]
+    return (ctypes.c_int32 * len(values))(*values)
 
 
 # --------------------------------------------------------------------
@@ -320,6 +369,21 @@ lib.tecZoneCreateIJK.argtypes = [
     ctypes.c_int64,  # I
     ctypes.c_int64,  # J
     ctypes.c_int64,  # K
+    ctypes.POINTER(ctypes.c_int32),  # varTypes
+    ctypes.POINTER(ctypes.c_int32),  # shareVarFromZone
+    ctypes.POINTER(ctypes.c_int32),  # valueLocations
+    ctypes.POINTER(ctypes.c_int32),  # passiveVarList
+    ctypes.c_int32,  # shareFaceNeighborsFromZone
+    ctypes.c_int64,  # numFaceConnections
+    ctypes.c_int32,  # faceNeighborMode
+    ctypes.POINTER(ctypes.c_int32),  # out zone
+]
+lib.tecZoneCreateFE.restype = ctypes.c_int32
+lib.tecZoneCreateFE.argtypes = [
+    ctypes.c_void_p,  # file_handle
+    ctypes.c_char_p,  # zoneTitle
+    ctypes.c_int64,  # numNodes
+    ctypes.c_int64,  # numCells
     ctypes.POINTER(ctypes.c_int32),  # varTypes
     ctypes.POINTER(ctypes.c_int32),  # shareVarFromZone
     ctypes.POINTER(ctypes.c_int32),  # valueLocations
@@ -1428,36 +1492,7 @@ def tec_zone_aux_data_get_item(
 # ---- Wrappers for C functions: SZL Write ---------------------------
 # --------------------------------------------------------------------
 
-
-# ---- helper to prepare numpy arrays for ctypes -----------------------
-def _prepare_array_for_ctypes(
-    values: npt.ArrayLike, np_dtype, ctype
-) -> tuple[ctypes.POINTER, int, npt.NDArray]:
-    """
-    Convert an input array-like to a contiguous numpy array and return a ctypes pointer.
-
-    Inputs:
-    - values: array-like (list, tuple, numpy array)
-    - np_dtype: numpy dtype object or type (e.g. np.float32)
-    - ctype: corresponding ctypes scalar type (e.g. ctypes.c_float)
-
-    Returns:
-    - (ptr, count, backing_array)
-      * ptr: ctypes pointer suitable for passing to the C API
-      * count: int number of elements
-      * backing_array: the numpy array object (returned to keep it alive)
-
-    Notes:
-    - Caller should keep the returned backing_array alive until the native call completes.
-    - This function enforces dtype and C-contiguity.
-    """
-    arr = np.ascontiguousarray(values, dtype=np_dtype)
-    count = int(arr.size)
-    ptr = arr.ctypes.data_as(ctypes.POINTER(ctype))
-    return ptr, count, arr
-
-
-# ---- Create SZL objects --------------------------------------------
+# ---- Initialization and File Handling ------------------------------
 def tec_file_writer_open(
     file_name: str,
     dataset_title: str,
@@ -1605,6 +1640,89 @@ def tec_zone_create_ijk(
     if ret != 0:
         raise TecioError(
             f"tecZoneCreateIJK Error: zone_title={zone_title!r}, I={I}, J={J}, K={K}, "
+            f"var_types_len={len(var_types) if var_types is not None else 0}, return_code={ret}"
+        )
+    return zone_out.value
+
+
+def tec_zone_create_fe(
+    handle: ctypes.c_void_p,
+    zone_title: str,
+    zone_type: Union[int, ZoneType],
+    num_nodes: int,
+    num_cells: int,
+    var_types: Optional[Sequence[DataType]] = None,
+    var_sharing: Optional[Sequence[int]] = None,
+    value_locations: Optional[Sequence[ValueLocation]] = None,
+) -> int:
+    """
+    Create an FE zone for writing.
+
+    Inputs:
+    - handle: ctypes.c_void_p writer handle
+    - zone_title: zone title string
+    - zone_type: ZoneType Enum type
+    - num_nodes: integer number of nodes
+    - num_cells: integer number of cells
+    - var_types: optional sequence of DataType enums specifying storage type
+      per variable (length should match dataset variables if provided)
+    - var_sharing: optional sequence indicating variable sharing (per-var)
+    - value_locations: optional sequence of ValueLocation enums per variable
+
+    Returns:
+    - int: created zone index (1-based) as returned by TecIO
+
+    Raises:
+    - TypeError if enum sequences are of incorrect type
+    - TecioError on non-zero tecio return code
+    """
+    zone_out = ctypes.c_int32()
+    
+    var_types_ptr = None
+    if var_types is not None:
+        vt_list = []
+        for v in var_types:
+            if not isinstance(v, DataType):
+                raise TypeError("All var_types entries must be szlio.DataType enums")
+            vt_list.append(int(v.value))
+        arr = (ctypes.c_int32 * len(vt_list))(*vt_list)
+        var_types_ptr = arr
+
+    var_sharing_ptr = None
+    if var_sharing is not None:
+        arr = (ctypes.c_int32 * len(var_sharing))(*list(var_sharing))
+        var_sharing_ptr = arr
+
+    value_locations_ptr = None
+    if value_locations is not None:
+        vl_list = []
+        for v in value_locations:
+            if not isinstance(v, ValueLocation):
+                raise TypeError(
+                    "All value_locations entries must be szlio.ValueLocation enums"
+                )
+            vl_list.append(int(v.value))
+        arr = (ctypes.c_int32 * len(vl_list))(*vl_list)
+        value_locations_ptr = arr
+
+    ret = lib.tecZoneCreateFE(
+        handle,
+        ctypes.c_char_p(zone_title.encode("utf-8")),
+        ctypes.c_int32(_to_int_value(zone_type)),    
+        ctypes.c_int64(num_nodes),
+        ctypes.c_int64(num_cells),
+        var_types_ptr,
+        var_sharing_ptr,
+        value_locations_ptr,
+        None,  # passiveVarList
+        ctypes.c_int32(0),
+        ctypes.c_int64(0),
+        ctypes.c_int32(0),
+        ctypes.byref(zone_out),
+    )
+    if ret != 0:
+        raise TecioError(
+            f"tecZoneCreateIJK Error: zone_title={zone_title!r}, ZoneType={zone_type!r}, NODES={num_nodes}, ELEMENTS={num_elements}, "
             f"var_types_len={len(var_types) if var_types is not None else 0}, return_code={ret}"
         )
     return zone_out.value

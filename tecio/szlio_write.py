@@ -6,9 +6,8 @@ from typing import Optional, Sequence
 import numpy as np
 import numpy.typing as npt
 
-import tecutils
-# use the canonical Enums from the read-side module
-from szlio import DataType, FileType, ValueLocation, ZoneType
+from . import tecutils
+from .szlio import DataType, FileType, ValueLocation, ZoneType
 
 # Load tecio library (uses same discovery helper as read-side code)
 TECIO_LIB_PATH = tecutils.get_tecio_lib()

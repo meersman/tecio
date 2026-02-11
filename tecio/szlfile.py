@@ -7,8 +7,8 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 import numpy as np
 import numpy.typing as npt
 
-import szlio
-from szlio import DataType, FileType, ValueLocation, ZoneType
+from . import szlio
+from .szlio import DataType, FileType, ValueLocation, ZoneType
 
 
 class Read:
@@ -491,7 +491,7 @@ class ReadAuxData:
         return str(self.data)
 
     
-class Write()
+class Write():
     """
     Write provides a high level API to write data to Tecplot szplt
     formatted binary files.
@@ -499,7 +499,7 @@ class Write()
     def __init__(self,
                  path: str,
                  dataset_title: str = "Untitled",
-                 var_names: Iterable[str],
+                 var_names: Iterable[str] = [],
                  file_type: FileType = FileType.FULL,
                  grid_file_handle: Optional[ctypes.c_void_p] = None,
                  ):
