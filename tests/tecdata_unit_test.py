@@ -20,7 +20,7 @@ def test_empty_dataset():
     print(f"Title: '{data.title}'")
     print(f"Number of variables: {data.num_vars}")
     print(f"Number of zones: {data.num_zones}")
-    
+
     # Demonstrate mutability
     data.title = "My New Title"
     data.num_zones = 5
@@ -42,17 +42,19 @@ def test_full_load():
     print(f"File Type: {data.file_type.name}")
     print(f"Number of variables: {data.num_vars}")
     print(f"Number of zones: {data.num_zones}")
-    
+
     # Check that num_vars matches length
     print(f"\nConsistency check:")
     print(f"  data.num_vars = {data.num_vars}")
     print(f"  len(data.variables) = {len(data.variables)}")
     print(f"  data.num_zones = {data.num_zones}")
     print(f"  len(data.zones) = {len(data.zones)}")
-    
+
     print(f"\nVariables (with all metadata loaded):")
     for i, var in enumerate(data.variables):
-        print(f"  [{i}] {var.name:20s} {var.data_type.name:8s} {var.value_location.name}")
+        print(
+            f"  [{i}] {var.name:20s} {var.data_type.name:8s} {var.value_location.name}"
+        )
         if var.auxdata:
             print(f"      Auxiliary data: {var.auxdata}")
 
@@ -121,7 +123,9 @@ def test_var_filter_by_index():
 def test_var_filter_by_name():
     """Test loading specific variables by name."""
     print("=" * 70)
-    print("TEST: Variable filter by name - TecData('Onera.szplt', vars=['X', 'Y', 'Z'])")
+    print(
+        "TEST: Variable filter by name - TecData('Onera.szplt', vars=['X', 'Y', 'Z'])"
+    )
     print("=" * 70)
 
     data = TecData("Onera.szplt", vars=["X", "Y", "Z"])
@@ -184,12 +188,14 @@ def test_metadata_only():
 
     print(f"\nVariables (all metadata loaded):")
     for i, var in enumerate(data.variables):
-        print(f"  [{i}] {var.name:20s} {var.data_type.name:8s} {var.value_location.name}")
+        print(
+            f"  [{i}] {var.name:20s} {var.data_type.name:8s} {var.value_location.name}"
+        )
 
     print(f"\nDataset Auxiliary data:")
     for name, value in data.auxdata.items():
         print(f"  {name}: {value}")
-    
+
     # Demonstrate mutability
     print(f"\nDemonstrate mutability:")
     print(f"  Original num_zones: {data.num_zones}")
@@ -241,7 +247,7 @@ def test_create_and_write():
     zone.set_variable_data(p_idx, P.ravel().astype(np.float32))
 
     print(f"Set data for {data.num_vars} variables")
-    
+
     # Show what will be written
     print("\n" + data.summary())
 
@@ -257,7 +263,7 @@ def test_create_and_write():
     print(f"  Title: {data_check.title}")
     print(f"  Variables: {[v.name for v in data_check.variables]}")
     print(f"  Zones: {[z.title for z in data_check.zones]}")
-    
+
     # Check data types preserved
     zone_check = data_check.zones[0]
     for i, var in enumerate(data_check.variables):
@@ -278,7 +284,7 @@ def test_copy_with_filter():
 
     print(f"Loaded {data.num_vars} variables: {[v.name for v in data.variables]}")
     print(f"Loaded {data.num_zones} zones")
-    
+
     # Show summary before writing
     print("\n" + data.summary())
 
@@ -307,7 +313,7 @@ def test_round_trip():
     print("Loaded original dataset")
     print(f"  Variables: {[v.name for v in original.variables]}")
     print(f"  Zones: {original.num_zones}")
-    
+
     # Get some data statistics
     zone = original.zones[0]
     x_data = zone.get_variable_data(0)
@@ -332,7 +338,7 @@ def test_round_trip():
     print(f"\nRead-back X data:")
     print(f"  dtype: {x_data_rb.dtype}")
     print(f"  min: {x_data_rb.min():.6f}, max: {x_data_rb.max():.6f}")
-    
+
     # Check if data matches
     if np.allclose(x_data, x_data_rb):
         print(f"\n✓ Data integrity verified - round-trip successful!")
@@ -346,17 +352,17 @@ def test_mutability():
     print("=" * 70)
     print("TEST: Mutability - all properties are read/write")
     print("=" * 70)
-    
+
     # Load data
     data = TecData("Onera.szplt", zones=[0], vars=["X", "Y"])
-    
+
     print("Original state:")
     print(f"  title: {data.title}")
     print(f"  num_vars: {data.num_vars}")
     print(f"  num_zones: {data.num_zones}")
     print(f"  variable[0].name: {data.variables[0].name}")
     print(f"  zone[0].title: {data.zones[0].title}")
-    
+
     # Mutate everything
     data.title = "Modified Title"
     data.num_vars = 99  # Can be different from len(variables) if needed
@@ -365,7 +371,7 @@ def test_mutability():
     data.variables[0].data_type = DataType.FLOAT
     data.zones[0].title = "Modified Zone"
     data.zones[0].solution_time = 3.14159
-    
+
     print("\nAfter mutation:")
     print(f"  title: {data.title}")
     print(f"  num_vars: {data.num_vars}")
@@ -374,16 +380,16 @@ def test_mutability():
     print(f"  variable[0].data_type: {data.variables[0].data_type.name}")
     print(f"  zone[0].title: {data.zones[0].title}")
     print(f"  zone[0].solution_time: {data.zones[0].solution_time}")
-    
+
     # Mutate data arrays
     zone = data.zones[0]
     x_data = zone.get_variable_data(0)
     print(f"\nOriginal X data range: [{x_data.min():.6f}, {x_data.max():.6f}]")
-    
+
     # Modify in place
     x_data[:] = x_data * 2.0
     print(f"After x_data *= 2.0: [{x_data.min():.6f}, {x_data.max():.6f}]")
-    
+
     # Or replace entirely
     new_data = np.random.random(zone.num_points)
     zone.set_variable_data(0, new_data)

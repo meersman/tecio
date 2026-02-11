@@ -318,7 +318,7 @@ def _to_int_value(value: Union[int, Enum]) -> int:
 
 
 def _process_sequence(
-    seq: Optional[Sequence[Union[int, Enum]]]
+    seq: Optional[Sequence[Union[int, Enum]]],
 ) -> Optional[ctypes.Array]:
     """Convert sequence of int/Enum to ctypes array, handling None."""
     if seq is None:
@@ -369,7 +369,9 @@ def tecini142(
     file_format_c = ctypes.c_int32(_to_int_value(file_format))
     file_type_c = ctypes.c_int32(_to_int_value(file_type))
     debug_c = ctypes.c_int32(_to_int_value(debug))
-    vis_double_c = ctypes.c_int32(1 if _to_int_value(vis_double) == DataType.DOUBLE.value else 0)
+    vis_double_c = ctypes.c_int32(
+        1 if _to_int_value(vis_double) == DataType.DOUBLE.value else 0
+    )
 
     ret = lib.tecini142(
         ctypes.c_char_p(title.encode("utf-8")),
@@ -382,9 +384,7 @@ def tecini142(
         ctypes.byref(vis_double_c),
     )
     if ret != 0:
-        raise TecioError(
-            f"tecini142 Error: fname={fname!r}, return_code={ret}"
-        )
+        raise TecioError(f"tecini142 Error: fname={fname!r}, return_code={ret}")
 
 
 def tecend142() -> None:
@@ -428,7 +428,7 @@ def tecflush142(
     - Retained zones can still be modified
     """
     num_zones_c = ctypes.c_int32(num_zones_to_retain)
-    
+
     zones_ptr = None
     if zones_to_retain is not None and len(zones_to_retain) > 0:
         zones_array = (ctypes.c_int32 * len(zones_to_retain))(*zones_to_retain)
@@ -504,7 +504,9 @@ def teczne142(
     parent_zone: int = 0,
     data_format: Union[int, DataFormat] = DataFormat.BLOCK,
     num_face_connections: int = 0,
-    face_neighbor_mode: Union[int, FaceNeighborMode] = FaceNeighborMode.LOCAL_ONE_TO_ONE,
+    face_neighbor_mode: Union[
+        int, FaceNeighborMode
+    ] = FaceNeighborMode.LOCAL_ONE_TO_ONE,
     total_num_face_nodes: int = 0,
     num_connected_boundary_faces: int = 0,
     total_num_boundary_connections: int = 0,
@@ -569,13 +571,25 @@ def teczne142(
 
     # Handle optional array parameters
     passive_array = _process_sequence(passive_var_list)
-    passive_ptr = ctypes.cast(passive_array, ctypes.POINTER(ctypes.c_int32)) if passive_array else ctypes.POINTER(ctypes.c_int32)()
+    passive_ptr = (
+        ctypes.cast(passive_array, ctypes.POINTER(ctypes.c_int32))
+        if passive_array
+        else ctypes.POINTER(ctypes.c_int32)()
+    )
 
     value_loc_array = _process_sequence(value_location)
-    value_loc_ptr = ctypes.cast(value_loc_array, ctypes.POINTER(ctypes.c_int32)) if value_loc_array else ctypes.POINTER(ctypes.c_int32)()
+    value_loc_ptr = (
+        ctypes.cast(value_loc_array, ctypes.POINTER(ctypes.c_int32))
+        if value_loc_array
+        else ctypes.POINTER(ctypes.c_int32)()
+    )
 
     share_var_array = _process_sequence(share_var_from_zone)
-    share_var_ptr = ctypes.cast(share_var_array, ctypes.POINTER(ctypes.c_int32)) if share_var_array else ctypes.POINTER(ctypes.c_int32)()
+    share_var_ptr = (
+        ctypes.cast(share_var_array, ctypes.POINTER(ctypes.c_int32))
+        if share_var_array
+        else ctypes.POINTER(ctypes.c_int32)()
+    )
 
     ret = lib.teczne142(
         ctypes.c_char_p(zone_title.encode("utf-8")),
@@ -666,13 +680,25 @@ def tecpolyzne142(
 
     # Handle optional array parameters
     passive_array = _process_sequence(passive_var_list)
-    passive_ptr = ctypes.cast(passive_array, ctypes.POINTER(ctypes.c_int32)) if passive_array else ctypes.POINTER(ctypes.c_int32)()
+    passive_ptr = (
+        ctypes.cast(passive_array, ctypes.POINTER(ctypes.c_int32))
+        if passive_array
+        else ctypes.POINTER(ctypes.c_int32)()
+    )
 
     value_loc_array = _process_sequence(value_location)
-    value_loc_ptr = ctypes.cast(value_loc_array, ctypes.POINTER(ctypes.c_int32)) if value_loc_array else ctypes.POINTER(ctypes.c_int32)()
+    value_loc_ptr = (
+        ctypes.cast(value_loc_array, ctypes.POINTER(ctypes.c_int32))
+        if value_loc_array
+        else ctypes.POINTER(ctypes.c_int32)()
+    )
 
     share_var_array = _process_sequence(share_var_from_zone)
-    share_var_ptr = ctypes.cast(share_var_array, ctypes.POINTER(ctypes.c_int32)) if share_var_array else ctypes.POINTER(ctypes.c_int32)()
+    share_var_ptr = (
+        ctypes.cast(share_var_array, ctypes.POINTER(ctypes.c_int32))
+        if share_var_array
+        else ctypes.POINTER(ctypes.c_int32)()
+    )
 
     ret = lib.tecpolyzne142(
         ctypes.c_char_p(zone_title.encode("utf-8")),
@@ -708,7 +734,9 @@ def tecznefemixed142(
     parent_zone: int = 0,
     data_format: Union[int, DataFormat] = DataFormat.BLOCK,
     num_face_connections: int = 0,
-    face_neighbor_mode: Union[int, FaceNeighborMode] = FaceNeighborMode.LOCAL_ONE_TO_ONE,
+    face_neighbor_mode: Union[
+        int, FaceNeighborMode
+    ] = FaceNeighborMode.LOCAL_ONE_TO_ONE,
     passive_var_list: Optional[Sequence[Union[int, VarStatus]]] = None,
     value_location: Optional[Sequence[Union[int, ValueLocation]]] = None,
     share_var_from_zone: Optional[Sequence[int]] = None,
@@ -752,13 +780,25 @@ def tecznefemixed142(
 
     # Handle optional array parameters
     passive_array = _process_sequence(passive_var_list)
-    passive_ptr = ctypes.cast(passive_array, ctypes.POINTER(ctypes.c_int32)) if passive_array else ctypes.POINTER(ctypes.c_int32)()
+    passive_ptr = (
+        ctypes.cast(passive_array, ctypes.POINTER(ctypes.c_int32))
+        if passive_array
+        else ctypes.POINTER(ctypes.c_int32)()
+    )
 
     value_loc_array = _process_sequence(value_location)
-    value_loc_ptr = ctypes.cast(value_loc_array, ctypes.POINTER(ctypes.c_int32)) if value_loc_array else ctypes.POINTER(ctypes.c_int32)()
+    value_loc_ptr = (
+        ctypes.cast(value_loc_array, ctypes.POINTER(ctypes.c_int32))
+        if value_loc_array
+        else ctypes.POINTER(ctypes.c_int32)()
+    )
 
     share_var_array = _process_sequence(share_var_from_zone)
-    share_var_ptr = ctypes.cast(share_var_array, ctypes.POINTER(ctypes.c_int32)) if share_var_array else ctypes.POINTER(ctypes.c_int32)()
+    share_var_ptr = (
+        ctypes.cast(share_var_array, ctypes.POINTER(ctypes.c_int32))
+        if share_var_array
+        else ctypes.POINTER(ctypes.c_int32)()
+    )
 
     ret = lib.tecznefemixed142(
         ctypes.c_char_p(zone_title.encode("utf-8")),
@@ -1151,9 +1191,7 @@ def tecpolybconn142(
     bconn_elems_array = np.ascontiguousarray(boundary_connection_elems, dtype=np.int32)
 
     num_boundary_faces = ctypes.c_int32(bconn_counts_array.size)
-    bconn_counts_ptr = bconn_counts_array.ctypes.data_as(
-        ctypes.POINTER(ctypes.c_int32)
-    )
+    bconn_counts_ptr = bconn_counts_array.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
     bconn_elems_ptr = bconn_elems_array.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
 
     if boundary_connection_zones is not None:
@@ -1319,6 +1357,4 @@ def tecusr142(user_rec: str) -> None:
     """
     ret = lib.tecusr142(ctypes.c_char_p(user_rec.encode("utf-8")))
     if ret != 0:
-        raise TecioError(
-            f"tecusr142 Error: user_rec={user_rec!r}, return_code={ret}"
-        )
+        raise TecioError(f"tecusr142 Error: user_rec={user_rec!r}, return_code={ret}")

@@ -6,16 +6,15 @@ from typing import Dict, List, Optional, Sequence, Union
 import numpy as np
 import numpy.typing as npt
 
-from . import szlio
-from . import szlfile
-from .szlio import DataType, FileType, ValueLocation, ZoneType
+from . import libtecio, szlfile
+from .libtecio import DataType, FileType, ValueLocation, ZoneType
 
 
 @dataclass
 class TecVariable:
     """
     Variable metadata.
-    
+
     Mirrors variable properties from SZL files but mutable.
     All fields populated from input file during load.
     """
@@ -30,7 +29,7 @@ class TecVariable:
 class TecZone:
     """
     Mutable zone with all data loaded in memory.
-    
+
     Mirrors zone properties from SZL files but fully mutable.
     Data is stored in memory, not read on-demand.
     """
@@ -96,7 +95,7 @@ class TecData:
 
     This class loads all requested data into memory (not on-demand caching).
     All properties are mutable and directly accessible.
-    
+
     The structure mirrors SzlFile but with data fully loaded and mutable.
     """
 
@@ -135,11 +134,11 @@ class TecData:
         # Load from file if provided
         if file_path is not None:
             # Detect file type and load appropriately
-            if file_path.endswith('.szplt'):
+            if file_path.endswith(".szplt"):
                 self._load_from_szl(file_path, zones, vars)
-            elif file_path.endswith('.plt'):
+            elif file_path.endswith(".plt"):
                 self._load_from_plt(file_path, zones, vars)
-            elif file_path.endswith('.dat'):
+            elif file_path.endswith(".dat"):
                 self._load_from_dat(file_path, zones, vars)
             else:
                 # Try SZL as default
@@ -177,16 +176,16 @@ class TecData:
         for var_idx in var_indices:
             # Get variable info from first zone (all zones share variable names)
             szl_var = szl.zones[0].variables[var_idx]
-            
+
             # Get variable-level auxiliary data
             var_aux = dict(szl.get_var_auxdata(var_idx + 1).items())
-            
+
             # Create TecVariable with all metadata loaded
             tec_var = TecVariable(
                 name=szl_var.name,
                 data_type=szl_var.type,
                 value_location=szl_var.value_location,
-                auxdata=var_aux
+                auxdata=var_aux,
             )
             self.variables.append(tec_var)
 
@@ -358,21 +357,21 @@ class TecData:
 
         if data.dtype in dtype_map:
             return dtype_map[data.dtype]
-        
+
         # Try to match by kind and size
-        if data.dtype.kind == 'f':
+        if data.dtype.kind == "f":
             if data.dtype.itemsize == 8:
                 return DataType.DOUBLE
             elif data.dtype.itemsize == 4:
                 return DataType.FLOAT
-        elif data.dtype.kind == 'i':
+        elif data.dtype.kind == "i":
             if data.dtype.itemsize == 4:
                 return DataType.INT32
             elif data.dtype.itemsize == 2:
                 return DataType.INT16
             elif data.dtype.itemsize == 1:
                 return DataType.BYTE
-        elif data.dtype.kind == 'u':
+        elif data.dtype.kind == "u":
             if data.dtype.itemsize == 1:
                 return DataType.BYTE
 
@@ -409,7 +408,7 @@ class TecData:
         var_names_csv = ",".join([v.name for v in self.variables])
 
         # Open file for writing
-        handle = szlio.tec_file_writer_open(
+        handle = libtecio.tec_file_writer_open(
             file_name=file_path,
             dataset_title=self.title,
             var_names_csv=var_names_csv,
@@ -422,7 +421,7 @@ class TecData:
                 self._write_zone(handle, zone)
         finally:
             # Always close the file
-            szlio.tec_file_writer_close(handle)
+            libtecio.tec_file_writer_close(handle)
 
     def _write_zone(self, handle, zone: TecZone) -> None:
         """
@@ -452,7 +451,7 @@ class TecData:
                 )
 
         # Create zone (automatically handles ORDERED, FE types, etc.)
-        zone_num = szlio.tec_zone_create_ijk(
+        zone_num = libtecio.tec_zone_create_ijk(
             handle=handle,
             zone_title=zone.title,
             I=zone.dimensions[0],
@@ -464,7 +463,7 @@ class TecData:
 
         # Set unsteady options if needed (automatically detect from zone metadata)
         if zone.strand_id > 0 or zone.solution_time != 0.0:
-            szlio.tec_zone_set_unsteady_options(
+            libtecio.tec_zone_set_unsteady_options(
                 handle=handle,
                 zone=zone_num,
                 strand=zone.strand_id,
@@ -496,15 +495,15 @@ class TecData:
             data_type: DataType enum
         """
         if data_type == DataType.DOUBLE:
-            szlio.tec_zone_var_write_double_values(handle, zone_num, var_num, data)
+            libtecio.tec_zone_var_write_double_values(handle, zone_num, var_num, data)
         elif data_type == DataType.FLOAT:
-            szlio.tec_zone_var_write_float_values(handle, zone_num, var_num, data)
+            libtecio.tec_zone_var_write_float_values(handle, zone_num, var_num, data)
         elif data_type == DataType.INT32:
-            szlio.tec_zone_var_write_int32_values(handle, zone_num, var_num, data)
+            libtecio.tec_zone_var_write_int32_values(handle, zone_num, var_num, data)
         elif data_type == DataType.INT16:
-            szlio.tec_zone_var_write_int16_values(handle, zone_num, var_num, data)
+            libtecio.tec_zone_var_write_int16_values(handle, zone_num, var_num, data)
         elif data_type == DataType.BYTE:
-            szlio.tec_zone_var_write_uint8_values(handle, zone_num, var_num, data)
+            libtecio.tec_zone_var_write_uint8_values(handle, zone_num, var_num, data)
         else:
             raise ValueError(f"Unsupported data type: {data_type}")
 
@@ -614,11 +613,11 @@ class TecData:
         lines.append("=" * 70)
         lines.append(f"TecData Summary: {self.title}")
         lines.append("=" * 70)
-        
+
         # File type
         file_type = self._infer_file_type()
         lines.append(f"File Type: {file_type.name}")
-        
+
         # Variables
         lines.append(f"\nVariables ({self.num_vars}):")
         for i, var in enumerate(self.variables):
@@ -628,7 +627,7 @@ class TecData:
             if var.auxdata:
                 for name, value in var.auxdata.items():
                     lines.append(f"      aux: {name} = {value}")
-        
+
         # Zones
         lines.append(f"\nZones ({self.num_zones}):")
         for i, zone in enumerate(self.zones):
@@ -637,11 +636,11 @@ class TecData:
             lines.append(f"      Dimensions: {zone.dimensions}")
             lines.append(f"      Points: {zone.num_points:,}")
             lines.append(f"      Elements: {zone.num_elements:,}")
-            
+
             if zone.strand_id > 0 or zone.solution_time != 0.0:
                 lines.append(f"      Strand ID: {zone.strand_id}")
                 lines.append(f"      Solution Time: {zone.solution_time}")
-            
+
             # Check data types
             lines.append(f"      Variable Data:")
             for j, var in enumerate(self.variables):
@@ -654,17 +653,17 @@ class TecData:
                     )
                 else:
                     lines.append(f"        {var.name:20s} NOT LOADED")
-            
+
             if zone.auxdata:
                 lines.append(f"      Zone Auxiliary Data:")
                 for name, value in zone.auxdata.items():
                     lines.append(f"        {name}: {value}")
-        
+
         # Auxiliary data
         if self.auxdata:
             lines.append(f"\nDataset Auxiliary Data:")
             for name, value in self.auxdata.items():
                 lines.append(f"  {name}: {value}")
-        
+
         lines.append("=" * 70)
         return "\n".join(lines)

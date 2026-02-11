@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import numpy as np
-
 import szlfile_write as szlw
+
 from szlio import DataType, FileType, ValueLocation
 
 # quick smoke tests / examples adapted from original sample

@@ -7,7 +7,7 @@ import numpy as np
 import numpy.typing as npt
 
 from . import tecutils
-from .szlio import DataType, FileType, ValueLocation, ZoneType
+from .libtecio import DataType, FileType, ValueLocation, ZoneType
 
 # Load tecio library (uses same discovery helper as read-side code)
 TECIO_LIB_PATH = tecutils.get_tecio_lib()
@@ -136,10 +136,10 @@ def tec_file_writer_open(
 ) -> ctypes.c_void_p:
     """Open a writer handle. Returns ctypes.c_void_p handle.
 
-    file_type must be a szlio.FileType enum.
+    file_type must be a libtecio.FileType enum.
     """
     if not isinstance(file_type, FileType):
-        raise TypeError("file_type must be a szlio.FileType enum")
+        raise TypeError("file_type must be a libtecio.FileType enum")
 
     handle = ctypes.c_void_p()
     ft_int = int(file_type.value)
@@ -183,8 +183,8 @@ def tec_zone_create_ijk(
 ) -> int:
     """Create ordered zone (I,J,K). Returns zone index (int).
 
-    var_types must be a sequence of szlio.DataType enums (if provided).
-    value_locations must be a sequence of szlio.ValueLocation enums (if provided).
+    var_types must be a sequence of libtecio.DataType enums (if provided).
+    value_locations must be a sequence of libtecio.ValueLocation enums (if provided).
     """
     zone_out = ctypes.c_int32()
 
@@ -193,7 +193,7 @@ def tec_zone_create_ijk(
         vt_list = []
         for v in var_types:
             if not isinstance(v, DataType):
-                raise TypeError("All var_types entries must be szlio.DataType enums")
+                raise TypeError("All var_types entries must be libtecio.DataType enums")
             vt_list.append(int(v.value))
         arr = (ctypes.c_int32 * len(vt_list))(*vt_list)
         var_types_ptr = arr
@@ -209,7 +209,7 @@ def tec_zone_create_ijk(
         for v in value_locations:
             if not isinstance(v, ValueLocation):
                 raise TypeError(
-                    "All value_locations entries must be szlio.ValueLocation enums"
+                    "All value_locations entries must be libtecio.ValueLocation enums"
                 )
             vl_list.append(int(v.value))
         arr = (ctypes.c_int32 * len(vl_list))(*vl_list)

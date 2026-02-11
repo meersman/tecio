@@ -2,6 +2,7 @@
 
 Exports common submodules and provides package version.
 """
+
 from importlib import metadata
 
 try:
@@ -9,9 +10,9 @@ try:
 except metadata.PackageNotFoundError:
     __version__ = "0.0.0"
 
-from .tecdata import TecData, TecZone, TecVariable
-from .szlfile import Read, ReadZone, ReadVariable, ReadAuxData, Write, WriteZone
-from . import pltio, szlio, tecutils
+from . import libtecio, pltio, tecutils
+from .szlfile import Read, ReadAuxData, ReadVariable, ReadZone, Write, WriteZone
+from .tecdata import TecData, TecVariable, TecZone
 
 __all__ = [
     "TecData",
@@ -24,7 +25,7 @@ __all__ = [
     "Write",
     "WriteZone",
     "pltio",
-    "szlio",
+    "libtecio",
     "tecutils",
     "__version__",
 ]

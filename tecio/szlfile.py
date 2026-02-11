@@ -7,8 +7,8 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 import numpy as np
 import numpy.typing as npt
 
-from . import szlio
-from .szlio import DataType, FileType, ValueLocation, ZoneType
+from . import libtecio
+from .libtecio import DataType, FileType, ValueLocation, ZoneType
 
 
 class Read:
@@ -18,7 +18,7 @@ class Read:
     """
 
     def __init__(self, file_name):
-        self.handle = szlio.tec_file_reader_open(file_name)
+        self.handle = libtecio.tec_file_reader_open(file_name)
         self.zones = [
             ReadZone(self.handle, i + 1, self.num_vars) for i in range(self.num_zones)
         ]
@@ -28,23 +28,23 @@ class Read:
 
     @property
     def type(self) -> FileType:
-        return szlio.tec_file_get_type(self.handle)
+        return libtecio.tec_file_get_type(self.handle)
 
     @property
     def title(self) -> str:
-        return szlio.tec_data_set_get_title(self.handle)
+        return libtecio.tec_data_set_get_title(self.handle)
 
     @property
     def num_vars(self) -> int:
-        return szlio.tec_data_set_get_num_vars(self.handle)
+        return libtecio.tec_data_set_get_num_vars(self.handle)
 
     @property
     def num_zones(self) -> int:
-        return szlio.tec_data_set_get_num_zones(self.handle)
+        return libtecio.tec_data_set_get_num_zones(self.handle)
 
     @property
     def num_auxdata_items(self) -> int:
-        return szlio.tec_data_set_aux_data_get_num_items(self.handle)
+        return libtecio.tec_data_set_aux_data_get_num_items(self.handle)
 
     @property
     def auxdata(self) -> AuxData:
@@ -91,6 +91,7 @@ class ReadZone:
     ReadZone provides a high level API with tecio functions to read
     szplt binary formatted zone data.
     """
+
     _handle: ctypes.c_void_p
     zone_index: int
     num_vars: int
@@ -100,7 +101,9 @@ class ReadZone:
     # Note: could cache all properties if they are shown as bottlenecks in profiling. Or could leave everything as methods and save data in a more flexible data structure.
 
     def __post_init__(self) -> Tuple[int, int, int]:
-        self.I, self.J, self.K = szlio.tec_zone_get_ijk(self._handle, self.zone_index)
+        self.I, self.J, self.K = libtecio.tec_zone_get_ijk(
+            self._handle, self.zone_index
+        )
 
     @property
     def variables(self) -> List[Variable]:
@@ -114,14 +117,14 @@ class ReadZone:
 
     @property
     def title(self) -> str:
-        return szlio.tec_zone_get_title(self._handle, self.zone_index)
+        return libtecio.tec_zone_get_title(self._handle, self.zone_index)
 
     @property
     def type(self) -> ZoneType:
-        return ZoneType(szlio.tec_zone_get_type(self._handle, self.zone_index))
+        return ZoneType(libtecio.tec_zone_get_type(self._handle, self.zone_index))
 
     def is_enabled(self) -> bool:
-        return szlio.tec_zone_is_enabled(self._handle, self.zone_index)
+        return libtecio.tec_zone_is_enabled(self._handle, self.zone_index)
 
     @property
     def num_points(self) -> int:
@@ -159,26 +162,26 @@ class ReadZone:
 
     @property
     def solution_time(self) -> float:
-        return szlio.tec_zone_get_solution_time(self._handle, self.zone_index)
+        return libtecio.tec_zone_get_solution_time(self._handle, self.zone_index)
 
     @property
     def strand_id(self) -> int:
-        return szlio.tec_zone_get_strand_id(self._handle, self.zone_index)
+        return libtecio.tec_zone_get_strand_id(self._handle, self.zone_index)
 
     @property
     def node_map(self) -> npt.NDArray[np.int64]:
         if self._node_map is None:
-            is64bit = szlio.is_64bit(self._handle, self.zone_index)
+            is64bit = libtecio.is_64bit(self._handle, self.zone_index)
 
             if is64bit:
-                self._node_map = szlio.tec_zone_node_map_get_64(
+                self._node_map = libtecio.tec_zone_node_map_get_64(
                     self._handle,
                     self.zone_index,
                     self.num_elements,
                     self.nodes_per_cell,
                 )
             else:
-                self._node_map = szlio.tec_zone_node_map_get(
+                self._node_map = libtecio.tec_zone_node_map_get(
                     self._handle,
                     self.zone_index,
                     self.num_elements,
@@ -200,44 +203,45 @@ class ReadVariable:
     ReadVariable provides a high level API with tecio functions to read
     szplt binary formatted zone data.
     """
+
     _handle: ctypes.c_void_p
     zone_index: int
     var_index: int
 
     @property
     def name(self) -> str:
-        return szlio.tec_var_get_name(self._handle, self.var_index)
+        return libtecio.tec_var_get_name(self._handle, self.var_index)
 
     def is_enabled(self) -> bool:
-        return szlio.tec_var_is_enabled(self._handle, self.var_index)
+        return libtecio.tec_var_is_enabled(self._handle, self.var_index)
 
     @property
     def type(self) -> DataType:
-        return szlio.tec_zone_var_get_type(
+        return libtecio.tec_zone_var_get_type(
             self._handle, self.zone_index, self.var_index
         )
 
     @property
     def value_location(self) -> ValueLocation:
-        return szlio.tec_zone_var_get_value_location(
+        return libtecio.tec_zone_var_get_value_location(
             self._handle, self.zone_index, self.var_index
         )
 
     def is_passive(self) -> bool:
-        return szlio.tec_zone_var_is_passive(
+        return libtecio.tec_zone_var_is_passive(
             self._handle, self.zone_index, self.var_index
         )
 
     @property
     def shared_zone(self) -> Optional[int]:
         """Outputs shared zone index (0 if none)"""
-        return szlio.tec_zone_var_get_shared_zone(
+        return libtecio.tec_zone_var_get_shared_zone(
             self._handle, self.zone_index, self.var_index
         )
 
     @property
     def num_values(self) -> int:
-        return szlio.tec_zone_var_get_num_values(
+        return libtecio.tec_zone_var_get_num_values(
             self._handle, self.zone_index, self.var_index
         )
 
@@ -295,27 +299,27 @@ class ReadVariable:
                 raise ValueError(f"Invalid value range: ({start_index}, {end_index})")
 
         if data_type == DataType.FLOAT:
-            return szlio.tec_zone_var_get_float_values(
+            return libtecio.tec_zone_var_get_float_values(
                 self._handle, self.zone_index, self.var_index, start_index, num_values
             )
 
         elif data_type == DataType.DOUBLE:
-            return szlio.tec_zone_var_get_double_values(
+            return libtecio.tec_zone_var_get_double_values(
                 self._handle, self.zone_index, self.var_index, start_index, num_values
             )
 
         elif data_type == DataType.INT32:
-            return szlio.tec_zone_var_get_int32_values(
+            return libtecio.tec_zone_var_get_int32_values(
                 self._handle, self.zone_index, self.var_index, start_index, num_values
             )
 
         elif data_type == DataType.INT16:
-            return szlio.tec_zone_var_get_int16_values(
+            return libtecio.tec_zone_var_get_int16_values(
                 self._handle, self.zone_index, self.var_index, start_index, num_values
             )
 
         elif data_type == DataType.BYTE:
-            return szlio.tec_zone_var_get_uint8_values(
+            return libtecio.tec_zone_var_get_uint8_values(
                 self._handle, self.zone_index, self.var_index, start_index, num_values
             )
 
@@ -358,17 +362,21 @@ class ReadAuxData:
         self._data = {}
 
         if self._aux_type == "dataset":
-            num_items = szlio.tec_data_set_aux_data_get_num_items(self._handle)
+            num_items = libtecio.tec_data_set_aux_data_get_num_items(self._handle)
             for i in range(num_items):
-                name, value = szlio.tec_data_set_aux_data_get_item(self._handle, i + 1)
+                name, value = libtecio.tec_data_set_aux_data_get_item(
+                    self._handle, i + 1
+                )
                 self._data[name] = value
 
         elif self._aux_type == "var":
             if self._index is None:
                 raise ValueError("Variable index required for variable aux data")
-            num_items = szlio.tec_var_aux_data_get_num_items(self._handle, self._index)
+            num_items = libtecio.tec_var_aux_data_get_num_items(
+                self._handle, self._index
+            )
             for i in range(num_items):
-                name, value = szlio.tec_var_aux_data_get_item(
+                name, value = libtecio.tec_var_aux_data_get_item(
                     self._handle, self._index, i + 1
                 )
                 self._data[name] = value
@@ -376,9 +384,11 @@ class ReadAuxData:
         elif self._aux_type == "zone":
             if self._index is None:
                 raise ValueError("Zone index required for zone aux data")
-            num_items = szlio.tec_zone_aux_data_get_num_items(self._handle, self._index)
+            num_items = libtecio.tec_zone_aux_data_get_num_items(
+                self._handle, self._index
+            )
             for i in range(num_items):
-                name, value = szlio.tec_zone_aux_data_get_item(
+                name, value = libtecio.tec_zone_aux_data_get_item(
                     self._handle, self._index, i + 1
                 )
                 self._data[name] = value
@@ -490,24 +500,26 @@ class ReadAuxData:
         """Return string representation of AuxData."""
         return str(self.data)
 
-    
-class Write():
+
+class Write:
     """
     Write provides a high level API to write data to Tecplot szplt
     formatted binary files.
     """
-    def __init__(self,
-                 path: str,
-                 dataset_title: str = "Untitled",
-                 var_names: Iterable[str] = [],
-                 file_type: FileType = FileType.FULL,
-                 grid_file_handle: Optional[ctypes.c_void_p] = None,
-                 ):
+
+    def __init__(
+        self,
+        path: str,
+        dataset_title: str = "Untitled",
+        var_names: Iterable[str] = [],
+        file_type: FileType = FileType.FULL,
+        grid_file_handle: Optional[ctypes.c_void_p] = None,
+    ):
         if not isinstance(file_type, FileType):
-            raise TypeError("file_type must be a szlio.FileType enum")
-        
+            raise TypeError("file_type must be a libtecio.FileType enum")
+
         self._var_names_csv = ",".join(var_names)
-        self._handle =  szlio.tec_file_writer_open(
+        self._handle = libtecio.tec_file_writer_open(
             file_name,
             dataset_title,
             self._var_names_csv,
@@ -516,8 +528,13 @@ class Write():
             grid_file_handle=grid_file_handle,
         )
 
-        self._handle = szlio.tec_file_writer_open(
-            path, dataset_title, self._var_string, file_type, use_szl=1, grid_file_handle=grid_file_handle
+        self._handle = libtecio.tec_file_writer_open(
+            path,
+            dataset_title,
+            self._var_string,
+            file_type,
+            use_szl=1,
+            grid_file_handle=grid_file_handle,
         )
 
     def __enter__(self) -> Write:
@@ -528,41 +545,44 @@ class Write():
 
     def close(self) -> None:
         if self._handle is not None:
-            szlio.tec_file_writer_close(self._handle)
+            libtecio.tec_file_writer_close(self._handle)
             self._handle = None
 
 
-class WriteZone():
+class WriteZone:
     """
     WriteZone provides a high level API with tecio functions to write
     szplt binary formatted zone data.
     """
 
     def zone_write_solution_time(
-            file_handle: ctypes.c_void_p, zone: int, strand: int = 0, solution_time: float = 0.0
+        file_handle: ctypes.c_void_p,
+        zone: int,
+        strand: int = 0,
+        solution_time: float = 0.0,
     ) -> None:
         """Set unsteady options (strand id and solution time) for a zone."""
-        szlio.tec_zone_set_unsteady_options(
+        libtecio.tec_zone_set_unsteady_options(
             file_handle, zone, strand=strand, solution_time=solution_time
         )
-        
+
     def write_zone_ordered(
-            file_handle: ctypes.c_void_p,
-            zone_name: str,
-            shape: Sequence[int],
-            var_sharing: Optional[Sequence[int]] = None,
-            var_data_types: Optional[Sequence[DataType]] = None,
-            value_locations: Optional[Sequence[ValueLocation]] = None,
+        file_handle: ctypes.c_void_p,
+        zone_name: str,
+        shape: Sequence[int],
+        var_sharing: Optional[Sequence[int]] = None,
+        var_data_types: Optional[Sequence[DataType]] = None,
+        value_locations: Optional[Sequence[ValueLocation]] = None,
     ) -> int:
         """
         Create an ordered zone. `shape` is (I,J,K).
         Returns zone index (int).
-        
-        var_data_types must be a sequence of szlio.DataType enums (if provided).
-        value_locations must be a sequence of szlio.ValueLocation enums (if provided).
+
+        var_data_types must be a sequence of libtecio.DataType enums (if provided).
+        value_locations must be a sequence of libtecio.ValueLocation enums (if provided).
         """
         I, J, K = shape
-        return szlio.tec_zone_create_ijk(
+        return libtecio.tec_zone_create_ijk(
             file_handle,
             zone_name,
             int(I),
@@ -574,35 +594,32 @@ class WriteZone():
         )
 
     def _zone_write_double_values(
-            file_handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
+        file_handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
     ) -> None:
         # accept numpy arrays or lists; enforce float64
         arr = np.ascontiguousarray(values, dtype=np.float64)
-        szlio.tec_zone_var_write_double_values(file_handle, zone, var, arr)
-        
-        
+        libtecio.tec_zone_var_write_double_values(file_handle, zone, var, arr)
+
     def _zone_write_float_values(
-            file_handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
+        file_handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
     ) -> None:
         arr = np.ascontiguousarray(values, dtype=np.float32)
-        szlio.tec_zone_var_write_float_values(file_handle, zone, var, arr)
-        
-        
+        libtecio.tec_zone_var_write_float_values(file_handle, zone, var, arr)
+
     def _zone_write_int32_values(
-            file_handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
+        file_handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
     ) -> None:
         arr = np.ascontiguousarray(values, dtype=np.int32)
-        szlio.tec_zone_var_write_int32_values(file_handle, zone, var, arr)
-        
-        
+        libtecio.tec_zone_var_write_int32_values(file_handle, zone, var, arr)
+
     def _zone_write_int16_values(
-            file_handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
+        file_handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
     ) -> None:
         arr = np.ascontiguousarray(values, dtype=np.int16)
-        szlio.tec_zone_var_write_int16_values(file_handle, zone, var, arr)
-        
+        libtecio.tec_zone_var_write_int16_values(file_handle, zone, var, arr)
+
     def _zone_write_uint8_values(
-            file_handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
+        file_handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
     ) -> None:
         arr = np.ascontiguousarray(values, dtype=np.uint8)
-        szlio.tec_zone_var_write_uint8_values(file_handle, zone, var, arr)
+        libtecio.tec_zone_var_write_uint8_values(file_handle, zone, var, arr)
