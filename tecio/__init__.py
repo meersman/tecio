@@ -10,7 +10,7 @@ try:
 except metadata.PackageNotFoundError:
     __version__ = "0.0.0"
 
-from . import libtecio, pltio, tecutils
+from . import libtecio, tecutils
 from .szlfile import Read, ReadAuxData, ReadVariable, ReadZone, Write, WriteZone
 from .tecdata import TecData, TecVariable, TecZone
 
@@ -24,7 +24,6 @@ __all__ = [
     "ReadAuxData",
     "Write",
     "WriteZone",
-    "pltio",
     "libtecio",
     "tecutils",
     "__version__",
