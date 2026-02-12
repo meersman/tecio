@@ -11,12 +11,12 @@ if readme.exists():
 setup(
     name="tecio",
     version="0.0.0",
-    description="Utilities for reading/writing TecIO/PLT/SZL files",
+    description="Utilities for reading/writing Tecplot binary files",
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(exclude=("tests", "test*")),
     include_package_data=True,
-    python_requires=">=3.8",
+    python_requires=">=3.10",
     install_requires=["numpy"],
     classifiers=[
         "Programming Language :: Python :: 3",

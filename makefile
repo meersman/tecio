@@ -16,7 +16,7 @@ help:
 	@echo "  make typecheck        Run mypy type checking"
 	@echo ""
 	@echo "Testing:"
-	@echo "  make test             Run unit tests"
+	@echo "  make test             Run unit tests (not yet implemented)"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean            Remove generated files"
@@ -31,31 +31,15 @@ install-dev:
 
 # Format code with black and isort
 format:
-	@echo "Running black..."
-	black .
-	@echo ""
-	isort .
-	@echo "Running isort..."
-	isort .
-	@echo ""
-	@echo "✓ Code formatting complete"
+	ruff format .
 
 # Run linters
 lint:
-	@echo "Running pyflakes..."
-	pyflakes *.py
-	@echo ""
-	@echo "Running pylint..."
-	pylint *.py --rcfile=pyproject.toml
-	@echo ""
-	@echo "✓ Linting complete"
+	ruff check . --fix
 
 # Run type checker
 typecheck:
-	@echo "Running mypy..."
-	mypy *.py
-	@echo ""
-	@echo "✓ Type checking complete"
+	mypy ,
 
 # Run all checks
 check: format lint typecheck
@@ -71,7 +55,6 @@ test:
 
 # Clean up generated files
 clean:
-	@echo "Cleaning up..."
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
@@ -86,8 +69,5 @@ versions:
 	@echo "Tool Versions:"
 	@echo "=============="
 	@python --version
-	@echo -n "Black: " && black --version | head -n1
-	@echo -n "isort: " && isort --version
-	@echo -n "Pylint: " && pylint --version | head -n1
-	@echo -n "Pyflakes: " && pyflakes --version
+	@echo -n "Ruff: " && ruff --version | head -n1
 	@echo -n "MyPy: " && mypy --version
