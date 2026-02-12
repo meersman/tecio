@@ -48,9 +48,7 @@ check: format lint typecheck
 
 # Run unit tests (when implemented)
 test:
-	@echo "Running tests..."
-	python -m pytest tests/ -v
-	@echo ""
+	pytest
 	@echo "✓ Tests complete"
 
 # Clean up generated files
@@ -69,5 +67,6 @@ versions:
 	@echo "Tool Versions:"
 	@echo "=============="
 	@python --version
-	@echo -n "Ruff: " && ruff --version | head -n1
-	@echo -n "MyPy: " && mypy --version
+	@ruff --version | head -n1
+	@mypy --version
+	@pytest --version

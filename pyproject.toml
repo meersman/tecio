@@ -12,6 +12,9 @@ dependencies = [
     "numpy",
 ]
 
+[project.optional-dependencies]
+dev = ["ruff", "mypy", "pytest"]
+
 [tool.ruff]
 line-length = 88
 target-version = "py310"
