@@ -41,7 +41,6 @@ data.write_szl("output.szplt")
 - `szlfile.py` - High level SZL file API
 - `tecdata.py` - Mutable in-memory data structures. Consistent for all initializations (plt, szplt, empty)
 - `libtecio.py` - TecIO C bindings
-- `capeio.py` - Binary I/O utilities for PLT read capability
 
 ## Development
 
