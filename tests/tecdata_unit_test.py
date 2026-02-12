@@ -5,8 +5,8 @@ Unit tests for TecData class demonstrating in-memory mutable data structure.
 
 import numpy as np
 
-from szlio import DataType, ValueLocation, ZoneType
-from tecdata import TecData
+from tecio.libtecio import DataType, ValueLocation, ZoneType
+from tecio.tecdata import TecData
 
 
 def test_empty_dataset():

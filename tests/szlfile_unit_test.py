@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import szlfile
+from tecio import szlfile
 
 # Create szl reader object
 szl = szlfile.Read("Onera.szplt")

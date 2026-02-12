@@ -25,6 +25,7 @@ __all__ = [
     "Write",
     "WriteZone",
     "libtecio",
+    "szlfile",
     "tecutils",
     "__version__",
 ]
