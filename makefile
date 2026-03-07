@@ -2,16 +2,17 @@
 
 # Default target
 help:
-	@echo "PyTecplot Development Commands"
+	@echo "Tecio Development Commands"
 	@echo "=============================="
 	@echo ""
 	@echo "Setup:"
 	@echo "  make install          Install package dependencies"
+	@echo "  make install-cli      Install command line scripts"
 	@echo "  make install-dev      Install package + dev dependencies"
 	@echo ""
 	@echo "Code Quality:"
-	@echo "  make format           Format code with black and isort"
-	@echo "  make lint             Run pylint and pyflakes"
+	@echo "  make format           Format code ruff"
+	@echo "  make lint             Run code linting with ruff"
 	@echo "  make check            Run all checks (format + lint)"
 	@echo "  make typecheck        Run mypy type checking"
 	@echo ""
@@ -24,10 +25,26 @@ help:
 # Install package dependencies
 install:
 	pip install -e .
+	pipx install -e .
+	pipx ensurepath
+
+# Install only command line scripts
+install-cli:
+	pipx install -e .
+	pipx ensurepath
 
 # Install package + development dependencies
 install-dev:
 	pip install -e ".[dev]"
+
+# Uninstall package
+uninstall:
+	pip uninstall tecio
+	pipx uninstall tecio
+
+# Uninstall command line scripts only
+uninstall-cli:
+	pipx uninstall tecio
 
 # Format code with black and isort
 format:
@@ -39,7 +56,7 @@ lint:
 
 # Run type checker
 typecheck:
-	mypy ,
+	mypy .
 
 # Run all checks
 check: format lint typecheck
@@ -50,7 +67,6 @@ check: format lint typecheck
 test:
 	pytest
 	@echo "✓ Tests complete"
-
 # Clean up generated files
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true

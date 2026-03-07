@@ -4,10 +4,15 @@ Unit tests for TecData class demonstrating in-memory mutable data structure.
 """
 
 import numpy as np
+from pathlib import Path
 
+import tecio
 from tecio.libtecio import DataType, ValueLocation, ZoneType
 from tecio import TecData
 
+test_dir = Path(tecio.__file__).parent.parent
+input_file = test_dir / "tests" / "Onera.szplt"
+input_file = input_file.as_posix()
 
 def test_empty_dataset():
     """Test creating an empty dataset."""
@@ -23,7 +28,7 @@ def test_empty_dataset():
 
     # Demonstrate mutability
     data.title = "My New Title"
-    data.num_zones = 5 #-------------> Need to fix to ouptut __len__ property of zones
+    data.num_zones = 5  # -------------> Need to fix to ouptut __len__ property of zones
     print(f"\nAfter mutation:")
     print(f"Title: '{data.title}'")
     print(f"Number of zones: {data.num_zones}")
@@ -36,7 +41,7 @@ def test_full_load():
     print("TEST: Full load - TecData('Onera.szplt')")
     print("=" * 70)
 
-    data = TecData("Onera.szplt")
+    data = TecData(input_file)
 
     print(f"Title: {data.title}")
     print(f"File Type: {data.file_type.name}")
@@ -78,7 +83,7 @@ def test_zone_filter():
     print("TEST: Zone filter - TecData('Onera.szplt', zones=[1])")
     print("=" * 70)
 
-    data = TecData("Onera.szplt", zones=[1])
+    data = TecData(input_file, zones=[1])
 
     print(f"Title: {data.title}")
     print(f"Number of variables: {data.num_vars}")
@@ -97,7 +102,7 @@ def test_var_filter_by_index():
     print("TEST: Variable filter by index - TecData('Onera.szplt', vars=[0, 1, 2])")
     print("=" * 70)
 
-    data = TecData("Onera.szplt", vars=[0, 1, 2])
+    data = TecData(input_file, vars=[0, 1, 2])
 
     print(f"Title: {data.title}")
     print(f"Number of variables: {data.num_vars} (filtered)")
@@ -128,7 +133,7 @@ def test_var_filter_by_name():
     )
     print("=" * 70)
 
-    data = TecData("Onera.szplt", vars=["x", "y", "z", "Pressure"])
+    data = TecData(input_file, vars=["x", "y", "z", "Pressure"])
 
     print(f"Title: {data.title}")
     print(f"Number of variables: {data.num_vars} (filtered)")
@@ -156,7 +161,7 @@ def test_zone_and_var_filter():
     print("TEST: Zone + Var filter - TecData('Onera.szplt', zones=[1], vars=[0, 1, 2])")
     print("=" * 70)
 
-    data = TecData("Onera.szplt", zones=[1], vars=[0, 1, 2])
+    data = TecData(input_file, zones=[1], vars=[0, 1, 2])
 
     print(f"Title: {data.title}")
     print(f"Number of variables: {data.num_vars} (filtered)")
@@ -179,7 +184,7 @@ def test_metadata_only():
     print("TEST: Metadata only - TecData('Onera.szplt', zones=[])")
     print("=" * 70)
 
-    data = TecData("Onera.szplt", zones=[])
+    data = TecData(input_file, zones=[])
 
     print(f"Title: {data.title}")
     print(f"File Type: {data.file_type.name}")
@@ -280,7 +285,7 @@ def test_copy_with_filter():
     print("=" * 70)
 
     # Load only coordinates
-    data = TecData("Onera.szplt", vars=["x", "y", "z"])
+    data = TecData(input_file, vars=["x", "y", "z"])
 
     print(f"Loaded {data.num_vars} variables: {[v.name for v in data.variables]}")
     print(f"Loaded {data.num_zones} zones")
@@ -309,7 +314,7 @@ def test_round_trip():
     print("=" * 70)
 
     # Load original
-    original = TecData("Onera.szplt", zones=[1], vars=["x", "y", "z"])
+    original = TecData(input_file, zones=[1], vars=["x", "y", "z"])
     print("Loaded original dataset")
     print(f"  Variables: {[v.name for v in original.variables]}")
     print(f"  Zones: {original.num_zones}")
@@ -354,7 +359,7 @@ def test_mutability():
     print("=" * 70)
 
     # Load data
-    data = TecData("Onera.szplt", zones=[0], vars=["x", "y"])
+    data = TecData(input_file, zones=[0], vars=["x", "y"])
 
     print("Original state:")
     print(f"  title: {data.title}")

@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
 
-from pathlib import Path
-
 import tecio
 from tecio import szlfile
 
-test_dir = Path(tecio.__file__).parent.parent
-input_file = test_dir / "tests" / "Onera.szplt"
-input_file = input_file.as_posix()
 
 # Create szl reader object
-szl = szlfile.Read(input_file)
+szl = szlfile.Read("test_tec_zone_create_ijk.szplt")
 
 print(f"file type: {szl.type}")
 print(f"dataset title: {szl.title}")
@@ -70,7 +65,7 @@ for i in range(szl.num_zones):
         var = zone.variables[j]
         print(f"  Variable {j + 1}:")
         print(f"    name: {var.name}")
-        print(f"    type: {var.type}")
+        # print(f"    type: {var.type}")
         print(f"    is enabled: {var.is_enabled()}")
         print(f"    location: {var.value_location}")
         print(f"    is passive: {var.is_passive()}")
@@ -79,8 +74,8 @@ for i in range(szl.num_zones):
 
         # Get first 10 values or all if fewer than 10
         num_to_show = min(10, var.num_values)
-        values = var.get_values((1, num_to_show + 1))
-        print(f"    first {num_to_show} values: {values}")
+        # values = var.get_values((1, num_to_show + 1))
+        # print(f"    first {num_to_show} values: {values}")
 
     # Show node map for FE zones
     if zone.type != szlfile.ZoneType.ORDERED:

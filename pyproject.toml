@@ -12,16 +12,34 @@ dependencies = [
     "numpy",
 ]
 
+[project.scripts]
+szldump = "tecio.cli.szldump:main"
+
 [project.optional-dependencies]
 dev = ["ruff", "mypy", "pytest"]
 
 [tool.ruff]
 line-length = 88
 target-version = "py310"
+output-format = "concise"
 
 [tool.ruff.format]
 preview = true
 
+[tool.ruff.lint]
+select = [
+   "E",  # pycodestyle
+   "F",  # Pyflakes
+   "UP",  # pyupgrade
+   "B",  # flake8-bugbear
+   "SIM",  # flake8-simplify
+   "I",  # isort
+]
+
 [tool.mypy]
 python_version = "3.10"
 check_untyped_defs = true
+
+[tool.pytest.ini_options]
+pythonpath = ["tecio"]
+testpaths = ["tests"]
