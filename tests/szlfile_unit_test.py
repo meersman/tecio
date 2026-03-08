@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 
+import numpy as np
 from pathlib import Path
 
 import tecio
 from tecio import szlfile
 
+
 test_dir = Path(tecio.__file__).parent.parent
 input_file = test_dir / "tests" / "Onera.szplt"
 input_file = input_file.as_posix()
+
+
+# Set numpy array print option
+np.set_printoptions(threshold=100)
 
 # Create szl reader object
 szl = szlfile.Read(input_file)
@@ -77,10 +83,9 @@ for i in range(szl.num_zones):
         print(f"    shared zone: {var.shared_zone}")
         print(f"    num values: {var.num_values}")
 
-        # Get first 10 values or all if fewer than 10
-        num_to_show = min(10, var.num_values)
-        values = var.get_values((1, num_to_show + 1))
-        print(f"    first {num_to_show} values: {values}")
+        # Get first 100 values or all if fewer than 100
+        value_str = np.array2string(var.values, prefix="    values: ", separator=", ")
+        print(f"    values: {value_str}")
 
     # Show node map for FE zones
     if zone.type != szlfile.ZoneType.ORDERED:

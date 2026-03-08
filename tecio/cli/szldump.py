@@ -4,6 +4,7 @@ verbose szlpltview)
 """
 
 import argparse
+import numpy as np
 
 from .. import szlfile
 
@@ -19,6 +20,9 @@ def main():
         type=str,
     )
     args = parser.parse_args()
+
+    # Set numpy array print option
+    np.set_printoptions(threshold=100)
 
     # Create szl reader object
     szl = szlfile.Read(args.filename)
@@ -89,10 +93,9 @@ def main():
             print(f"    shared zone: {var.shared_zone}")
             print(f"    num values: {var.num_values}")
 
-            # Get first 10 values or all if fewer than 10
-            num_to_show = min(10, var.num_values)
-            values = var.get_values((1, num_to_show + 1))
-            print(f"    first {num_to_show} values: {values}")
+            # Get first 100 values or all if fewer than 100
+            value_str = np.array2string(var.values, prefix="    values: ", separator=", ")
+            print(f"    values: {value_str}")
 
         # Show node map for FE zones
         if zone.type != szlfile.ZoneType.ORDERED:
