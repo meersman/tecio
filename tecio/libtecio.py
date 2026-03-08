@@ -32,6 +32,17 @@ class TecioError(RuntimeError):
 # --------------------------------------------------------------------
 
 
+class FileFormat(Enum):
+    """Class for binary data formats.
+
+    PLT = 0
+    SZPLT = 1
+    """
+
+    PLT = 0
+    SZPLT = 1
+
+
 class FileType(Enum):
     """Class for Tecplot file types.
 
@@ -70,44 +81,6 @@ class ZoneType(Enum):
     FEMIXED = 8
 
 
-class DataType(Enum):
-    """Class for zone data format.
-
-    FLOAT = 1
-    DOUBLE = 2
-    INT32 = 3
-    INT16 = 4
-    BYTE = 5
-    """
-
-    FLOAT = 1
-    DOUBLE = 2
-    INT32 = 3
-    INT16 = 4
-    BYTE = 5
-
-
-class ValueLocation(Enum):
-    """Class for location of data values (cell/node).
-
-    CELL_CENTERED = 0
-    NODAL = 1
-    """
-
-    CELL_CENTERED = 0
-    NODAL = 1
-
-
-class VarStatus(Enum):
-    """Class for specifiying active/passive variables.
-
-    ACTIVE = 0
-    PASSIVE = 1
-    """
-
-    ACTIVE = 0
-    PASSIVE = 1
-
 
 class FeCellShape(Enum):
     """Class for categorizing unstructured cell shapes.
@@ -130,39 +103,6 @@ class FeCellShape(Enum):
     PRISM = 6
 
 
-class FileFormat(Enum):
-    """Class for binary data formats.
-
-    PLT = 0
-    SZPLT = 1
-    """
-
-    PLT = 0
-    SZPLT = 1
-
-
-class Debug(Enum):
-    """Class for setting debug flags for C-functions.
-
-    FALSE = 0
-    TRUE = 1
-    """
-
-    FALSE = 0
-    TRUE = 1
-
-
-class Boolean(Enum):
-    """Class for setting boolean flags for C-functions.
-
-    FALSE = 0
-    TRUE = 1
-    """
-
-    FALSE = 0
-    TRUE = 1
-
-
 class FaceNeighborMode(Enum):
     """Class for specifying boundary face sharing of nodes between zones.
 
@@ -178,6 +118,17 @@ class FaceNeighborMode(Enum):
     GLOBAL_ONE_TO_MANY = 3
 
 
+class ValueLocation(Enum):
+    """Class for location of data values (cell/node).
+
+    CELL_CENTERED = 0
+    NODAL = 1
+    """
+
+    CELL_CENTERED = 0
+    NODAL = 1
+
+
 class DataFormat(Enum):
     """Class for specifiying format of zone data for ascii file formats.
 
@@ -187,6 +138,56 @@ class DataFormat(Enum):
 
     POINT = 0
     BLOCK = 1
+
+
+class DataType(Enum):
+    """Class for zone data format.
+
+    FLOAT = 1
+    DOUBLE = 2
+    INT32 = 3
+    INT16 = 4
+    BYTE = 5
+    """
+
+    FLOAT = 1
+    DOUBLE = 2
+    INT32 = 3
+    INT16 = 4
+    BYTE = 5
+
+
+class VarStatus(Enum):
+    """Class for specifiying active/passive variables.
+
+    ACTIVE = 0
+    PASSIVE = 1
+    """
+
+    ACTIVE = 0
+    PASSIVE = 1
+
+
+class Boolean(Enum):
+    """Class for setting boolean flags for C-functions.
+
+    FALSE = 0
+    TRUE = 1
+    """
+
+    FALSE = 0
+    TRUE = 1
+
+
+class Debug(Enum):
+    """Class for setting debug flags for C-functions.
+
+    FALSE = 0
+    TRUE = 1
+    """
+
+    FALSE = 0
+    TRUE = 1
 
 
 # --------------------------------------------------------------------
@@ -486,7 +487,7 @@ lib.tecZoneAuxDataGetItem.argtypes = [
 # ---- C library bindings: SZL Write ---------------------------------
 # --------------------------------------------------------------------
 
-# ---- Create SZL objects --------------------------------------------
+# ---- Initialization and File Handling ------------------------------
 lib.tecFileWriterOpen.restype = ctypes.c_int32
 lib.tecFileWriterOpen.argtypes = [
     ctypes.c_char_p,  # fileName
@@ -502,6 +503,8 @@ lib.tecFileWriterClose.restype = ctypes.c_int32
 lib.tecFileWriterClose.argtypes = [
     ctypes.POINTER(ctypes.c_void_p),
 ]
+
+# ---- Write Zone Headers --------------------------------------------
 lib.tecZoneCreateIJK.restype = ctypes.c_int32
 lib.tecZoneCreateIJK.argtypes = [
     ctypes.c_void_p,  # file_handle
@@ -534,12 +537,34 @@ lib.tecZoneCreateFE.argtypes = [
     ctypes.c_int32,  # faceNeighborMode
     ctypes.POINTER(ctypes.c_int32),  # out zone
 ]
+
+# ---- Optional fields -----------------------------------------------
 lib.tecZoneSetUnsteadyOptions.restype = ctypes.c_int32
 lib.tecZoneSetUnsteadyOptions.argtypes = [
     ctypes.c_void_p,  # file_handle
     ctypes.c_int32,  # zone
     ctypes.c_double,  # solutionTime
     ctypes.c_int32,  # strand
+]
+lib.tecDataSetAddAuxData.restype = ctypes.c_int32
+lib.tecDataSetAddAuxData.argtypes = [
+    ctypes.c_void_p,  # fileHandle
+    ctypes.c_char_p,  # name
+    ctypes.c_char_p,  # value
+]
+lib.tecVarAddAuxData.restype = ctypes.c_int32
+lib.tecVarAddAuxData.argtypes = [
+    ctypes.c_void_p,  # fileHandle
+    ctypes.c_int32,   # varIndex (1-based)
+    ctypes.c_char_p,  # name
+    ctypes.c_char_p,  # value
+]
+lib.tecZoneAddAuxData.restype = ctypes.c_int32
+lib.tecZoneAddAuxData.argtypes = [
+    ctypes.c_void_p,  # fileHandle
+    ctypes.c_int32,   # zoneIndex (1-based)
+    ctypes.c_char_p,  # name
+    ctypes.c_char_p,  # value
 ]
 
 # ---- Write variable value functions --------------------------------
@@ -616,6 +641,18 @@ lib.tecZoneNodeMapWrite64.argtypes = [
     ctypes.c_int64,  # nodeCount
     ctypes.POINTER(ctypes.c_int64),  # array of nodes
 ]
+lib.tecZoneFaceNbrWriteConnections32.restype = ctypes.c_int32
+lib.tecZoneFaceNbrWriteConnections32.argtypes = [
+    ctypes.c_void_p,                 # fileHandle
+    ctypes.c_int32,                  # zone (1-based)
+    ctypes.POINTER(ctypes.c_int32),  # faceNeighbors
+]
+lib.tecZoneFaceNbrWriteConnections64.restype = ctypes.c_int32
+lib.tecZoneFaceNbrWriteConnections64.argtypes = [
+    ctypes.c_void_p,                 # fileHandle
+    ctypes.c_int32,                  # zone (1-based)
+    ctypes.POINTER(ctypes.c_int64),  # faceNeighbors
+]
 
 # --------------------------------------------------------------------
 # ---- C library bindings: PLT Functions -----------------------------
@@ -633,21 +670,17 @@ lib.tecini142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # Debug
     ctypes.POINTER(ctypes.c_int32),  # VIsDouble
 ]
-
 lib.tecend142.restype = ctypes.c_int32
 lib.tecend142.argtypes = []
-
 lib.tecflush142.restype = ctypes.c_int32
 lib.tecflush142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # NumZonesToRetain
     ctypes.POINTER(ctypes.c_int32),  # ZonesToRetain
 ]
-
 lib.tecfil142.restype = ctypes.c_int32
 lib.tecfil142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # OutputFileHandle
 ]
-
 lib.tecforeign142.restype = ctypes.c_int32
 lib.tecforeign142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # OutputForeignByteOrder
@@ -832,9 +865,6 @@ def tec_file_reader_open(file_name: str) -> ctypes.c_void_p:
     Returns:
     - ctypes.c_void_p: a handle used by other tecio functions.
 
-    Raises:
-    - TecioError if the underlying lib.tecFileReaderOpen returns non-zero.
-
     """
     handle = ctypes.c_void_p(0)
 
@@ -859,9 +889,6 @@ def tec_file_get_type(handle: ctypes.c_void_p) -> FileType:
     Returns:
     - FileType enum indicating FULL, GRID or SOLUTION.
 
-    Raises:
-    - TecioError on non-zero return code from lib.
-
     """
     file_type = ctypes.c_int32(0)
 
@@ -880,9 +907,6 @@ def tec_data_set_get_title(handle: ctypes.c_void_p) -> str:
 
     Returns:
     - str: UTF-8 decoded dataset title.
-
-    Raises:
-    - TecioError on failure.
 
     """
     title = ctypes.c_char_p(0)
@@ -905,9 +929,6 @@ def tec_data_set_get_num_vars(handle: ctypes.c_void_p) -> int:
     Returns:
     - int: number of variables.
 
-    Raises:
-    - TecioError on failure.
-
     """
     num_vars = ctypes.c_int32(0)
 
@@ -928,9 +949,6 @@ def tec_data_set_get_num_zones(handle: ctypes.c_void_p) -> int:
 
     Returns:
     - int: number of zones.
-
-    Raises:
-    - TecioError on failure.
 
     """
     num_zones = ctypes.c_int32(0)
@@ -956,9 +974,6 @@ def tec_zone_get_ijk(handle: ctypes.c_void_p, zone_index: int) -> tuple[int, int
     - tuple (I, J, K):
       * For ORDERED zones: I,J,K are the zone dimensions.
       * For FE zones: I = number of nodes, J = number of elements, K unused.
-
-    Raises:
-    - TecioError on failure.
 
     """
     I = ctypes.c_int64(0)
@@ -990,9 +1005,6 @@ def tec_zone_get_title(handle: ctypes.c_void_p, zone_index: int) -> str:
     Returns:
     - str: zone title (UTF-8 decoded)
 
-    Raises:
-    - TecioError on failure.
-
     """
     zone_title = ctypes.c_char_p(0)
 
@@ -1016,9 +1028,6 @@ def tec_zone_get_type(handle: ctypes.c_void_p, zone_index: int) -> ZoneType:
 
     Returns:
     - ZoneType enum
-
-    Raises:
-    - TecioError on failure.
 
     """
     zone_type = ctypes.c_int32(0)
@@ -1044,9 +1053,6 @@ def tec_zone_is_enabled(handle: ctypes.c_void_p, zone_index: int) -> bool:
     Returns:
     - bool: True if enabled, False if suppressed.
 
-    Raises:
-    - TecioError on failure.
-
     """
     is_enabled = ctypes.c_int32(0)
 
@@ -1070,9 +1076,6 @@ def tec_zone_get_solution_time(handle: ctypes.c_void_p, zone_index: int) -> floa
 
     Returns:
     - float: solution time (double precision)
-
-    Raises:
-    - TecioError on failure.
 
     """
     solution_time = ctypes.c_double(0)
@@ -1100,9 +1103,6 @@ def tec_zone_get_strand_id(handle: ctypes.c_void_p, zone_index: int) -> int:
     Returns:
     - int: strand id
 
-    Raises:
-    - TecioError on failure.
-
     """
     strand_id = ctypes.c_int32(0)
 
@@ -1126,9 +1126,6 @@ def is_64bit(handle: ctypes.c_void_p, zone_index: int) -> bool:
 
     Returns:
     - bool: True if node-map uses 64-bit indices, False if 32-bit.
-
-    Raises:
-    - TecioError on failure.
 
     """
     is64bit = ctypes.c_int32(0)
@@ -1159,9 +1156,6 @@ def tec_zone_node_map_get_64(
 
     Returns:
     - numpy.ndarray of shape (num_elements, nodes_per_cell) with dtype int64
-
-    Raises:
-    - TecioError on failure.
 
     """
     size_of_array = num_elements * nodes_per_cell
@@ -1203,9 +1197,6 @@ def tec_zone_node_map_get(
     Returns:
     - numpy.ndarray of shape (num_elements, nodes_per_cell) with dtype int32
 
-    Raises:
-    - TecioError on failure.
-
     """
     size_of_array = num_elements * nodes_per_cell
     nodemap = (ctypes.c_int32 * size_of_array)()
@@ -1240,9 +1231,6 @@ def tec_var_get_name(handle: ctypes.c_void_p, var_index: int) -> str:
     Returns:
     - str: variable name
 
-    Raises:
-    - TecioError on failure.
-
     """
     var_name = ctypes.c_char_p(0)
 
@@ -1264,9 +1252,6 @@ def tec_var_is_enabled(handle: ctypes.c_void_p, var_index: int) -> bool:
 
     Returns:
     - bool: True if enabled
-
-    Raises:
-    - TecioError on failure.
 
     """
     is_enabled = ctypes.c_int32(0)
@@ -1294,9 +1279,6 @@ def tec_zone_var_get_type(
 
     Returns:
     - DataType enum
-
-    Raises:
-    - TecioError on failure.
 
     """
     var_type = ctypes.c_int32(0)
@@ -1329,9 +1311,6 @@ def tec_zone_var_get_value_location(
     Returns:
     - ValueLocation enum
 
-    Raises:
-    - TecioError on failure.
-
     """
     value_location = ctypes.c_int32(0)
 
@@ -1362,9 +1341,6 @@ def tec_zone_var_is_passive(
 
     Returns:
     - bool: True if variable is passive
-
-    Raises:
-    - TecioError on failure.
 
     """
     is_passive = ctypes.c_int32(0)
@@ -1397,9 +1373,6 @@ def tec_zone_var_get_shared_zone(
     Returns:
     - int | None: shared zone index (None if no shared zone)
 
-    Raises:
-    - TecioError on failure.
-
     """
     shared_zone = ctypes.c_int32(0)
 
@@ -1429,9 +1402,6 @@ def tec_zone_var_get_num_values(
 
     Returns:
     - int: number of values for that variable in the zone
-
-    Raises:
-    - TecioError on failure.
 
     """
     num_values = ctypes.c_int32(0)
@@ -1468,9 +1438,6 @@ def tec_zone_var_get_float_values(
 
     Returns:
     - numpy.ndarray (float32) of length num_values
-
-    Raises:
-    - TecioError on failure.
 
     """
     values = (ctypes.c_float * num_values)()
@@ -1514,9 +1481,6 @@ def tec_zone_var_get_double_values(
     Returns:
     - numpy.ndarray (float64) of length num_values
 
-    Raises:
-    - TecioError on failure.
-
     """
     values = (ctypes.c_double * num_values)()
 
@@ -1558,9 +1522,6 @@ def tec_zone_var_get_int32_values(
 
     Returns:
     - numpy.ndarray (int32) of length num_values
-
-    Raises:
-    - TecioError on failure.
 
     """
     values = (ctypes.c_int32 * num_values)()
@@ -1604,9 +1565,6 @@ def tec_zone_var_get_int16_values(
     Returns:
     - numpy.ndarray (int16) of length num_values
 
-    Raises:
-    - TecioError on failure.
-
     """
     values = (ctypes.c_int16 * num_values)()
 
@@ -1649,9 +1607,6 @@ def tec_zone_var_get_uint8_values(
     Returns:
     - numpy.ndarray (uint8) of length num_values
 
-    Raises:
-    - TecioError on failure.
-
     """
     values = (ctypes.c_uint8 * num_values)()
 
@@ -1685,9 +1640,6 @@ def tec_data_set_aux_data_get_num_items(handle: ctypes.c_void_p) -> int:
     Returns:
     - int: number of aux-data items
 
-    Raises:
-    - TecioError on failure.
-
     """
     num_auxdata_items = ctypes.c_int32(0)
 
@@ -1711,9 +1663,6 @@ def tec_data_set_aux_data_get_item(
 
     Returns:
     - (name, value): tuple of strings
-
-    Raises:
-    - TecioError on failure.
 
     """
     name = ctypes.c_char_p(0)
@@ -1743,9 +1692,6 @@ def tec_var_aux_data_get_num_items(handle: ctypes.c_void_p, var_index: int) -> i
     Returns:
     - int: number of aux-data items
 
-    Raises:
-    - TecioError on failure.
-
     """
     num_items = ctypes.c_int32(0)
 
@@ -1772,9 +1718,6 @@ def tec_var_aux_data_get_item(
 
     Returns:
     - (name, value): tuple of strings
-
-    Raises:
-    - TecioError on failure.
 
     """
     name = ctypes.c_char_p(0)
@@ -1805,9 +1748,6 @@ def tec_zone_aux_data_get_num_items(handle: ctypes.c_void_p, zone_index: int) ->
     Returns:
     - int: number of aux-data items
 
-    Raises:
-    - TecioError on failure.
-
     """
     num_items = ctypes.c_int32(0)
 
@@ -1834,9 +1774,6 @@ def tec_zone_aux_data_get_item(
 
     Returns:
     - (name, value): tuple of strings
-
-    Raises:
-    - TecioError on failure.
 
     """
     name = ctypes.c_char_p(0)
@@ -1885,10 +1822,6 @@ def tec_file_writer_open(
     Returns:
     - ctypes.c_void_p: writer handle (to pass to other writer functions)
 
-    Raises:
-    - TypeError if file_type is not FileType
-    - TecioError on non-zero tecio return code
-
     """
     if not isinstance(file_type, FileType):
         raise TypeError("file_type must be a libtecio.FileType enum")
@@ -1919,13 +1852,6 @@ def tec_file_writer_close(handle: ctypes.c_void_p) -> None:
 
     Inputs:
     - handle: ctypes.c_void_p returned from tec_file_writer_open
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError on non-zero return code.
-
     """
     ret = lib.tecFileWriterClose(ctypes.byref(handle))
     if ret != 0:
@@ -1934,7 +1860,7 @@ def tec_file_writer_close(handle: ctypes.c_void_p) -> None:
         )
 
 
-# ---- Write Zone Header ---------------------------------------------
+# ---- Write Zone Headers --------------------------------------------
 def tec_zone_create_ijk(
     handle: ctypes.c_void_p,
     zone_title: str,
@@ -1972,10 +1898,6 @@ def tec_zone_create_ijk(
 
     Returns:
     - int: created zone index (1-based) as returned by TecIO
-
-    Raises:
-    - TypeError if enum sequences are of incorrect type
-    - TecioError on non-zero tecio return code
 
     """
     zone_out = ctypes.c_int32()
@@ -2072,10 +1994,6 @@ def tec_zone_create_fe(
     Returns:
     - int: created zone index (1-based) as returned by TecIO
 
-    Raises:
-    - TypeError if enum sequences are of incorrect type
-    - TecioError on non-zero tecio return code
-
     """
     zone_out = ctypes.c_int32()
 
@@ -2129,7 +2047,7 @@ def tec_zone_create_fe(
     return zone_out.value
 
 
-# ---- Optional zone record info -------------------------------------
+# ---- Optional fields -----------------------------------------------
 def tec_zone_set_unsteady_options(
     handle: ctypes.c_void_p, zone: int, strand: int = 0, solution_time: float = 0.0
 ) -> None:
@@ -2140,13 +2058,6 @@ def tec_zone_set_unsteady_options(
     - zone: zone index (1-based)
     - strand: integer strand id
     - solution_time: double precision solution time
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError on non-zero return code.
-
     """
     ret = lib.tecZoneSetUnsteadyOptions(
         handle,
@@ -2161,6 +2072,89 @@ def tec_zone_set_unsteady_options(
         )
 
 
+def tec_data_set_add_aux_data(
+    handle: ctypes.c_void_p,
+    name: str,
+    value: str,
+) -> None:
+    """
+    Add a name-value auxiliary data record to the dataset.
+
+    Inputs:
+    - handle: ctypes.c_void_p writer handle
+    - name: auxiliary data name (string)
+    - value: auxiliary data value (string)
+
+    """
+    ret = lib.tecDataSetAddAuxData(
+        handle,
+        ctypes.c_char_p(name.encode("utf-8")),
+        ctypes.c_char_p(value.encode("utf-8")),
+    )
+    if ret != 0:
+        raise TecioError(
+            f"tecDataSetAddAuxData Error: name={name!r}, value={value!r}, "
+            f"return_code={ret}"
+        )
+
+
+def tec_var_add_aux_data(
+    handle: ctypes.c_void_p,
+    var_index: int,
+    name: str,
+    value: str,
+) -> None:
+    """
+    Add a name-value auxiliary data record to a variable.
+
+    Inputs:
+    - handle: ctypes.c_void_p writer handle
+    - var_index: 1-based variable index
+    - name: auxiliary data name (string)
+    - value: auxiliary data value (string)
+
+    """
+    ret = lib.tecVarAddAuxData(
+        handle,
+        ctypes.c_int32(var_index),
+        ctypes.c_char_p(name.encode("utf-8")),
+        ctypes.c_char_p(value.encode("utf-8")),
+    )
+    if ret != 0:
+        raise TecioError(
+            f"tecVarAddAuxData Error: var_index={var_index}, name={name!r}, "
+            f"value={value!r}, return_code={ret}"
+        )
+
+
+def tec_zone_add_aux_data(
+    handle: ctypes.c_void_p,
+    zone_index: int,
+    name: str,
+    value: str,
+) -> None:
+    """
+    Add a name-value auxiliary data record to a zone.
+
+    Inputs:
+    - handle: ctypes.c_void_p writer handle
+    - zone_index: 1-based zone index
+    - name: auxiliary data name (string)
+    - value: auxiliary data value (string)
+
+    """
+    ret = lib.tecZoneAddAuxData(
+        handle,
+        ctypes.c_int32(zone_index),
+        ctypes.c_char_p(name.encode("utf-8")),
+        ctypes.c_char_p(value.encode("utf-8")),
+    )
+    if ret != 0:
+        raise TecioError(
+            f"tecZoneAddAuxData Error: zone_index={zone_index}, name={name!r}, "
+            f"value={value!r}, return_code={ret}"
+        )
+
 # ---- Write variable value functions --------------------------------
 def tec_zone_var_write_double_values(
     handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
@@ -2173,13 +2167,6 @@ def tec_zone_var_write_double_values(
     - var: 1-based variable index
     - values: array-like of float64 values (will be converted to
       contiguous np.float64)
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError on non-zero return code.
-
     """
     ptr, count, _backing = _prepare_array_for_ctypes(
         values, np.float64, ctypes.c_double
@@ -2200,7 +2187,6 @@ def tec_zone_var_write_double_values(
         )
 
 
-# ---- Write Zone Data -----------------------------------------------
 def tec_zone_var_write_float_values(
     handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
 ) -> None:
@@ -2212,13 +2198,6 @@ def tec_zone_var_write_float_values(
     - var: 1-based variable index
     - values: array-like of float32 values (converted to contiguous
       np.float32)
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError on non-zero return code.
-
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.float32, ctypes.c_float)
 
@@ -2247,13 +2226,6 @@ def tec_zone_var_write_int32_values(
     - zone: 1-based zone index
     - var: 1-based variable index
     - values: array-like of int32 values (converted to contiguous np.int32)
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError on non-zero return code.
-
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.int32, ctypes.c_int32)
 
@@ -2282,13 +2254,6 @@ def tec_zone_var_write_int16_values(
     - zone: 1-based zone index
     - var: 1-based variable index
     - values: array-like of int16 values (converted to contiguous np.int16)
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError on non-zero return code.
-
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.int16, ctypes.c_int16)
 
@@ -2317,13 +2282,6 @@ def tec_zone_var_write_uint8_values(
     - zone: 1-based zone index
     - var: 1-based variable index
     - values: array-like of uint8 values (converted to contiguous np.uint8)
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError on non-zero return code.
-
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.uint8, ctypes.c_uint8)
 
@@ -2358,12 +2316,6 @@ def tec_zone_node_map_write32(
     - nodes: array-like of int32 node indices=
     - partition: partition index (0 for non-partitioned zones)
     - is_one_based: Boolean/bool/int indicating whether node indices are 1-based
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError on non-zero return code.
 
     Notes:
     - Use for zones with fewer than ~2 billion node map entries.
@@ -2404,12 +2356,6 @@ def tec_zone_node_map_write64(
     - partition: partition index (0 for non-partitioned zones)
     - is_one_based: Boolean/bool/int indicating whether node indices are 1-based
 
-    Returns:
-    - None
-
-    Raises:
-    - TecioError on non-zero return code.
-
     Notes:
     - Use for zones with more than ~2 billion node map entries.
     - Can be called multiple times per zone; total entries must match zone definition.
@@ -2429,6 +2375,79 @@ def tec_zone_node_map_write64(
     if ret != 0:
         raise TecioError(
             f"tecZoneNodeMapWrite64 Error: zone={zone}, partition={partition}, "
+            f"count={count}, return_code={ret}"
+        )
+
+
+def tec_zone_face_nbr_write_connections32(
+    handle: ctypes.c_void_p,
+    zone: int,
+    face_neighbors: npt.ArrayLike,
+) -> None:
+    """
+    Write 32-bit face neighbor connections for an FE zone.
+
+    Inputs:
+    - handle: ctypes.c_void_p writer handle
+    - zone: 1-based zone index
+    - face_neighbors: array-like of int32 face neighbor indices
+
+    Notes:
+    - num_face_cons and face_nbr_mode must be set when creating the zone via
+      tec_zone_create_ijk or tec_zone_create_fe.
+    - Use for zones with fewer than ~2 billion face neighbor entries.
+    - Can be called multiple times; total entries must match num_face_cons
+      declared at zone creation.
+    - Face neighbors have expensive performance implications. Use face neighbors only to manually specify connections that are not defined via the connectivity list.
+    """
+    ptr, count, _backing = _prepare_array_for_ctypes(
+        face_neighbors, np.int32, ctypes.c_int32
+    )
+    ret = lib.tecZoneFaceNbrWriteConnections32(
+        handle,
+        ctypes.c_int32(zone),
+        ptr,
+    )
+    if ret != 0:
+        raise TecioError(
+            f"tecZoneFaceNbrWriteConnections32 Error: zone={zone}, "
+            f"count={count}, return_code={ret}"
+        )
+
+
+def tec_zone_face_nbr_write_connections64(
+    handle: ctypes.c_void_p,
+    zone: int,
+    face_neighbors: npt.ArrayLike,
+) -> None:
+    """
+    Write 64-bit face neighbor connections for an FE zone.
+
+    Inputs:
+    - handle: ctypes.c_void_p writer handle
+    - zone: 1-based zone index
+    - face_neighbors: array-like of int64 face neighbor indices
+
+    Notes:
+    - num_face_cons and face_nbr_mode must be set when creating the zone via
+      tec_zone_create_ijk or tec_zone_create_fe.
+    - Use for zones with more than ~2 billion face neighbor entries.
+    - Can be called multiple times; total entries must match num_face_cons
+      declared at zone creation.
+    - Face neighbors have expensive performance implications. Use face neighbors only to manually specify connections that are not defined via the connectivity list.
+
+    """
+    ptr, count, _backing = _prepare_array_for_ctypes(
+        face_neighbors, np.int64, ctypes.c_int64
+    )
+    ret = lib.tecZoneFaceNbrWriteConnections64(
+        handle,
+        ctypes.c_int32(zone),
+        ptr,
+    )
+    if ret != 0:
+        raise TecioError(
+            f"tecZoneFaceNbrWriteConnections64 Error: zone={zone}, "
             f"count={count}, return_code={ret}"
         )
 
@@ -2461,12 +2480,6 @@ def tecini142(
     - debug: Debug.FALSE (0) or Debug.TRUE (1)
     - vis_double: DataType.DOUBLE (1) or DataType.FLOAT (0)
 
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if initialization fails
-
     Notes:
     - Must be called before any zone or data operations
     - Call tecend142() to finalize the file
@@ -2496,12 +2509,6 @@ def tecini142(
 def tecend142() -> None:
     """Finalize and close the Tecplot data file.
 
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if finalization fails
-
     Notes:
     - Must be called after all data has been written
     - Flushes all pending data and closes the file
@@ -2521,12 +2528,6 @@ def tecflush142(
     Inputs:
     - num_zones_to_retain: Number of zones to keep in memory
     - zones_to_retain: List of zone indices to retain (1-based)
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if flush fails
 
     Notes:
     - Used to reduce memory usage for large files
@@ -2556,9 +2557,6 @@ def tecfil142() -> int:
     Returns:
     - int: File handle
 
-    Raises:
-    - TecioError if operation fails
-
     Notes:
     - Used for advanced file operations
 
@@ -2577,12 +2575,6 @@ def tecforeign142(output_foreign_byte_order: int) -> None:
 
     Inputs:
     - output_foreign_byte_order: 0=native, 1=foreign
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if operation fails
 
     Notes:
     - Used to control endianness of output files
@@ -2643,12 +2635,6 @@ def teczne142(
     - value_location: List of ValueLocation enums or 0/1 for nodal/cell-centered
     - share_var_from_zone: List of zone indices to share variables from
     - share_connectivity_from_zone: Zone index to share connectivity from
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if zone creation fails
 
     Notes:
     - For ORDERED zones: imx, jmx, kmx are dimensions
@@ -2761,13 +2747,6 @@ def tecpolyzne142(
     - value_location: List of ValueLocation enums or 0/1 for nodal/cell-centered
     - share_var_from_zone: List of zone indices to share variables from
     - share_connectivity_from_zone: Zone index to share connectivity from
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if zone creation fails
-
     """
     zone_type_c = ctypes.c_int32(_to_int_value(zone_type))
     num_nodes_c = ctypes.c_int32(num_nodes)
@@ -2861,13 +2840,6 @@ def tecznefemixed142(
     - value_location: List of ValueLocation enums or 0/1 for nodal/cell-centered
     - share_var_from_zone: List of zone indices to share variables from
     - share_connectivity_from_zone: Zone index to share connectivity from
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if zone creation fails
-
     """
     num_nodes_c = ctypes.c_int32(num_nodes)
     num_elements_c = ctypes.c_int32(num_elements)
@@ -2945,12 +2917,6 @@ def tecijkptn142(
     - jmax: Maximum J index
     - kmax: Maximum K index
 
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if partition creation fails
-
     Notes:
     - Used for parallel I/O to partition large zones
 
@@ -2990,13 +2956,6 @@ def tecfeptn142(
     - partition_owner_zone: Zone index of the owner zone
     - num_nodes: Number of nodes in this partition
     - num_elements: Number of elements in this partition
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if partition creation fails
-
     """
     partition_owner_zone_c = ctypes.c_int32(partition_owner_zone)
     num_nodes_c = ctypes.c_int32(num_nodes)
@@ -3027,13 +2986,6 @@ def tecfemixedptn142(
     - num_nodes: Number of nodes in this partition
     - num_elements: Number of elements in this partition
     - num_nodes_per_element: Number of nodes per element
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if partition creation fails
-
     """
     partition_owner_zone_c = ctypes.c_int32(partition_owner_zone)
     num_nodes_c = ctypes.c_int32(num_nodes)
@@ -3064,12 +3016,6 @@ def tecdat142(
     - field_data: Array of field values (numpy array, list, or tuple)
     - is_double: True for double precision, False for single precision
 
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if data writing fails
-
     Notes:
     - Data must be written in the order specified by zone format (BLOCK or POINT)
     - For BLOCK format: write all values for variable 1, then variable 2, etc.
@@ -3099,41 +3045,11 @@ def tecdat142(
 
 
 # ---- Connectivity writing ------------------------------------------
-def tecnod142(connectivity: Sequence[int]) -> None:
-    """Write node connectivity for FE zone (deprecated, use tecnode142).
-
-    Inputs:
-    - connectivity: Array of node indices (1-based)
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if connectivity writing fails
-
-    Notes:
-    - Deprecated: Use tecnode142() or tecznemap142() instead
-
-    """
-    conn_array = (ctypes.c_int32 * len(connectivity))(*connectivity)
-    conn_ptr = ctypes.cast(conn_array, ctypes.POINTER(ctypes.c_int32))
-
-    ret = lib.tecnod142(conn_ptr)
-    if ret != 0:
-        raise TecioError(f"tecnod142 Error: return_code={ret}")
-
-
 def tecnode142(connectivity: npt.ArrayLike) -> None:
     """Write node connectivity for FE zone.
 
     Inputs:
     - connectivity: Array of node indices (1-based)
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if connectivity writing fails
 
     Notes:
     - Node indices are 1-based (Fortran convention)
@@ -3160,12 +3076,6 @@ def tecznemap142(node_map: npt.ArrayLike) -> None:
     Inputs:
     - node_map: Array of node indices (1-based)
 
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if node map writing fails
-
     Notes:
     - Similar to tecnode142 but with different internal handling
 
@@ -3189,12 +3099,6 @@ def tecface142(face_connections: npt.ArrayLike) -> None:
 
     Inputs:
     - face_connections: Array of face connection data
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if face connection writing fails
 
     Notes:
     - Used to specify face-to-face connectivity between zones
@@ -3221,12 +3125,6 @@ def tecpolyface142(
     - face_nodes: Node indices for all faces (concatenated)
     - face_left_elems: Left element index for each face
     - face_right_elems: Right element index for each face
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if face data writing fails
 
     Notes:
     - face_node_counts has one entry per face
@@ -3277,12 +3175,6 @@ def tecpolybconn142(
     - boundary_connection_elems: Element indices for boundary connections
     - boundary_connection_zones: Zone indices for boundary connections (optional)
 
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if boundary connection writing fails
-
     Notes:
     - Used to specify connectivity to neighboring zones at boundaries
 
@@ -3327,12 +3219,6 @@ def tecauxstr142(name: str, value: str) -> None:
     - name: Auxiliary data name
     - value: Auxiliary data value
 
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if auxiliary data writing fails
-
     Notes:
     - Must be called after tecini142() but before first teczne142()
 
@@ -3354,12 +3240,6 @@ def tecvauxstr142(var: int, name: str, value: str) -> None:
     - var: Variable index (1-based)
     - name: Auxiliary data name
     - value: Auxiliary data value
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if auxiliary data writing fails
 
     Notes:
     - Must be called after tecini142() but before first teczne142()
@@ -3386,12 +3266,6 @@ def teczauxstr142(name: str, value: str) -> None:
     - name: Auxiliary data name
     - value: Auxiliary data value
 
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if auxiliary data writing fails
-
     Notes:
     - Must be called after teczne142() for the current zone
 
@@ -3413,12 +3287,6 @@ def tecmpiinit142(communicator: int, main_rank: int) -> None:
     Inputs:
     - communicator: MPI communicator handle
     - main_rank: Rank of the main process
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if MPI initialization fails
 
     Notes:
     - Must be called before tecini142() for parallel I/O
@@ -3445,12 +3313,6 @@ def tecusr142(user_rec: str) -> None:
 
     Inputs:
     - user_rec: User-defined data string
-
-    Returns:
-    - None
-
-    Raises:
-    - TecioError if user record writing fails
 
     Notes:
     - Used to write custom data records into the file
