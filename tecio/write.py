@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 import ctypes
-from dataclasses import dataclass
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+from collections.abc import Sequence
 
 import numpy as np
 import numpy.typing as npt
 
 from . import libtecio
-from .libtecio import DataType, FileType, ValueLocation, ZoneType
+from .libtecio import DataType, FileType, ValueLocation
 
 
 class Write:
-    """
-    Write provides a high level API to write data to Tecplot szplt
+    """Write provides a high level API to write data to Tecplot szplt
     formatted binary files.
     """
 
@@ -23,7 +21,7 @@ class Write:
         dataset_title: str = "Untitled",
         var_names: Iterable[str] = [],
         file_type: FileType = FileType.FULL,
-        grid_file_handle: Optional[ctypes.c_void_p] = None,
+        grid_file_handle: ctypes.c_void_p | None = None,
     ):
         if not isinstance(file_type, FileType):
             raise TypeError("file_type must be a libtecio.FileType enum")
@@ -51,8 +49,7 @@ class Write:
 
 
 class WriteZone:
-    """
-    WriteZone provides a high level API with tecio functions to write
+    """WriteZone provides a high level API with tecio functions to write
     szplt binary formatted zone data.
     """
 
@@ -71,12 +68,11 @@ class WriteZone:
         file_handle: ctypes.c_void_p,
         zone_name: str,
         shape: Sequence[int],
-        var_sharing: Optional[Sequence[int]] = None,
-        var_data_types: Optional[Sequence[DataType]] = None,
-        value_locations: Optional[Sequence[ValueLocation]] = None,
+        var_sharing: Sequence[int] | None = None,
+        var_data_types: Sequence[DataType] | None = None,
+        value_locations: Sequence[ValueLocation] | None = None,
     ) -> int:
-        """
-        Create an ordered zone. `shape` is (I,J,K).
+        """Create an ordered zone. `shape` is (I,J,K).
         Returns zone index (int).
 
         var_data_types must be a sequence of libtecio.DataType enums (if provided).

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import ctypes
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -12,8 +13,7 @@ from .libtecio import DataType, FileType, ValueLocation, ZoneType
 
 
 class Read:
-    """
-    Read provides an interface to read information and data from
+    """Read provides an interface to read information and data from
     Tecplot szplt formatted binary files.
     """
 
@@ -22,8 +22,8 @@ class Read:
         self.zones = [
             ReadZone(self.handle, i + 1, self.num_vars) for i in range(self.num_zones)
         ]
-        self._auxdata: Optional[AuxData] = None
-        self._var_auxdata: Optional[List[AuxData]] = None
+        self._auxdata: AuxData | None = None
+        self._var_auxdata: list[AuxData] | None = None
         # todo: make dataset var variable list
 
     @property
@@ -54,12 +54,12 @@ class Read:
         return self._auxdata
 
     @property
-    def var_auxdata(self) -> List[AuxData]:
-        """
-        Get list of variable-level auxiliary data.
+    def var_auxdata(self) -> list[AuxData]:
+        """Get list of variable-level auxiliary data.
 
         Returns:
             List of AuxData objects, one per variable (1-indexed to match Tecplot)
+
         """
         if self._var_auxdata is None:
             # Create list with None at index 0 for 1-based indexing
@@ -69,14 +69,14 @@ class Read:
         return self._var_auxdata
 
     def get_var_auxdata(self, var_index: int) -> AuxData:
-        """
-        Get auxiliary data for a specific variable.
+        """Get auxiliary data for a specific variable.
 
         Args:
             var_index: Variable index (1-based)
 
         Returns:
             AuxData object for the specified variable
+
         """
         if var_index < 1 or var_index > self.num_vars:
             raise IndexError(
@@ -87,26 +87,25 @@ class Read:
 
 @dataclass
 class ReadZone:
-    """
-    ReadZone provides a high level API with tecio functions to read
+    """ReadZone provides a high level API with tecio functions to read
     szplt binary formatted zone data.
     """
 
     _handle: ctypes.c_void_p
     zone_index: int
     num_vars: int
-    _auxdata: Optional[AuxData] = None
-    _variables: Optional[List[Variable]] = None
-    _node_map: Optional[npt.NDArray[np.int64]] = None
+    _auxdata: AuxData | None = None
+    _variables: list[Variable] | None = None
+    _node_map: npt.NDArray[np.int64] | None = None
     # Note: could cache all properties if they are shown as bottlenecks in profiling. Or could leave everything as methods and save data in a more flexible data structure.
 
-    def __post_init__(self) -> Tuple[int, int, int]:
+    def __post_init__(self) -> tuple[int, int, int]:
         self.I, self.J, self.K = libtecio.tec_zone_get_ijk(
             self._handle, self.zone_index
         )
 
     @property
-    def variables(self) -> List[Variable]:
+    def variables(self) -> list[Variable]:
         # Check cached private variables -> don't run C functions each time this is called if already defined
         if self._variables is None:
             self._variables = [
@@ -141,7 +140,7 @@ class ReadZone:
             return self.J
 
     @property
-    def dimensions(self) -> Tuple[int, int, int]:
+    def dimensions(self) -> tuple[int, int, int]:
         return (self.I, self.J, self.K)
 
     @property
@@ -151,9 +150,9 @@ class ReadZone:
             return 2
         elif self.type == ZoneType.FETRIANGLE:
             return 3
-        elif self.type == ZoneType.FEQUADRILATERAL:
-            return 4
-        elif self.type == ZoneType.FETETRAHEDRON:
+        elif (
+            self.type == ZoneType.FEQUADRILATERAL or self.type == ZoneType.FETETRAHEDRON
+        ):
             return 4
         elif self.type == ZoneType.FEBRICK:
             return 8
@@ -199,8 +198,7 @@ class ReadZone:
 
 @dataclass
 class ReadVariable:
-    """
-    ReadVariable provides a high level API with tecio functions to read
+    """ReadVariable provides a high level API with tecio functions to read
     szplt binary formatted zone data.
     """
 
@@ -233,7 +231,7 @@ class ReadVariable:
         )
 
     @property
-    def shared_zone(self) -> Optional[int]:
+    def shared_zone(self) -> int | None:
         """Outputs shared zone index (0 if none)"""
         return libtecio.tec_zone_var_get_shared_zone(
             self._handle, self.zone_index, self.var_index
@@ -248,27 +246,26 @@ class ReadVariable:
     @property
     def values(
         self,
-    ) -> Union[
-        npt.NDArray[np.float32],
-        npt.NDArray[np.float64],
-        npt.NDArray[np.int32],
-        npt.NDArray[np.int16],
-        npt.NDArray[np.uint8],
-    ]:
+    ) -> (
+        npt.NDArray[np.float32]
+        | npt.NDArray[np.float64]
+        | npt.NDArray[np.int32]
+        | npt.NDArray[np.int16]
+        | npt.NDArray[np.uint8]
+    ):
         """Get all values for this variable."""
         return self.get_values()
 
     def get_values(
-        self, value_range: Tuple[Optional[int], Optional[int]] = (None, None)
-    ) -> Union[
-        npt.NDArray[np.float32],
-        npt.NDArray[np.float64],
-        npt.NDArray[np.int32],
-        npt.NDArray[np.int16],
-        npt.NDArray[np.uint8],
-    ]:
-        """
-        Get variable values with optional range specification.
+        self, value_range: tuple[int | None, int | None] = (None, None)
+    ) -> (
+        npt.NDArray[np.float32]
+        | npt.NDArray[np.float64]
+        | npt.NDArray[np.int32]
+        | npt.NDArray[np.int16]
+        | npt.NDArray[np.uint8]
+    ):
+        """Get variable values with optional range specification.
 
         Args:
             value_range: Tuple of (start_index, end_index). If (None, None),
@@ -276,6 +273,7 @@ class ReadVariable:
 
         Returns:
             NumPy array of values with appropriate dtype
+
         """
         data_type = self.type
 
@@ -327,8 +325,7 @@ class ReadVariable:
 
 
 class ReadAuxData:
-    """
-    ReadAuxData provides a dictionary-like interface for accessing
+    """ReadAuxData provides a dictionary-like interface for accessing
     Tecplot auxiliary data with automatic type conversion.
 
     Values are accessed as strings in the SZL file but can be retrieved
@@ -339,20 +336,20 @@ class ReadAuxData:
         self,
         handle: ctypes.c_void_p,
         aux_type: str,
-        index: Optional[int] = None,
+        index: int | None = None,
     ):
-        """
-        Initialize AuxData wrapper.
+        """Initialize AuxData wrapper.
 
         Args:
             handle: File handle C pointer
             aux_type: Type of auxiliary data ('dataset', 'var', or 'zone')
             index: Variable or zone index (1-based), not needed for dataset
+
         """
         self._handle = handle
         self._aux_type = aux_type
         self._index = index
-        self._data: Optional[Dict[str, str]] = None
+        self._data: dict[str, str] | None = None
 
     def _load_data(self) -> None:
         """Load auxiliary data from file into internal dictionary."""
@@ -397,7 +394,7 @@ class ReadAuxData:
             raise ValueError(f"Invalid aux_type: {self._aux_type}")
 
     @property
-    def data(self) -> Dict[str, str]:
+    def data(self) -> dict[str, str]:
         """Return the underlying dictionary of auxiliary data."""
         self._load_data()
         return self._data
@@ -434,9 +431,8 @@ class ReadAuxData:
         """Return iterator over (name, value) pairs."""
         return self.data.items()
 
-    def as_int(self, key: str, default: Optional[int] = None) -> Optional[int]:
-        """
-        Get auxiliary data value as integer.
+    def as_int(self, key: str, default: int | None = None) -> int | None:
+        """Get auxiliary data value as integer.
 
         Args:
             key: Auxiliary data name
@@ -444,15 +440,15 @@ class ReadAuxData:
 
         Returns:
             Integer value or default
+
         """
         try:
             return int(self[key])
         except (KeyError, ValueError):
             return default
 
-    def as_float(self, key: str, default: Optional[float] = None) -> Optional[float]:
-        """
-        Get auxiliary data value as float.
+    def as_float(self, key: str, default: float | None = None) -> float | None:
+        """Get auxiliary data value as float.
 
         Args:
             key: Auxiliary data name
@@ -460,15 +456,15 @@ class ReadAuxData:
 
         Returns:
             Float value or default
+
         """
         try:
             return float(self[key])
         except (KeyError, ValueError):
             return default
 
-    def as_bool(self, key: str, default: Optional[bool] = None) -> Optional[bool]:
-        """
-        Get auxiliary data value as boolean.
+    def as_bool(self, key: str, default: bool | None = None) -> bool | None:
+        """Get auxiliary data value as boolean.
 
         Recognizes common boolean string representations:
         - True: 'true', 't', 'yes', 'y', '1' (case-insensitive)
@@ -480,6 +476,7 @@ class ReadAuxData:
 
         Returns:
             Boolean value or default
+
         """
         try:
             value = self[key].lower().strip()
@@ -502,8 +499,7 @@ class ReadAuxData:
 
 
 class Write:
-    """
-    Write provides a high level API to write data to Tecplot szplt
+    """Write provides a high level API to write data to Tecplot szplt
     formatted binary files.
     """
 
@@ -513,7 +509,7 @@ class Write:
         dataset_title: str = "Untitled",
         var_names: Iterable[str] = [],
         file_type: FileType = FileType.FULL,
-        grid_file_handle: Optional[ctypes.c_void_p] = None,
+        grid_file_handle: ctypes.c_void_p | None = None,
     ):
         if not isinstance(file_type, FileType):
             raise TypeError("file_type must be a libtecio.FileType enum")
@@ -550,8 +546,7 @@ class Write:
 
 
 class WriteZone:
-    """
-    WriteZone provides a high level API with tecio functions to write
+    """WriteZone provides a high level API with tecio functions to write
     szplt binary formatted zone data.
     """
 
@@ -570,12 +565,11 @@ class WriteZone:
         file_handle: ctypes.c_void_p,
         zone_name: str,
         shape: Sequence[int],
-        var_sharing: Optional[Sequence[int]] = None,
-        var_data_types: Optional[Sequence[DataType]] = None,
-        value_locations: Optional[Sequence[ValueLocation]] = None,
+        var_sharing: Sequence[int] | None = None,
+        var_data_types: Sequence[DataType] | None = None,
+        value_locations: Sequence[ValueLocation] | None = None,
     ) -> int:
-        """
-        Create an ordered zone. `shape` is (I,J,K).
+        """Create an ordered zone. `shape` is (I,J,K).
         Returns zone index (int).
 
         var_data_types must be a sequence of libtecio.DataType enums (if provided).

@@ -5,14 +5,13 @@ import platform
 import re
 import shutil
 import subprocess
-from typing import Optional, Tuple
 
 
 class TecplotNotFoundError(RuntimeError):
     """Raised when Tecplot installation or components cannot be located."""
 
 
-_TEC_EXECUTABLE_ALIASES: Tuple[str, ...] = (
+_TEC_EXECUTABLE_ALIASES: tuple[str, ...] = (
     "tec360",
     "tec360EX",
     "tecplot",
@@ -21,7 +20,7 @@ _TEC_EXECUTABLE_ALIASES: Tuple[str, ...] = (
 _VERSION_REGEX = re.compile(r"(20\d{2})\s*[Rr]\s*(\d+)")
 
 
-def _run_which(cmd: str) -> Optional[str]:
+def _run_which(cmd: str) -> str | None:
     """Run `which cmd` explicitly as a fallback."""
     try:
         proc = subprocess.run(
@@ -39,9 +38,7 @@ def _run_which(cmd: str) -> Optional[str]:
 
 
 def _find_tec_executable() -> str:
-    """
-    Locate Tecplot executable using multiple strategies.
-    """
+    """Locate Tecplot executable using multiple strategies."""
     # 1. shutil.which
     for name in _TEC_EXECUTABLE_ALIASES:
         exe = shutil.which(name)
@@ -94,10 +91,8 @@ def _find_tec_executable() -> str:
     )
 
 
-def _extract_version_from_path(path: str) -> Optional[str]:
-    """
-    Extract Tecplot version YYYYR# from a filesystem path.
-    """
+def _extract_version_from_path(path: str) -> str | None:
+    """Extract Tecplot version YYYYR# from a filesystem path."""
     match = _VERSION_REGEX.search(path)
     if match:
         year, release = match.groups()
@@ -105,10 +100,8 @@ def _extract_version_from_path(path: str) -> Optional[str]:
     return None
 
 
-def _extract_version_from_executable(exe_path: str) -> Optional[str]:
-    """
-    Ask Tecplot executable for its version.
-    """
+def _extract_version_from_executable(exe_path: str) -> str | None:
+    """Ask Tecplot executable for its version."""
     try:
         proc = subprocess.run(
             [exe_path, "-v"],
@@ -134,8 +127,7 @@ def get_tec_exe() -> str:
 
 
 def get_tec_bin() -> str:
-    """
-    Return Tecplot bin directory.
+    """Return Tecplot bin directory.
     - macOS: Contents/Frameworks
     - Linux: directory containing the executable
     """
@@ -171,8 +163,7 @@ def get_tec_bin() -> str:
 
 
 def get_tecio_lib() -> str:
-    """
-    Return full path to the tecio shared library.
+    """Return full path to the tecio shared library.
     - Linux: libtecio.so
     - macOS: libtecio.dylib
     """

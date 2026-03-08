@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 
 import tecio
 from tecio import szlfile
-
 
 test_dir = Path(tecio.__file__).parent.parent
 input_file = test_dir / "tests" / "Onera.szplt"
@@ -55,7 +55,7 @@ for i in range(szl.num_zones):
 
     # Test zone-level auxiliary data
     if len(zone.auxdata) > 0:
-        print(f"  Zone auxiliary data:")
+        print("  Zone auxiliary data:")
         for name, value in zone.auxdata.items():
             print(f"    {name}: {value}")
 

@@ -1,17 +1,17 @@
-"""
-Command line interface to dump all contents of a szlfile (like a super
-verbose szlpltview)
+"""Command line interface to dump all contents of a szlfile.
+
+(like a super verbose szlpltview)
 """
 
 import argparse
+
 import numpy as np
 
 from .. import szlfile
 
 
 def main():
-    """Main program call"""
-
+    """Print all available info for the given SZPLT file."""
     # Get command line input
     parser = argparse.ArgumentParser(description="Dump all contents of a SZPLT file.")
     parser.add_argument(
@@ -94,7 +94,9 @@ def main():
             print(f"    num values: {var.num_values}")
 
             # Get first 100 values or all if fewer than 100
-            value_str = np.array2string(var.values, prefix="    values: ", separator=", ")
+            value_str = np.array2string(
+                var.values, prefix="    values: ", separator=", "
+            )
             print(f"    values: {value_str}")
 
         # Show node map for FE zones

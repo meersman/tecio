@@ -117,7 +117,8 @@ def _create_FE_tet() -> tuple[
     npt.NDArray[np.int32],
 ]:
     """Create coordinates and nodemap for FETETRAHEDRON zone type.
-    Two tetrahedra sharing a face."""
+    Two tetrahedra sharing a face.
+    """
     points = np.array([
         [0.0, 0.0, 0.0],  # 1
         [1.0, 0.0, 0.0],  # 2
@@ -144,7 +145,8 @@ def _create_FE_pyramid() -> tuple[
 ]:
     """Create coordinates and nodemap for a pyramid using FEBRICK zone type.
     Tecplot represents pyramids as degenerate bricks where nodes 5,6,7,8
-    are all the apex node repeated."""
+    are all the apex node repeated.
+    """
     points = np.array([
         [0.0, 0.0, 0.0],  # 1 - base
         [1.0, 0.0, 0.0],  # 2 - base
@@ -170,7 +172,8 @@ def _create_FE_prism() -> tuple[
 ]:
     """Create coordinates and nodemap for a triangular prism using FEBRICK.
     Represented as degenerate brick: bottom tri nodes 1,2,3 paired with
-    top tri nodes 4,5,6 — each tri edge node repeated to fill 8-node brick."""
+    top tri nodes 4,5,6 — each tri edge node repeated to fill 8-node brick.
+    """
     points = np.array([
         [0.0, 0.0, 0.0],  # 1 - bottom tri
         [1.0, 0.0, 0.0],  # 2 - bottom tri

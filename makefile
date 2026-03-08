@@ -76,6 +76,7 @@ clean:
 	find . -type f -name "*.pyc" -delete
 	find . -type f -name "*.pyo" -delete
 	rm -rf build/ dist/ .coverage htmlcov/
+	rm -rf *.szplt
 	@echo "✓ Cleanup complete"
 
 # Show current versions of tools
