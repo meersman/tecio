@@ -25,16 +25,19 @@ output-format = "concise"
 
 [tool.ruff.format]
 preview = true
+docstring-code-format = true
 
 [tool.ruff.lint]
 select = [
    "E",  # pycodestyle
+   "D",  # pydocstyle
    "F",  # Pyflakes
    "UP",  # pyupgrade
    "B",  # flake8-bugbear
    "SIM",  # flake8-simplify
    "I",  # isort
 ]
+ignore = ["D203", "D213"]
 
 [tool.mypy]
 python_version = "3.10"

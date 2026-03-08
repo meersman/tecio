@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Lite test for libtecio functions directly."""
-
+# ruff: noqa: F403, F405
 
 import numpy as np
 import numpy.typing as npt
@@ -8,18 +8,19 @@ import numpy.typing as npt
 from tecio.libtecio import *
 
 
-def _create_ordered(ijk: tuple[int, int, int]) -> tuple[
-    npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]
-]:
+def _create_ordered(
+    ijk: tuple[int, int, int],
+) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:
     """Create ordered coordinates"""
-    x_ = np.linspace(0., ijk[0], ijk[0])
-    y_ = np.linspace(0., ijk[1], ijk[1])
-    z_ = np.linspace(0., ijk[2], ijk[2])
-    x, y = np.meshgrid(x_, y_, indexing='xy')
-    x = np.array([x]*ijk[2])
-    y = np.array([y]*ijk[2])
-    z = np.repeat(z_, ijk[0]*ijk[1])
+    x_ = np.linspace(0.0, ijk[0], ijk[0])
+    y_ = np.linspace(0.0, ijk[1], ijk[1])
+    z_ = np.linspace(0.0, ijk[2], ijk[2])
+    x, y = np.meshgrid(x_, y_, indexing="xy")
+    x = np.array([x] * ijk[2])
+    y = np.array([y] * ijk[2])
+    z = np.repeat(z_, ijk[0] * ijk[1])
     return x, y, z
+
 
 def _create_FE_lineseg() -> tuple[
     npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.int32]
@@ -122,7 +123,7 @@ def _create_FE_tet() -> tuple[
         [1.0, 0.0, 0.0],  # 2
         [0.5, 1.0, 0.0],  # 3
         [0.5, 0.5, 1.0],  # 4 - apex of tet 1
-        [0.5, 0.5, -1.0], # 5 - apex of tet 2
+        [0.5, 0.5, -1.0],  # 5 - apex of tet 2
     ])
     x = points[:, 0]
     y = points[:, 1]
@@ -194,7 +195,7 @@ def _create_FE_brick() -> tuple[
     npt.NDArray[np.float32],
     npt.NDArray[np.int32],
 ]:
-    """Create coordinates and nodemap for FEPOLYGON zone type"""
+    """Create coordinates and nodemap for FEBRICK zone type"""
     points = np.array([
         [0, 3, 0],  # XYZ
         [3, 3, 0],  # XYZ
@@ -227,7 +228,7 @@ def test_tec_zone_create_ijk() -> None:
         # Create samople structured data
         i, j, k = (3, 4, 5)
         x, y, z = _create_ordered((i, j, k))
-        c = np.sin(2*np.pi*x)*np.cos(2*np.pi*y)
+        c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
 
         handle = tec_file_writer_open(
             "test_tec_zone_create_ijk.szplt",
@@ -241,15 +242,15 @@ def test_tec_zone_create_ijk() -> None:
             i,
             j,
             k,
-            var_types=[DataType.FLOAT]*4,
-            value_locations=[ValueLocation.NODAL]*4,
+            var_types=[DataType.FLOAT] * 4,
+            value_locations=[ValueLocation.NODAL] * 4,
         )
         tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel())
         tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel())
         tec_zone_var_write_float_values(handle, zone_idx, 3, z.ravel())
         tec_zone_var_write_float_values(handle, zone_idx, 4, c.ravel())
         tec_file_writer_close(handle)
-        print(f"PASS: test_tec_zone_create_ijk")
+        print("PASS: test_tec_zone_create_ijk")
     except Exception as e:
         print(f"FAIL: test_tec_zone_create_ijk - {e}")
 
@@ -259,7 +260,7 @@ def test_tec_zone_create_fe_lineseg() -> None:
     try:
         # Create sample FELINESEG data
         x, y, nodes = _create_FE_lineseg()
-        c = np.sin(2*np.pi*x)*np.cos(2*np.pi*y)
+        c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = tec_file_writer_open(
             "test_tec_zone_create_fe_lineseg.szplt",
             "test_tecio",
@@ -270,17 +271,17 @@ def test_tec_zone_create_fe_lineseg() -> None:
             handle,
             "test_fe_lineseg",
             ZoneType.FELINESEG,
-            len(x), # number of nodes
+            len(x),  # number of nodes
             len(nodes),
-            var_types=[DataType.FLOAT]*3,
-            value_locations=[ValueLocation.NODAL]*3,
+            var_types=[DataType.FLOAT] * 3,
+            value_locations=[ValueLocation.NODAL] * 3,
         )
         tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel())
         tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel())
         tec_zone_var_write_float_values(handle, zone_idx, 3, c.ravel())
         tec_zone_node_map_write32(handle, zone_idx, nodes.ravel())
         tec_file_writer_close(handle)
-        print(f"PASS: test_tec_zone_create_fe_lineseg")
+        print("PASS: test_tec_zone_create_fe_lineseg")
     except Exception as e:
         print(f"FAIL: test_tec_zone_create_fe_lineseg - {e}")
 
@@ -290,7 +291,7 @@ def test_tec_zone_create_fe_tri() -> None:
     try:
         # Create sample FETRIANGLE data
         x, y, nodes = _create_FE_tri()
-        c = np.sin(2*np.pi*x)*np.cos(2*np.pi*y)
+        c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = tec_file_writer_open(
             "test_tec_zone_create_fe_tri.szplt",
             "test_tecio",
@@ -301,17 +302,17 @@ def test_tec_zone_create_fe_tri() -> None:
             handle,
             "test_fe_triangle",
             ZoneType.FETRIANGLE,
-            len(x), # number of nodes
+            len(x),  # number of nodes
             len(nodes),
-            var_types=[DataType.FLOAT]*3,
-            value_locations=[ValueLocation.NODAL]*3,
+            var_types=[DataType.FLOAT] * 3,
+            value_locations=[ValueLocation.NODAL] * 3,
         )
         tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel())
         tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel())
         tec_zone_var_write_float_values(handle, zone_idx, 3, c.ravel())
         tec_zone_node_map_write32(handle, zone_idx, nodes.ravel())
         tec_file_writer_close(handle)
-        print(f"PASS: test_tec_zone_create_fe_tri")
+        print("PASS: test_tec_zone_create_fe_tri")
     except Exception as e:
         print(f"FAIL: test_tec_zone_create_fe_tri - {e}")
 
@@ -321,7 +322,7 @@ def test_tec_zone_create_fe_quad() -> None:
     try:
         # Create sample FEQUADRILATERAL data
         x, y, nodes = _create_FE_quad()
-        c = np.sin(2*np.pi*x)*np.cos(2*np.pi*y)
+        c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = tec_file_writer_open(
             "test_tec_zone_create_fe_quad.szplt",
             "test_tecio",
@@ -332,17 +333,17 @@ def test_tec_zone_create_fe_quad() -> None:
             handle,
             "test_fe_quad",
             ZoneType.FEQUADRILATERAL,
-            len(x), # number of nodes
+            len(x),  # number of nodes
             len(nodes),
-            var_types=[DataType.FLOAT]*3,
-            value_locations=[ValueLocation.NODAL]*3,
+            var_types=[DataType.FLOAT] * 3,
+            value_locations=[ValueLocation.NODAL] * 3,
         )
         tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel())
         tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel())
         tec_zone_var_write_float_values(handle, zone_idx, 3, c.ravel())
         tec_zone_node_map_write32(handle, zone_idx, nodes.ravel())
         tec_file_writer_close(handle)
-        print(f"PASS: test_tec_zone_create_fe_quad")
+        print("PASS: test_tec_zone_create_fe_quad")
     except Exception as e:
         print(f"FAIL: test_tec_zone_create_fe_quad - {e}")
 
@@ -351,7 +352,7 @@ def test_tec_zone_create_fe_tet() -> None:
     """Test FETETRAHEDRON zone type"""
     try:
         x, y, z, nodes = _create_FE_tet()
-        c = np.sin(2*np.pi*x)*np.cos(2*np.pi*y)
+        c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = tec_file_writer_open(
             "test_tec_zone_create_fe_tet.szplt",
             "test_tecio",
@@ -373,7 +374,7 @@ def test_tec_zone_create_fe_tet() -> None:
         tec_zone_var_write_float_values(handle, zone_idx, 4, c.ravel())
         tec_zone_node_map_write32(handle, zone_idx, nodes.ravel())
         tec_file_writer_close(handle)
-        print(f"PASS: test_tec_zone_create_fe_tet")
+        print("PASS: test_tec_zone_create_fe_tet")
     except Exception as e:
         print(f"FAIL: test_tec_zone_create_fe_tet - {e}")
 
@@ -382,7 +383,7 @@ def test_tec_zone_create_fe_pyramid() -> None:
     """Test pyramid as degenerate FEBRICK zone type"""
     try:
         x, y, z, nodes = _create_FE_pyramid()
-        c = np.sin(2*np.pi*x)*np.cos(2*np.pi*y)
+        c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = tec_file_writer_open(
             "test_tec_zone_create_fe_pyramid.szplt",
             "test_tecio",
@@ -404,7 +405,7 @@ def test_tec_zone_create_fe_pyramid() -> None:
         tec_zone_var_write_float_values(handle, zone_idx, 4, c.ravel())
         tec_zone_node_map_write32(handle, zone_idx, nodes.ravel())
         tec_file_writer_close(handle)
-        print(f"PASS: test_tec_zone_create_fe_pyramid")
+        print("PASS: test_tec_zone_create_fe_pyramid")
     except Exception as e:
         print(f"FAIL: test_tec_zone_create_fe_pyramid - {e}")
 
@@ -413,7 +414,7 @@ def test_tec_zone_create_fe_prism() -> None:
     """Test triangular prism as degenerate FEBRICK zone type"""
     try:
         x, y, z, nodes = _create_FE_prism()
-        c = np.sin(2*np.pi*x)*np.cos(2*np.pi*y)
+        c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = tec_file_writer_open(
             "test_tec_zone_create_fe_prism.szplt",
             "test_tecio",
@@ -435,7 +436,7 @@ def test_tec_zone_create_fe_prism() -> None:
         tec_zone_var_write_float_values(handle, zone_idx, 4, c.ravel())
         tec_zone_node_map_write32(handle, zone_idx, nodes.ravel())
         tec_file_writer_close(handle)
-        print(f"PASS: test_tec_zone_create_fe_prism")
+        print("PASS: test_tec_zone_create_fe_prism")
     except Exception as e:
         print(f"FAIL: test_tec_zone_create_fe_prism - {e}")
 
@@ -445,7 +446,7 @@ def test_tec_zone_create_fe_brick() -> None:
     try:
         # Create sample FEBRICK data
         x, y, z, faces, nodes = _create_FE_brick()
-        c = np.sin(2*np.pi*x)*np.cos(2*np.pi*y)
+        c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = tec_file_writer_open(
             "test_tec_zone_create_fe_brick.szplt",
             "test_tecio",
@@ -456,10 +457,10 @@ def test_tec_zone_create_fe_brick() -> None:
             handle,
             "test_fe_brick",
             ZoneType.FEBRICK,
-            len(x), # number of nodes
+            len(x),  # number of nodes
             len(nodes),
-            var_types=[DataType.FLOAT]*4,
-            value_locations=[ValueLocation.NODAL]*4,
+            var_types=[DataType.FLOAT] * 4,
+            value_locations=[ValueLocation.NODAL] * 4,
         )
         tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel())
         tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel())
@@ -467,7 +468,7 @@ def test_tec_zone_create_fe_brick() -> None:
         tec_zone_var_write_float_values(handle, zone_idx, 4, c.ravel())
         tec_zone_node_map_write32(handle, zone_idx, nodes.ravel())
         tec_file_writer_close(handle)
-        print(f"PASS: test_tec_zone_create_fe_brick")
+        print("PASS: test_tec_zone_create_fe_brick")
     except Exception as e:
         print(f"FAIL: test_tec_zone_create_fe_brick - {e}")
 
