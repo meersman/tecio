@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Lite test for libtecio functions directly."""
+
 # ruff: noqa: F403, F405
 
 import numpy as np
@@ -118,7 +119,9 @@ def _create_FE_tet() -> tuple[
     npt.NDArray[np.int32],
 ]:
     """Create coordinates and nodemap for FETETRAHEDRON zone type.
-    Two tetrahedra sharing a face.
+
+    Shape: Two tetrahedra sharing a face.
+
     """
     points = np.array([
         [0.0, 0.0, 0.0],  # 1
@@ -145,8 +148,10 @@ def _create_FE_pyramid() -> tuple[
     npt.NDArray[np.int32],
 ]:
     """Create coordinates and nodemap for a pyramid using FEBRICK zone type.
-    Tecplot represents pyramids as degenerate bricks where nodes 5,6,7,8
+
+    Node: Tecplot represents pyramids as degenerate bricks where nodes 5,6,7,8
     are all the apex node repeated.
+
     """
     points = np.array([
         [0.0, 0.0, 0.0],  # 1 - base
@@ -172,8 +177,10 @@ def _create_FE_prism() -> tuple[
     npt.NDArray[np.int32],
 ]:
     """Create coordinates and nodemap for a triangular prism using FEBRICK.
-    Represented as degenerate brick: bottom tri nodes 1,2,3 paired with
+
+    Note: Represented as degenerate brick: bottom tri nodes 1,2,3 paired with
     top tri nodes 4,5,6 — each tri edge node repeated to fill 8-node brick.
+
     """
     points = np.array([
         [0.0, 0.0, 0.0],  # 1 - bottom tri
@@ -199,7 +206,7 @@ def _create_FE_brick() -> tuple[
     npt.NDArray[np.float32],
     npt.NDArray[np.int32],
 ]:
-    """Create coordinates and nodemap for FEBRICK zone type"""
+    """Create coordinates and nodemap for FEBRICK zone type."""
     points = np.array([
         [0, 3, 0],  # XYZ
         [3, 3, 0],  # XYZ
@@ -254,37 +261,37 @@ def _create_FE_two_bricks() -> tuple[
 
     """
     points = np.array([
-            [0, 0, 0],  # 1
-            [1, 0, 0],  # 2
-            [1, 1, 0],  # 3
-            [0, 1, 0],  # 4
-            [0, 0, 1],  # 5
-            [1, 0, 1],  # 6
-            [1, 1, 1],  # 7
-            [0, 1, 1],  # 8
-            [2, 0, 0],  # 9
-            [2, 1, 0],  # 10
-            [2, 0, 1],  # 11
-            [2, 1, 1],  # 12
+        [0, 0, 0],  # 1
+        [1, 0, 0],  # 2
+        [1, 1, 0],  # 3
+        [0, 1, 0],  # 4
+        [0, 0, 1],  # 5
+        [1, 0, 1],  # 6
+        [1, 1, 1],  # 7
+        [0, 1, 1],  # 8
+        [2, 0, 0],  # 9
+        [2, 1, 0],  # 10
+        [2, 0, 1],  # 11
+        [2, 1, 1],  # 12
     ])
     x = points[:, 0]
     y = points[:, 1]
     z = points[:, 2]
     nodes = np.array([
-            [1, 2, 3, 4, 5, 6, 7, 8],  # cell 1
-            [2, 9, 10, 3, 6, 11, 12, 7],  # cell 2
+        [1, 2, 3, 4, 5, 6, 7, 8],  # cell 1
+        [2, 9, 10, 3, 6, 11, 12, 7],  # cell 2
     ])
     # 6 faces per cell: bottom, top, front, back, left, right
     # 0 = boundary, positive int = 1-based neighbor cell index
     face_neighbors = np.array([
-            [1, 2, 2],  # cell 1: right face neighbors cell 2
-            [2, 1, 1],  # cell 2: left face neighbors cell 1
-        ])
+        [1, 2, 2],  # cell 1: right face neighbors cell 2 (cz1, fz, cz2)
+        [2, 1, 1],  # cell 2: left face neighbors cell 1
+    ])
     return x, y, z, nodes, face_neighbors
 
 
 def test_tec_zone_create_ijk() -> None:
-    """Setup and test the functionality of tec_zone_create_ijk using minimal input"""
+    """Test ORDERED zone type."""
     try:
         # Create samople structured data
         i, j, k = (3, 4, 5)
@@ -317,7 +324,7 @@ def test_tec_zone_create_ijk() -> None:
 
 
 def test_tec_zone_create_fe_lineseg() -> None:
-    """Setup and test the functionality of tec_zone_create_fe using minimal input"""
+    """Test FELINESEG zone type."""
     try:
         # Create sample FELINESEG data
         x, y, nodes = _create_FE_lineseg()
@@ -348,7 +355,7 @@ def test_tec_zone_create_fe_lineseg() -> None:
 
 
 def test_tec_zone_create_fe_tri() -> None:
-    """Setup and test the functionality of tec_zone_create_fe using minimal input"""
+    """Test FETRIANGLE zone type."""
     try:
         # Create sample FETRIANGLE data
         x, y, nodes = _create_FE_tri()
@@ -379,7 +386,7 @@ def test_tec_zone_create_fe_tri() -> None:
 
 
 def test_tec_zone_create_fe_quad() -> None:
-    """Setup and test the functionality of tec_zone_create_fe using minimal input"""
+    """Test FEQUADRILATERAL zone type."""
     try:
         # Create sample FEQUADRILATERAL data
         x, y, nodes = _create_FE_quad()
@@ -410,7 +417,7 @@ def test_tec_zone_create_fe_quad() -> None:
 
 
 def test_tec_zone_create_fe_tet() -> None:
-    """Test FETETRAHEDRON zone type"""
+    """Test FETETRAHEDRON zone type."""
     try:
         x, y, z, nodes = _create_FE_tet()
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
@@ -441,7 +448,7 @@ def test_tec_zone_create_fe_tet() -> None:
 
 
 def test_tec_zone_create_fe_pyramid() -> None:
-    """Test pyramid as degenerate FEBRICK zone type"""
+    """Test pyramid as degenerate FEBRICK zone type."""
     try:
         x, y, z, nodes = _create_FE_pyramid()
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
@@ -472,7 +479,7 @@ def test_tec_zone_create_fe_pyramid() -> None:
 
 
 def test_tec_zone_create_fe_prism() -> None:
-    """Test triangular prism as degenerate FEBRICK zone type"""
+    """Test triangular prism as degenerate FEBRICK zone type."""
     try:
         x, y, z, nodes = _create_FE_prism()
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
@@ -503,7 +510,7 @@ def test_tec_zone_create_fe_prism() -> None:
 
 
 def test_tec_zone_create_fe_brick() -> None:
-    """Setup and test the functionality of tec_zone_create_fe using minimal input"""
+    """Test FEBRICK zone type."""
     try:
         # Create sample FEBRICK data
         x, y, z, faces, nodes = _create_FE_brick()
@@ -535,7 +542,7 @@ def test_tec_zone_create_fe_brick() -> None:
 
 
 def test_tec_zone_face_nbr_write_connections() -> None:
-    """Test face neighbor connections with two adjacent bricks"""
+    """Test face neighbor connections with two adjacent bricks."""
     try:
         x, y, z, nodes, face_neighbors = _create_FE_two_bricks()
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
@@ -571,11 +578,11 @@ def test_tec_zone_face_nbr_write_connections() -> None:
 
 
 def test_tec_zone_aux_data_and_unsteady() -> None:
-    """Test dataset, variable, and zone auxiliary data plus unsteady options"""
+    """Test dataset, variable, and zone auxiliary data plus unsteady options."""
     try:
         i, j, k = (3, 4, 5)
         x, y, z = _create_ordered((i, j, k))
-        c = np.sin(2*np.pi*x)*np.cos(2*np.pi*y)
+        c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
 
         handle = tecio.libtecio.tec_file_writer_open(
             "test_tec_aux_data_unsteady.szplt",
@@ -592,7 +599,9 @@ def test_tec_zone_aux_data_and_unsteady() -> None:
         zone_idx = tecio.libtecio.tec_zone_create_ijk(
             handle,
             "test_aux_unsteady",
-            i, j, k,
+            i,
+            j,
+            k,
             var_types=[DataType.FLOAT] * 4,
             value_locations=[ValueLocation.NODAL] * 4,
         )
@@ -616,13 +625,13 @@ def test_tec_zone_aux_data_and_unsteady() -> None:
             strand=10,
         )
 
-        tecio.libtecio.tec_zone_var_write_float_values(handle, zone_idx, 1, x.flatten())
-        tecio.libtecio.tec_zone_var_write_float_values(handle, zone_idx, 2, y.flatten())
-        tecio.libtecio.tec_zone_var_write_float_values(handle, zone_idx, 3, z.flatten())
-        tecio.libtecio.tec_zone_var_write_float_values(handle, zone_idx, 4, c.flatten())
+        tecio.libtecio.tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel())
+        tecio.libtecio.tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel())
+        tecio.libtecio.tec_zone_var_write_float_values(handle, zone_idx, 3, z.ravel())
+        tecio.libtecio.tec_zone_var_write_float_values(handle, zone_idx, 4, c.ravel())
 
         tecio.libtecio.tec_file_writer_close(handle)
-        print(f"PASS: test_tec_zone_aux_data_and_unsteady")
+        print("PASS: test_tec_zone_aux_data_and_unsteady")
     except Exception as e:
         print(f"FAIL: test_tec_zone_aux_data_and_unsteady - {e}")
 

@@ -1,5 +1,7 @@
-"""Library of Python wrapper for tecio C-functions. Intended to accept pythonic inputs
-and convert outputs to numpy data formats where ever possible.
+"""Library of Python wrapper for tecio C-functions.
+
+Intended to accept pythonic inputs and convert outputs to numpy data
+formats where ever possible.
 """
 
 from __future__ import annotations
@@ -79,7 +81,6 @@ class ZoneType(Enum):
     FEPOLYGON = 6
     FEPOLYHEDRON = 7
     FEMIXED = 8
-
 
 
 class FeCellShape(Enum):
@@ -555,14 +556,14 @@ lib.tecDataSetAddAuxData.argtypes = [
 lib.tecVarAddAuxData.restype = ctypes.c_int32
 lib.tecVarAddAuxData.argtypes = [
     ctypes.c_void_p,  # fileHandle
-    ctypes.c_int32,   # varIndex (1-based)
+    ctypes.c_int32,  # varIndex (1-based)
     ctypes.c_char_p,  # name
     ctypes.c_char_p,  # value
 ]
 lib.tecZoneAddAuxData.restype = ctypes.c_int32
 lib.tecZoneAddAuxData.argtypes = [
     ctypes.c_void_p,  # fileHandle
-    ctypes.c_int32,   # zoneIndex (1-based)
+    ctypes.c_int32,  # zoneIndex (1-based)
     ctypes.c_char_p,  # name
     ctypes.c_char_p,  # value
 ]
@@ -643,14 +644,14 @@ lib.tecZoneNodeMapWrite64.argtypes = [
 ]
 lib.tecZoneFaceNbrWriteConnections32.restype = ctypes.c_int32
 lib.tecZoneFaceNbrWriteConnections32.argtypes = [
-    ctypes.c_void_p,                 # fileHandle
-    ctypes.c_int32,                  # zone (1-based)
+    ctypes.c_void_p,  # fileHandle
+    ctypes.c_int32,  # zone (1-based)
     ctypes.POINTER(ctypes.c_int32),  # faceNeighbors
 ]
 lib.tecZoneFaceNbrWriteConnections64.restype = ctypes.c_int32
 lib.tecZoneFaceNbrWriteConnections64.argtypes = [
-    ctypes.c_void_p,                 # fileHandle
-    ctypes.c_int32,                  # zone (1-based)
+    ctypes.c_void_p,  # fileHandle
+    ctypes.c_int32,  # zone (1-based)
     ctypes.POINTER(ctypes.c_int64),  # faceNeighbors
 ]
 
@@ -2077,8 +2078,7 @@ def tec_data_set_add_aux_data(
     name: str,
     value: str,
 ) -> None:
-    """
-    Add a name-value auxiliary data record to the dataset.
+    """Add a name-value auxiliary data record to the dataset.
 
     Inputs:
     - handle: ctypes.c_void_p writer handle
@@ -2104,8 +2104,7 @@ def tec_var_add_aux_data(
     name: str,
     value: str,
 ) -> None:
-    """
-    Add a name-value auxiliary data record to a variable.
+    """Add a name-value auxiliary data record to a variable.
 
     Inputs:
     - handle: ctypes.c_void_p writer handle
@@ -2133,8 +2132,7 @@ def tec_zone_add_aux_data(
     name: str,
     value: str,
 ) -> None:
-    """
-    Add a name-value auxiliary data record to a zone.
+    """Add a name-value auxiliary data record to a zone.
 
     Inputs:
     - handle: ctypes.c_void_p writer handle
@@ -2154,6 +2152,7 @@ def tec_zone_add_aux_data(
             f"tecZoneAddAuxData Error: zone_index={zone_index}, name={name!r}, "
             f"value={value!r}, return_code={ret}"
         )
+
 
 # ---- Write variable value functions --------------------------------
 def tec_zone_var_write_double_values(
@@ -2384,8 +2383,7 @@ def tec_zone_face_nbr_write_connections32(
     zone: int,
     face_neighbors: npt.ArrayLike,
 ) -> None:
-    """
-    Write 32-bit face neighbor connections for an FE zone.
+    """Write 32-bit face neighbor connections for an FE zone.
 
     Inputs:
     - handle: ctypes.c_void_p writer handle
@@ -2399,6 +2397,7 @@ def tec_zone_face_nbr_write_connections32(
     - Can be called multiple times; total entries must match num_face_cons
       declared at zone creation.
     - Face neighbors have expensive performance implications. Use face neighbors only to manually specify connections that are not defined via the connectivity list.
+
     """
     ptr, count, _backing = _prepare_array_for_ctypes(
         face_neighbors, np.int32, ctypes.c_int32
@@ -2420,8 +2419,7 @@ def tec_zone_face_nbr_write_connections64(
     zone: int,
     face_neighbors: npt.ArrayLike,
 ) -> None:
-    """
-    Write 64-bit face neighbor connections for an FE zone.
+    """Write 64-bit face neighbor connections for an FE zone.
 
     Inputs:
     - handle: ctypes.c_void_p writer handle
