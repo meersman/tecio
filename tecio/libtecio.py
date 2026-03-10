@@ -200,7 +200,7 @@ class Debug(Enum):
 def _prepare_array_for_ctypes(
     values: npt.ArrayLike, np_dtype, ctype
 ) -> tuple[ctypes.POINTER, int, npt.NDArray]:
-    """Convert an input array-like to a contiguous numpy array and return a ctypes pointer.
+    """Convert an input array to contiguous numpy array and return a ctypes pointer.
 
     Inputs:
     - values: array-like (list, tuple, numpy array)
@@ -214,7 +214,8 @@ def _prepare_array_for_ctypes(
       * backing_array: the numpy array object (returned to keep it alive)
 
     Notes:
-    - Caller should keep the returned backing_array alive until the native call completes.
+    - Caller should keep the returned backing_array alive until the native call
+      completes.
     - This function enforces dtype and C-contiguity.
 
     """
@@ -225,7 +226,10 @@ def _prepare_array_for_ctypes(
 
 
 def _to_int_value(value: int | Enum, enum_class: type | None = None) -> int:
-    """Convert Enum or int to int value. Optional check against enum_class if provided."""
+    """Convert Enum or int to int value.
+
+    (Optional check against enum_class if provided.)
+    """
     if isinstance(value, Enum):
         return value.value
     v = int(value)
@@ -240,9 +244,7 @@ def _to_int_value(value: int | Enum, enum_class: type | None = None) -> int:
     return v
 
 
-def _process_sequence(
-    seq: Sequence[int | Enum] | None,
-) -> ctypes.Array | None:
+def _process_sequence( seq: Sequence[int | Enum] | None) -> ctypes.Array | None:
     """Convert sequence of int/Enum to ctypes array, handling None."""
     if seq is None:
         return None
@@ -990,7 +992,8 @@ def tec_zone_get_ijk(handle: ctypes.c_void_p, zone_index: int) -> tuple[int, int
     )
     if ret != 0:
         raise TecioError(
-            f"Error getting zone data indices: : handle={handle}, zone_index={zone_index}, return_code={ret}"
+            f"Error getting zone data indices: : handle={handle}, "
+            f"zone_index={zone_index}, return_code={ret}"
         )
 
     return I.value, J.value, K.value
@@ -1014,7 +1017,8 @@ def tec_zone_get_title(handle: ctypes.c_void_p, zone_index: int) -> str:
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneGetTitle Error: handle={handle}, zone_index={zone_index}, return_code={ret}"
+            f"tecZoneGetTitle Error: handle={handle}, "
+            f"zone_index={zone_index}, return_code={ret}"
         )
 
     return zone_title.value.decode("utf-8")
@@ -1038,7 +1042,8 @@ def tec_zone_get_type(handle: ctypes.c_void_p, zone_index: int) -> ZoneType:
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneGetType Error: handle={handle}, zone_index={zone_index}, return_code={ret}"
+            f"tecZoneGetType Error: handle={handle}, "
+            f"zone_index={zone_index}, return_code={ret}"
         )
 
     return ZoneType(zone_type.value)
@@ -1062,7 +1067,8 @@ def tec_zone_is_enabled(handle: ctypes.c_void_p, zone_index: int) -> bool:
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneIsEnabled Error: handle={handle}, zone_index={zone_index}, return_code={ret}"
+            f"tecZoneIsEnabled Error: handle={handle}, "
+            f"zone_index={zone_index}, return_code={ret}"
         )
 
     return bool(is_enabled.value)
@@ -1088,7 +1094,8 @@ def tec_zone_get_solution_time(handle: ctypes.c_void_p, zone_index: int) -> floa
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneGetSolutionTime Error: handle={handle}, zone_index={zone_index}, return_code={ret}"
+            f"tecZoneGetSolutionTime Error: handle={handle}, "
+            f"zone_index={zone_index}, return_code={ret}"
         )
 
     return solution_time.value
@@ -1112,7 +1119,8 @@ def tec_zone_get_strand_id(handle: ctypes.c_void_p, zone_index: int) -> int:
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneGetStrandID Error: handle={handle}, zone_index={zone_index}, return_code={ret}"
+            f"tecZoneGetStrandID Error: handle={handle}, "
+            f"zone_index={zone_index}, return_code={ret}"
         )
 
     return strand_id.value
@@ -1135,7 +1143,8 @@ def is_64bit(handle: ctypes.c_void_p, zone_index: int) -> bool:
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneNodeMapIs64Bit Error: handle={handle}, zone_index={zone_index}, return_code={ret}"
+            f"tecZoneNodeMapIs64Bit Error: handle={handle}, "
+            f"zone_index={zone_index}, return_code={ret}"
         )
 
     return bool(is64bit.value)
@@ -1174,8 +1183,9 @@ def tec_zone_node_map_get_64(
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneNodeMapGet64 Error: handle={handle}, zone_index={zone_index}, "
-            f"num_elements={num_elements}, nodes_per_cell={nodes_per_cell}, return_code={ret}"
+            f"tecZoneNodeMapGet64 Error: handle={handle}, "
+            f"zone_index={zone_index}, num_elements={num_elements}, "
+            f"nodes_per_cell={nodes_per_cell}, return_code={ret}"
         )
 
     return np.ctypeslib.as_array(nodemap).reshape(num_elements, nodes_per_cell)
@@ -1214,8 +1224,9 @@ def tec_zone_node_map_get(
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneNodeMapGet Error: handle={handle}, zone_index={zone_index}, "
-            f"num_elements={num_elements}, nodes_per_cell={nodes_per_cell}, return_code={ret}"
+            f"tecZoneNodeMapGet Error: handle={handle}, "
+            f"zone_index={zone_index}, num_elements={num_elements}, "
+            f"nodes_per_cell={nodes_per_cell}, return_code={ret}"
         )
 
     return np.ctypeslib.as_array(nodemap).reshape(num_elements, nodes_per_cell)
@@ -1238,7 +1249,8 @@ def tec_var_get_name(handle: ctypes.c_void_p, var_index: int) -> str:
     ret = lib.tecVarGetName(handle, ctypes.c_int32(var_index), ctypes.byref(var_name))
     if ret != 0:
         raise TecioError(
-            f"tecVarGetName Error: handle={handle}, var_index={var_index}, return_code={ret}"
+            f"tecVarGetName Error: handle={handle}, "
+            f"var_index={var_index}, return_code={ret}"
         )
 
     return var_name.value.decode("utf-8")
@@ -1262,7 +1274,8 @@ def tec_var_is_enabled(handle: ctypes.c_void_p, var_index: int) -> bool:
     )
     if ret != 0:
         raise TecioError(
-            f"tecVarIsEnabled Error: handle={handle}, var_index={var_index}, return_code={ret}"
+            f"tecVarIsEnabled Error: handle={handle}, "
+            f"var_index={var_index}, return_code={ret}"
         )
 
     return bool(is_enabled.value)
@@ -1323,8 +1336,8 @@ def tec_zone_var_get_value_location(
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneVarGetValueLocation Error: handle={handle}, zone_index={zone_index}, "
-            f"var_index={var_index}, return_code={ret}"
+            f"tecZoneVarGetValueLocation Error: handle={handle}, "
+            f"zone_index={zone_index}, var_index={var_index}, return_code={ret}"
         )
 
     return ValueLocation(value_location.value)
@@ -1385,7 +1398,8 @@ def tec_zone_var_get_shared_zone(
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneVarGetSharedZone Error: handle={handle}, zone_index={zone_index}, var_index={var_index}, return_code={ret}"
+            f"tecZoneVarGetSharedZone Error: handle={handle}, "
+            f"zone_index={zone_index}, var_index={var_index}, return_code={ret}"
         )
 
     return shared_zone.value if shared_zone.value != 0 else None
@@ -1415,7 +1429,8 @@ def tec_zone_var_get_num_values(
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneVarGetNumValues Error: handle={handle}, zone_index={zone_index}, var_index={var_index}, return_code={ret}"
+            f"tecZoneVarGetNumValues Error: handle={handle}, "
+            f"zone_index={zone_index}, var_index={var_index}, return_code={ret}"
         )
 
     return num_values.value
@@ -1456,8 +1471,9 @@ def tec_zone_var_get_float_values(
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneVarGetFloatValues Error: handle={handle}, zone_index={zone_index}, "
-            f"var_index={var_index}, start_index={start_index}, num_values={num_values}, return_code={ret}"
+            f"tecZoneVarGetFloatValues Error: handle={handle}, "
+            f"zone_index={zone_index}, var_index={var_index}, "
+            f"start_index={start_index}, num_values={num_values}, return_code={ret}"
         )
 
     return np.ctypeslib.as_array(values)
@@ -1498,8 +1514,9 @@ def tec_zone_var_get_double_values(
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneVarGetDoubleValues Error: handle={handle}, zone_index={zone_index}, "
-            f"var_index={var_index}, start_index={start_index}, num_values={num_values}, return_code={ret}"
+            f"tecZoneVarGetDoubleValues Error: handle={handle}, "
+            f"zone_index={zone_index}, var_index={var_index}, "
+            f"start_index={start_index}, num_values={num_values}, return_code={ret}"
         )
 
     return np.ctypeslib.as_array(values)
@@ -1540,8 +1557,9 @@ def tec_zone_var_get_int32_values(
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneVarGetInt32Values Error: handle={handle}, zone_index={zone_index}, "
-            f"var_index={var_index}, start_index={start_index}, num_values={num_values}, return_code={ret}"
+            f"tecZoneVarGetInt32Values Error: handle={handle}, "
+            f"zone_index={zone_index}, var_index={var_index}, "
+            f"start_index={start_index}, num_values={num_values}, return_code={ret}"
         )
 
     return np.ctypeslib.as_array(values)
@@ -1582,8 +1600,9 @@ def tec_zone_var_get_int16_values(
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneVarGetInt16Values Error: handle={handle}, zone_index={zone_index}, "
-            f"var_index={var_index}, start_index={start_index}, num_values={num_values}, return_code={ret}"
+            f"tecZoneVarGetInt16Values Error: handle={handle}, "
+            f"zone_index={zone_index}, var_index={var_index}, "
+            f"start_index={start_index}, num_values={num_values}, return_code={ret}"
         )
 
     return np.ctypeslib.as_array(values)
@@ -1624,8 +1643,9 @@ def tec_zone_var_get_uint8_values(
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneVarGetUInt8Values Error: handle={handle}, zone_index={zone_index}, "
-            f"var_index={var_index}, start_index={start_index}, num_values={num_values}, return_code={ret}"
+            f"tecZoneVarGetUInt8Values Error: handle={handle}, "
+            f"zone_index={zone_index}, var_index={var_index}, "
+            f"start_index={start_index}, num_values={num_values}, return_code={ret}"
         )
 
     return np.ctypeslib.as_array(values)
@@ -1677,7 +1697,8 @@ def tec_data_set_aux_data_get_item(
     )
     if ret != 0:
         raise TecioError(
-            f"tecDataSetAuxDataGetItem Error: handle={handle}, item_index={item_index}, return_code={ret}"
+            f"tecDataSetAuxDataGetItem Error: handle={handle}, "
+            f"item_index={item_index}, return_code={ret}"
         )
 
     return name.value.decode("utf-8"), value.value.decode("utf-8")
@@ -1701,7 +1722,8 @@ def tec_var_aux_data_get_num_items(handle: ctypes.c_void_p, var_index: int) -> i
     )
     if ret != 0:
         raise TecioError(
-            f"tecVarAuxDataGetNumItems Error: handle={handle}, var_index={var_index}, return_code={ret}"
+            f"tecVarAuxDataGetNumItems Error: handle={handle}, "
+            f"var_index={var_index}, return_code={ret}"
         )
 
     return num_items.value
@@ -1733,7 +1755,8 @@ def tec_var_aux_data_get_item(
     )
     if ret != 0:
         raise TecioError(
-            f"tecVarAuxDataGetItem Error: handle={handle}, var_index={var_index}, item_index={item_index}, return_code={ret}"
+            f"tecVarAuxDataGetItem Error: handle={handle}, var_index={var_index}, "
+            f"item_index={item_index}, return_code={ret}"
         )
 
     return name.value.decode("utf-8"), value.value.decode("utf-8")
@@ -1757,7 +1780,8 @@ def tec_zone_aux_data_get_num_items(handle: ctypes.c_void_p, zone_index: int) ->
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneAuxDataGetNumItems Error: handle={handle}, zone_index={zone_index}, return_code={ret}"
+            f"tecZoneAuxDataGetNumItems Error: handle={handle}, "
+            f"zone_index={zone_index}, return_code={ret}"
         )
 
     return num_items.value
@@ -1789,7 +1813,8 @@ def tec_zone_aux_data_get_item(
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneAuxDataGetItem Error: handle={handle}, zone_index={zone_index}, item_index={item_index}, return_code={ret}"
+            f"tecZoneAuxDataGetItem Error: handle={handle}, zone_index={zone_index}, "
+            f"item_index={item_index}, return_code={ret}"
         )
 
     return name.value.decode("utf-8"), value.value.decode("utf-8")
@@ -1817,8 +1842,9 @@ def tec_file_writer_open(
     - var_names_csv: comma-separated variable names
     - file_type: FileType enum (FULL/GRID/SOLUTION)
     - use_szl: integer flag (1 to use SZL)
-    - grid_file_handle: optional ctypes.c_void_p handle for a grid-only file when writing
-      a solution file that references an existing grid.
+    - grid_file_handle: optional ctypes.c_void_p handle for a grid-only file when
+      writing a solution file that references an existing grid.
+
     Returns:
     - ctypes.c_void_p: writer handle (to pass to other writer functions)
 
@@ -2395,7 +2421,8 @@ def tec_zone_face_nbr_write_connections32(
     - Use for zones with fewer than ~2 billion face neighbor entries.
     - Can be called multiple times; total entries must match num_face_cons
       declared at zone creation.
-    - Face neighbors have expensive performance implications. Use face neighbors only to manually specify connections that are not defined via the connectivity list.
+    - Face neighbors have expensive performance implications. Use face neighbors only to
+      manually specify connections that are not defined via the connectivity list.
 
     """
     ptr, count, _backing = _prepare_array_for_ctypes(
@@ -2431,7 +2458,8 @@ def tec_zone_face_nbr_write_connections64(
     - Use for zones with more than ~2 billion face neighbor entries.
     - Can be called multiple times; total entries must match num_face_cons
       declared at zone creation.
-    - Face neighbors have expensive performance implications. Use face neighbors only to manually specify connections that are not defined via the connectivity list.
+    - Face neighbors have expensive performance implications. Use face neighbors only to
+      manually specify connections that are not defined via the connectivity list.
 
     """
     ptr, count, _backing = _prepare_array_for_ctypes(
@@ -2476,9 +2504,11 @@ def tecini142(
     - file_type: FileType.FULL (0), GRID (1), or SOLUTION (2)
     - debug: Debug.FALSE (0) or Debug.TRUE (1)
     - vis_double: DataType.DOUBLE (1) or DataType.FLOAT (0)
+
     Notes:
     - Must be called before any zone or data operations
     - Call tecend142() to finalize the file
+
     """
     vis_double_c = ctypes.c_int32(
         1 if _to_int_value(vis_double) == DataType.DOUBLE.value else 0
@@ -2606,21 +2636,27 @@ def teczne142(
     - zone_type: ZoneType enum or int (0=ORDERED, 1=FELINESEG, etc.)
     - imax: I-dimension (or NumNodes for FE)
     - jmax: J-dimension (or NumElements for FE)
-    - kmax: K-dimension (or NumFaces for FEPOLYGON and FEPOLYHEDRON). Not used for all other finite element zone types.
+    - kmax: K-dimension (or NumFaces for FEPOLYGON and FEPOLYHEDRON). Not used for all
+      other finite element zone types.
     - var_sharing: List of zone indices to share variables from
     - value_locations: List of ValueLocation enums or 0/1 for nodal/cell-centered
     - pas_vars: List of VarStatus enums or 0/1 for passive variables
     - con_sharing: Zone index to share connectivity from
-    - strand: Strand ID for transient data (0 for static data, positive integer for transient data)
+    - strand: Strand ID for transient data (0 for static data, positive integer for
+      transient data)
     - solution_time: Solution time for transient data
-    - num_face_connections: Number of face connections (for cell-based FE zones only. The number of face connections that will be passed to tecface142)
-    - face_nbr_mode: FaceNeighborMode enum. Usedd for cell-based FE and ordered zones only. Type of face connection taht will be passed in rouitine tecface142.
+    - num_face_connections: Number of face connections (for cell-based FE zones
+      only. The number of face connections that will be passed to tecface142)
+    - face_nbr_mode: FaceNeighborMode enum. Usedd for cell-based FE and ordered zones
+      only. Type of face connection taht will be passed in rouitine tecface142.
     - total_num_face_nodes: Total face nodes (for poly zones)
     - num_connected_boundary_faces: Boundary faces (for poly zones)
     - total_num_boundary_connections: Boundary connections (for poly zones)
+
     Notes:
     - For ORDERED zones: imx, jmx, kmx are dimensions
     - For FE zones: imx=NumNodes, jmx=NumElements, kmx=0 (unless higher order element)
+
     """
     # Create C array for passive variable flags
     pas_vars_ptr = None
@@ -2652,12 +2688,8 @@ def teczne142(
         ctypes.c_int32(0),  # K-cell dimension (Reserved for future use. Set to zero)
         ctypes.c_double(solution_time),
         ctypes.c_int32(strand),
-        ctypes.c_int32(
-            0
-        ),  # Parent zone index (ParentZone is no longer used. Enter 0 for this value)
-        ctypes.c_int32(
-            _to_int_value(DataFormat.BLOCK)
-        ),  # DataFormat.BLOCK (1) or DataFormat.POINT (0) (Deprecated field. Always set to 1)
+        ctypes.c_int32(0),  # Deprecated. Enter 0 for this value
+        ctypes.c_int32(_to_int_value(DataFormat.BLOCK)),  # Deprecated. Always set to 1/Block.
         ctypes.c_int32(num_face_connections),
         ctypes.c_int32(_to_int_value(face_nbr_mode)),
         ctypes.c_int32(total_num_face_nodes),
