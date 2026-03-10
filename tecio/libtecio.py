@@ -1802,10 +1802,10 @@ def tec_zone_aux_data_get_item(
 
 # ---- Initialization and File Handling ------------------------------
 def tec_file_writer_open(
-    file_name: str,
-    dataset_title: str,
-    var_names_csv: str,
-    file_type: FileType,
+    fname: str,
+    title: str,
+    variables: str,
+    file_type: FileType = FileType.FULL,
     use_szl: int = 1,
     grid_file_handle: ctypes.c_void_p | None = None,
 ) -> ctypes.c_void_p:
@@ -1819,7 +1819,6 @@ def tec_file_writer_open(
     - use_szl: integer flag (1 to use SZL)
     - grid_file_handle: optional ctypes.c_void_p handle for a grid-only file when writing
       a solution file that references an existing grid.
-
     Returns:
     - ctypes.c_void_p: writer handle (to pass to other writer functions)
 
@@ -1831,9 +1830,9 @@ def tec_file_writer_open(
     ft_int = int(file_type.value)
 
     ret = lib.tecFileWriterOpen(
-        ctypes.c_char_p(file_name.encode("utf-8")),
-        ctypes.c_char_p(dataset_title.encode("utf-8")),
-        ctypes.c_char_p(var_names_csv.encode("utf-8")),
+        ctypes.c_char_p(fname.encode("utf-8")),
+        ctypes.c_char_p(title.encode("utf-8")),
+        ctypes.c_char_p(variables.encode("utf-8")),
         ctypes.c_int32(use_szl),
         ctypes.c_int32(ft_int),
         ctypes.c_int32(0),
@@ -1842,8 +1841,8 @@ def tec_file_writer_open(
     )
     if ret != 0:
         raise TecioError(
-            f"tecFileWriterOpen Error: file_name={file_name!r}, dataset_title={dataset_title!r}, "
-            f"var_names={var_names_csv!r}, file_type={file_type!r}, return_code={ret}"
+            f"tecFileWriterOpen Error: file_name={fname!r}, title={title!r}, "
+            f"variables={variables!r}, file_type={file_type!r}, return_code={ret}"
         )
     return handle
 
@@ -1870,7 +1869,7 @@ def tec_zone_create_ijk(
     K: int,
     var_types: Sequence[DataType | int],
     var_sharing: Sequence[int] | None = None,
-    value_locations: Sequence[ValueLocation] | None = None,
+    value_locations: Sequence[int | ValueLocation] | None = None,
     pas_vars: Sequence[bool | int] | None = None,
     face_nbr_sharing: int = 0,
     num_face_cons: int = 0,
@@ -1960,7 +1959,7 @@ def tec_zone_create_fe(
     num_cells: int,
     var_types: Sequence[DataType | int],
     var_sharing: Sequence[int] | None = None,
-    value_locations: Sequence[ValueLocation] | None = None,
+    value_locations: Sequence[int | ValueLocation] | None = None,
     pas_vars: Sequence[bool | int] | None = None,
     con_sharing: int | None = 0,
     num_face_cons: int = 0,
@@ -2457,9 +2456,9 @@ def tec_zone_face_nbr_write_connections64(
 
 # ---- File initialization and finalization --------------------------
 def tecini142(
+    fname: str,
     title: str,
     variables: str,
-    fname: str,
     scratch_dir: str = ".",
     file_format: int | FileFormat = FileFormat.PLT,
     file_type: int | FileType = FileType.FULL,
@@ -2477,11 +2476,9 @@ def tecini142(
     - file_type: FileType.FULL (0), GRID (1), or SOLUTION (2)
     - debug: Debug.FALSE (0) or Debug.TRUE (1)
     - vis_double: DataType.DOUBLE (1) or DataType.FLOAT (0)
-
     Notes:
     - Must be called before any zone or data operations
     - Call tecend142() to finalize the file
-
     """
     file_format_c = ctypes.c_int32(_to_int_value(file_format))
     file_type_c = ctypes.c_int32(_to_int_value(file_type))
@@ -2528,6 +2525,7 @@ def tecflush142(
     - zones_to_retain: List of zone indices to retain (1-based)
 
     Notes:
+    - SZL ONLY!
     - Used to reduce memory usage for large files
     - Retained zones can still be modified
 
@@ -2589,118 +2587,89 @@ def tecforeign142(output_foreign_byte_order: int) -> None:
 def teczne142(
     zone_title: str,
     zone_type: int | ZoneType,
-    imx: int,
-    jmx: int,
-    kmx: int,
-    icell_max: int = 0,
-    jcell_max: int = 0,
-    kcell_max: int = 0,
+    imax: int,
+    jmax: int,
+    kmax: int,
+    var_sharing: Sequence[int] | None = None,
+    value_locations: Sequence[int | ValueLocation] | None = None,
+    pas_vars: Sequence[int | VarStatus] | None = None,
+    con_sharing: int = 0,
+    strand: int = 0,
     solution_time: float = 0.0,
-    strand_id: int = 0,
-    parent_zone: int = 0,
-    data_format: int | DataFormat = DataFormat.BLOCK,
     num_face_connections: int = 0,
-    face_neighbor_mode: int | FaceNeighborMode = FaceNeighborMode.LOCAL_ONE_TO_ONE,
+    face_nbr_mode: int | FaceNeighborMode = FaceNeighborMode.LOCAL_ONE_TO_ONE,
     total_num_face_nodes: int = 0,
     num_connected_boundary_faces: int = 0,
     total_num_boundary_connections: int = 0,
-    passive_var_list: Sequence[int | VarStatus] | None = None,
-    value_location: Sequence[int | ValueLocation] | None = None,
-    share_var_from_zone: Sequence[int] | None = None,
-    share_connectivity_from_zone: int = 0,
 ) -> None:
     """Create a new zone in the Tecplot file.
 
     Inputs:
     - zone_title: Zone title
     - zone_type: ZoneType enum or int (0=ORDERED, 1=FELINESEG, etc.)
-    - imx: I-dimension (or NumNodes for FE)
-    - jmx: J-dimension (or NumElements for FE)
-    - kmx: K-dimension
-    - icell_max: I-cell dimension (for cell-centered data)
-    - jcell_max: J-cell dimension (for cell-centered data)
-    - kcell_max: K-cell dimension (for cell-centered data)
+    - imax: I-dimension (or NumNodes for FE)
+    - jmax: J-dimension (or NumElements for FE)
+    - kmax: K-dimension (or NumFaces for FEPOLYGON and FEPOLYHEDRON). Not used for all other finite element zone types.
+    - var_sharing: List of zone indices to share variables from
+    - value_locations: List of ValueLocation enums or 0/1 for nodal/cell-centered
+    - pas_vars: List of VarStatus enums or 0/1 for passive variables
+    - con_sharing: Zone index to share connectivity from
+    - strand: Strand ID for transient data (0 for static data, positive integer for transient data)
     - solution_time: Solution time for transient data
-    - strand_id: Strand ID for transient data
-    - parent_zone: Parent zone index (0=none)
-    - data_format: DataFormat.BLOCK (1) or DataFormat.POINT (0)
-    - num_face_connections: Number of face connections
-    - face_neighbor_mode: FaceNeighborMode enum
+    - num_face_connections: Number of face connections (for cell-based FE zones only. The number of face connections that will be passed to tecface142)
+    - face_nbr_mode: FaceNeighborMode enum. Usedd for cell-based FE and ordered zones only. Type of face connection taht will be passed in rouitine tecface142.
     - total_num_face_nodes: Total face nodes (for poly zones)
     - num_connected_boundary_faces: Boundary faces (for poly zones)
     - total_num_boundary_connections: Boundary connections (for poly zones)
-    - passive_var_list: List of VarStatus enums or 0/1 for passive variables
-    - value_location: List of ValueLocation enums or 0/1 for nodal/cell-centered
-    - share_var_from_zone: List of zone indices to share variables from
-    - share_connectivity_from_zone: Zone index to share connectivity from
-
     Notes:
     - For ORDERED zones: imx, jmx, kmx are dimensions
-    - For FE zones: imx=NumNodes, jmx=NumElements, kmx=0
-
+    - For FE zones: imx=NumNodes, jmx=NumElements, kmx=0 (unless higher order element)
     """
-    zone_type_c = ctypes.c_int32(_to_int_value(zone_type))
-    imx_c = ctypes.c_int32(imx)
-    jmx_c = ctypes.c_int32(jmx)
-    kmx_c = ctypes.c_int32(kmx)
-    icell_max_c = ctypes.c_int32(icell_max)
-    jcell_max_c = ctypes.c_int32(jcell_max)
-    kcell_max_c = ctypes.c_int32(kcell_max)
-    solution_time_c = ctypes.c_double(solution_time)
-    strand_id_c = ctypes.c_int32(strand_id)
-    parent_zone_c = ctypes.c_int32(parent_zone)
-    is_block_c = ctypes.c_int32(_to_int_value(data_format))
-    num_face_connections_c = ctypes.c_int32(num_face_connections)
-    face_neighbor_mode_c = ctypes.c_int32(_to_int_value(face_neighbor_mode))
-    total_num_face_nodes_c = ctypes.c_int32(total_num_face_nodes)
-    num_connected_boundary_faces_c = ctypes.c_int32(num_connected_boundary_faces)
-    total_num_boundary_connections_c = ctypes.c_int32(total_num_boundary_connections)
-    share_connectivity_c = ctypes.c_int32(share_connectivity_from_zone)
+    # Create C array for passive variable flags
+    pas_vars_ptr = None
+    if pas_vars is not None:
+        pas_vars_ptr = (ctypes.c_int32 * len(pas_vars))(*[
+            _to_int_value(v, Boolean) for v in pas_vars
+        ])
 
-    # Handle optional array parameters
-    passive_array = _process_sequence(passive_var_list)
-    passive_ptr = (
-        ctypes.cast(passive_array, ctypes.POINTER(ctypes.c_int32))
-        if passive_array
-        else ctypes.POINTER(ctypes.c_int32)()
-    )
+    # Create C array for value locations
+    value_locations_ptr = None
+    if value_locations is not None:
+        value_locations_ptr = (ctypes.c_int32 * len(value_locations))(*[
+            _to_int_value(v, ValueLocation) for v in value_locations
+        ])
 
-    value_loc_array = _process_sequence(value_location)
-    value_loc_ptr = (
-        ctypes.cast(value_loc_array, ctypes.POINTER(ctypes.c_int32))
-        if value_loc_array
-        else ctypes.POINTER(ctypes.c_int32)()
-    )
-
-    share_var_array = _process_sequence(share_var_from_zone)
-    share_var_ptr = (
-        ctypes.cast(share_var_array, ctypes.POINTER(ctypes.c_int32))
-        if share_var_array
-        else ctypes.POINTER(ctypes.c_int32)()
-    )
+    # Create C array for variable sharing
+    var_sharing_ptr = None
+    if var_sharing is not None:
+        var_sharing_ptr = (ctypes.c_int32 * len(var_sharing))(*list(var_sharing))
 
     ret = lib.teczne142(
         ctypes.c_char_p(zone_title.encode("utf-8")),
-        ctypes.byref(zone_type_c),
-        ctypes.byref(imx_c),
-        ctypes.byref(jmx_c),
-        ctypes.byref(kmx_c),
-        ctypes.byref(icell_max_c),
-        ctypes.byref(jcell_max_c),
-        ctypes.byref(kcell_max_c),
-        ctypes.byref(solution_time_c),
-        ctypes.byref(strand_id_c),
-        ctypes.byref(parent_zone_c),
-        ctypes.byref(is_block_c),
-        ctypes.byref(num_face_connections_c),
-        ctypes.byref(face_neighbor_mode_c),
-        ctypes.byref(total_num_face_nodes_c),
-        ctypes.byref(num_connected_boundary_faces_c),
-        ctypes.byref(total_num_boundary_connections_c),
-        passive_ptr,
-        value_loc_ptr,
-        share_var_ptr,
-        ctypes.byref(share_connectivity_c),
+        ctypes.c_int32(_to_int_value(zone_type)),
+        ctypes.c_int32(imax),
+        ctypes.c_int32(jmax),
+        ctypes.c_int32(kmax),
+        ctypes.c_int32(0),  # I-cell dimension (Reserved for future use. Set to zero)
+        ctypes.c_int32(0),  # J-cell dimension (Reserved for future use. Set to zero)
+        ctypes.c_int32(0),  # K-cell dimension (Reserved for future use. Set to zero)
+        ctypes.c_double(solution_time),
+        ctypes.c_int32(strand),
+        ctypes.c_int32(
+            0
+        ),  # Parent zone index (ParentZone is no longer used. Enter 0 for this value)
+        ctypes.c_int32(
+            _to_int_value(DataFormat.BLOCK)
+        ),  # DataFormat.BLOCK (1) or DataFormat.POINT (0) (Deprecated field. Always set to 1)
+        ctypes.c_int32(num_face_connections),
+        ctypes.c_int32(_to_int_value(face_nbr_mode)),
+        ctypes.c_int32(total_num_face_nodes),
+        ctypes.c_int32(num_connected_boundary_faces),
+        ctypes.c_int32(total_num_boundary_connections),
+        pas_vars_ptr,
+        value_locations_ptr,
+        var_sharing_ptr,
+        ctypes.c_int32(con_sharing),
     )
     if ret != 0:
         raise TecioError(
@@ -2894,115 +2863,6 @@ def tecznefemixed142(
         )
 
 
-# ---- Partitioned zone creation -------------------------------------
-def tecijkptn142(
-    partition_owner_zone: int,
-    imin: int,
-    jmin: int,
-    kmin: int,
-    imax: int,
-    jmax: int,
-    kmax: int,
-) -> None:
-    """Create an ordered partition for an existing zone.
-
-    Inputs:
-    - partition_owner_zone: Zone index of the owner zone
-    - imin: Minimum I index
-    - jmin: Minimum J index
-    - kmin: Minimum K index
-    - imax: Maximum I index
-    - jmax: Maximum J index
-    - kmax: Maximum K index
-
-    Notes:
-    - Used for parallel I/O to partition large zones
-
-    """
-    partition_owner_zone_c = ctypes.c_int32(partition_owner_zone)
-    imin_c = ctypes.c_int32(imin)
-    jmin_c = ctypes.c_int32(jmin)
-    kmin_c = ctypes.c_int32(kmin)
-    imax_c = ctypes.c_int32(imax)
-    jmax_c = ctypes.c_int32(jmax)
-    kmax_c = ctypes.c_int32(kmax)
-
-    ret = lib.tecijkptn142(
-        ctypes.byref(partition_owner_zone_c),
-        ctypes.byref(imin_c),
-        ctypes.byref(jmin_c),
-        ctypes.byref(kmin_c),
-        ctypes.byref(imax_c),
-        ctypes.byref(jmax_c),
-        ctypes.byref(kmax_c),
-    )
-    if ret != 0:
-        raise TecioError(
-            f"tecijkptn142 Error: partition_owner_zone={partition_owner_zone}, "
-            f"return_code={ret}"
-        )
-
-
-def tecfeptn142(
-    partition_owner_zone: int,
-    num_nodes: int,
-    num_elements: int,
-) -> None:
-    """Create an FE partition for an existing zone.
-
-    Inputs:
-    - partition_owner_zone: Zone index of the owner zone
-    - num_nodes: Number of nodes in this partition
-    - num_elements: Number of elements in this partition
-    """
-    partition_owner_zone_c = ctypes.c_int32(partition_owner_zone)
-    num_nodes_c = ctypes.c_int32(num_nodes)
-    num_elements_c = ctypes.c_int32(num_elements)
-
-    ret = lib.tecfeptn142(
-        ctypes.byref(partition_owner_zone_c),
-        ctypes.byref(num_nodes_c),
-        ctypes.byref(num_elements_c),
-    )
-    if ret != 0:
-        raise TecioError(
-            f"tecfeptn142 Error: partition_owner_zone={partition_owner_zone}, "
-            f"return_code={ret}"
-        )
-
-
-def tecfemixedptn142(
-    partition_owner_zone: int,
-    num_nodes: int,
-    num_elements: int,
-    num_nodes_per_element: int,
-) -> None:
-    """Create a mixed FE partition for an existing zone.
-
-    Inputs:
-    - partition_owner_zone: Zone index of the owner zone
-    - num_nodes: Number of nodes in this partition
-    - num_elements: Number of elements in this partition
-    - num_nodes_per_element: Number of nodes per element
-    """
-    partition_owner_zone_c = ctypes.c_int32(partition_owner_zone)
-    num_nodes_c = ctypes.c_int32(num_nodes)
-    num_elements_c = ctypes.c_int32(num_elements)
-    num_nodes_per_element_c = ctypes.c_int32(num_nodes_per_element)
-
-    ret = lib.tecfemixedptn142(
-        ctypes.byref(partition_owner_zone_c),
-        ctypes.byref(num_nodes_c),
-        ctypes.byref(num_elements_c),
-        ctypes.byref(num_nodes_per_element_c),
-    )
-    if ret != 0:
-        raise TecioError(
-            f"tecfemixedptn142 Error: partition_owner_zone={partition_owner_zone}, "
-            f"return_code={ret}"
-        )
-
-
 # ---- Data writing --------------------------------------------------
 def tecdat142(
     field_data: npt.ArrayLike,
@@ -3024,17 +2884,16 @@ def tecdat142(
     if is_double:
         arr = np.ascontiguousarray(field_data, dtype=np.float64)
         data_ptr = arr.ctypes.data_as(ctypes.c_void_p)
+        is_double_c = ctypes.c_int32(1)
     else:
         arr = np.ascontiguousarray(field_data, dtype=np.float32)
         data_ptr = arr.ctypes.data_as(ctypes.c_void_p)
-
-    n = ctypes.c_int32(arr.size)
-    is_double_c = ctypes.c_int32(1 if is_double else 0)
+        is_double_c = ctypes.c_int32(0)
 
     ret = lib.tecdat142(
-        ctypes.byref(n),
+        ctypes.c_int32(arr.size),
         data_ptr,
-        ctypes.byref(is_double_c),
+        is_double_c,
     )
     if ret != 0:
         raise TecioError(
@@ -3043,7 +2902,7 @@ def tecdat142(
 
 
 # ---- Connectivity writing ------------------------------------------
-def tecnode142(connectivity: npt.ArrayLike) -> None:
+def tecnode142(nodes: npt.ArrayLike) -> None:
     """Write node connectivity for FE zone.
 
     Inputs:
@@ -3056,39 +2915,17 @@ def tecnode142(connectivity: npt.ArrayLike) -> None:
     - etc.
 
     """
-    conn_array = np.ascontiguousarray(connectivity, dtype=np.int32)
-    n = ctypes.c_int32(conn_array.size)
-    conn_ptr = conn_array.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
+    nodes_array = np.ascontiguousarray(nodes, dtype=np.int32)
+    n = ctypes.c_int32(nodes_array.size)
+    nodes_ptr = nodes_array.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
 
     ret = lib.tecnode142(
         ctypes.byref(n),
-        conn_ptr,
-    )
-    if ret != 0:
-        raise TecioError(f"tecnode142 Error: n={conn_array.size}, return_code={ret}")
-
-
-def tecznemap142(node_map: npt.ArrayLike) -> None:
-    """Write node map for FE zone (alternative to tecnode142).
-
-    Inputs:
-    - node_map: Array of node indices (1-based)
-
-    Notes:
-    - Similar to tecnode142 but with different internal handling
-
-    """
-    node_map_array = np.ascontiguousarray(node_map, dtype=np.int32)
-    n = ctypes.c_int32(node_map_array.size)
-    node_map_ptr = node_map_array.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
-
-    ret = lib.tecznemap142(
-        ctypes.byref(n),
-        node_map_ptr,
+        nodes_ptr,
     )
     if ret != 0:
         raise TecioError(
-            f"tecznemap142 Error: n={node_map_array.size}, return_code={ret}"
+            f"tecnode142 Error: n_nodes={nodes_array.size}, return_code={ret}"
         )
 
 
@@ -3275,33 +3112,6 @@ def teczauxstr142(name: str, value: str) -> None:
     if ret != 0:
         raise TecioError(
             f"teczauxstr142 Error: name={name!r}, value={value!r}, return_code={ret}"
-        )
-
-
-# ---- MPI initialization (for parallel I/O) -------------------------
-def tecmpiinit142(communicator: int, main_rank: int) -> None:
-    """Initialize MPI for parallel I/O.
-
-    Inputs:
-    - communicator: MPI communicator handle
-    - main_rank: Rank of the main process
-
-    Notes:
-    - Must be called before tecini142() for parallel I/O
-    - Only required for parallel file writing
-
-    """
-    communicator_c = ctypes.c_int32(communicator)
-    main_rank_c = ctypes.c_int32(main_rank)
-
-    ret = lib.tecmpiinit142(
-        ctypes.byref(communicator_c),
-        ctypes.byref(main_rank_c),
-    )
-    if ret != 0:
-        raise TecioError(
-            f"tecmpiinit142 Error: communicator={communicator}, "
-            f"main_rank={main_rank}, return_code={ret}"
         )
 
 
