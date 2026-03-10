@@ -2480,9 +2480,6 @@ def tecini142(
     - Must be called before any zone or data operations
     - Call tecend142() to finalize the file
     """
-    file_format_c = ctypes.c_int32(_to_int_value(file_format))
-    file_type_c = ctypes.c_int32(_to_int_value(file_type))
-    debug_c = ctypes.c_int32(_to_int_value(debug))
     vis_double_c = ctypes.c_int32(
         1 if _to_int_value(vis_double) == DataType.DOUBLE.value else 0
     )
@@ -2492,10 +2489,10 @@ def tecini142(
         ctypes.c_char_p(variables.encode("utf-8")),
         ctypes.c_char_p(fname.encode("utf-8")),
         ctypes.c_char_p(scratch_dir.encode("utf-8")),
-        ctypes.byref(file_format_c),
-        ctypes.byref(file_type_c),
-        ctypes.byref(debug_c),
-        ctypes.byref(vis_double_c),
+        ctypes.c_int32(_to_int_value(file_format)),
+        ctypes.c_int32(_to_int_value(file_type)),
+        ctypes.c_int32(_to_int_value(debug)),
+        vis_double_c,
     )
     if ret != 0:
         raise TecioError(f"tecini142 Error: fname={fname!r}, return_code={ret}")
