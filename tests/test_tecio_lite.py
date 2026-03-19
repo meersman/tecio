@@ -442,7 +442,6 @@ def test_tec_zone_create_ijk() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_ijk.szplt",
-            "test_tecio",
             "x, y, z, c",
         )
         zone_idx = libtecio.tec_zone_create_ijk(
@@ -472,7 +471,6 @@ def test_tec_zone_create_fe_lineseg() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_fe_lineseg.szplt",
-            "test_tecio",
             "x, y, c",
         )
         zone_idx = libtecio.tec_zone_create_fe(
@@ -502,7 +500,6 @@ def test_tec_zone_create_fe_tri() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_fe_tri.szplt",
-            "test_tecio",
             "x, y, c",
         )
         zone_idx = libtecio.tec_zone_create_fe(
@@ -532,7 +529,6 @@ def test_tec_zone_create_fe_quad() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_fe_quad.szplt",
-            "test_tecio",
             "x, y, c",
         )
         zone_idx = libtecio.tec_zone_create_fe(
@@ -561,7 +557,6 @@ def test_tec_zone_create_fe_tet() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_fe_tet.szplt",
-            "test_tecio",
             "x, y, z, c",
         )
         zone_idx = libtecio.tec_zone_create_fe(
@@ -591,7 +586,6 @@ def test_tec_zone_create_fe_pyramid() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_fe_pyramid.szplt",
-            "test_tecio",
             "x, y, z, c",
         )
         zone_idx = libtecio.tec_zone_create_fe(
@@ -621,7 +615,6 @@ def test_tec_zone_create_fe_prism() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_fe_prism.szplt",
-            "test_tecio",
             "x, y, z, c",
         )
         zone_idx = libtecio.tec_zone_create_fe(
@@ -652,7 +645,6 @@ def test_tec_zone_create_fe_brick() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_fe_brick.szplt",
-            "test_tecio",
             "x, y, z, c",
         )
         zone_idx = libtecio.tec_zone_create_fe(
@@ -682,7 +674,6 @@ def test_tec_zone_face_nbr_write_connections() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_face_nbr.szplt",
-            "test_tecio",
             "x, y, z, c",
         )
         zone_idx = libtecio.tec_zone_create_fe(
@@ -719,7 +710,6 @@ def test_tec_zone_aux_data_and_unsteady() -> None:
 
         handle = libtecio.tec_file_writer_open(
             "test_tec_aux_data_unsteady.szplt",
-            "test_tecio",
             "x, y, z, c",
         )
 
@@ -794,7 +784,6 @@ def test_plt_tec_zone_create_ijk() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_ijk.plt",
-            "test_tecio",
             "x, y, z, c",
         )
         libtecio.teczne142(
@@ -823,7 +812,6 @@ def test_plt_tec_zone_create_fe_lineseg() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_fe_lineseg.plt",
-            "test_tecio",
             "x, y, c",
             file_format=FileFormat.PLT,
             file_type=FileType.FULL,
@@ -854,7 +842,6 @@ def test_plt_tec_zone_create_fe_tri() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_fe_tri.plt",
-            "test_tecio",
             "x, y, c",
         )
         libtecio.teczne142(
@@ -883,7 +870,6 @@ def test_plt_tec_zone_create_fe_quad() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_fe_quad.plt",
-            "test_tecio",
             "x, y, c",
         )
         libtecio.teczne142(
@@ -912,7 +898,6 @@ def test_plt_tec_zone_create_fe_tet() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_fe_tet.plt",
-            "test_tecio",
             "x, y, z, c",
         )
         libtecio.teczne142(
@@ -942,7 +927,6 @@ def test_plt_tec_zone_create_fe_pyramid() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_fe_pyramid.plt",
-            "test_tecio",
             "x, y, z, c",
         )
         libtecio.teczne142(
@@ -972,7 +956,6 @@ def test_plt_tec_zone_create_fe_prism() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_fe_prism.plt",
-            "test_tecio",
             "x, y, z, c",
         )
         libtecio.teczne142(
@@ -1002,7 +985,6 @@ def test_plt_tec_zone_create_fe_brick() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_fe_brick.plt",
-            "test_tecio",
             "x, y, z, c",
         )
         libtecio.teczne142(
@@ -1032,7 +1014,6 @@ def test_plt_tec_zone_face_nbr_write_connections() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_face_nbr.plt",
-            "test_tecio",
             "x, y, z, c",
         )
         libtecio.teczne142(
@@ -1066,7 +1047,6 @@ def test_plt_tec_zone_aux_data_and_unsteady() -> None:
 
         libtecio.tecini142(
             "test_plt_aux_data_unsteady.plt",
-            "test_tecio",
             "x, y, z, c",
         )
 

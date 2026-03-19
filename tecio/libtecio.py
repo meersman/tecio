@@ -1828,8 +1828,8 @@ def tec_zone_aux_data_get_item(
 # ---- Initialization and File Handling ------------------------------
 def tec_file_writer_open(
     fname: str,
-    title: str,
     variables: str,
+    title: str = "Untitled",
     file_type: FileType = FileType.FULL,
     use_szl: int = 1,
     grid_file_handle: ctypes.c_void_p | None = None,
@@ -2485,8 +2485,8 @@ def tec_zone_face_nbr_write_connections64(
 # ---- File initialization and finalization --------------------------
 def tecini142(
     fname: str,
-    title: str,
     variables: str,
+    title: str ="Untitled",
     scratch_dir: str = ".",
     file_format: int | FileFormat = FileFormat.PLT,
     file_type: int | FileType = FileType.FULL,
@@ -2513,7 +2513,6 @@ def tecini142(
     vis_double_c = ctypes.c_int32(
         1 if _to_int_value(vis_double) == DataType.DOUBLE.value else 0
     )
-
     ret = lib.tecini142(
         ctypes.c_char_p(title.encode("utf-8")),
         ctypes.c_char_p(variables.encode("utf-8")),
