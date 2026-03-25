@@ -632,6 +632,11 @@ class Write:
     garanteed to be consistent with the first zone variables.
 
     For the SZL API, file contents can be written out of order after creating zones.
+
+    Idea: Set default variable names for the whole dataset if 1st zone is initialized
+    with a list of data, but no variables strings.
+
+    Idea: Make public zone method for users that want more manual data handling.
     """
 
     def __init__(

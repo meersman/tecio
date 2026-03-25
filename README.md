@@ -4,13 +4,13 @@ Python interface for reading and writing Tecplot data files.
 
 ## Overview
 
-Tecio wraps Tecplot's TecIO C-library functions for working with
-Tecplot binary formats (szplt and plt). Supports read-only file access
-and in-memory data manipulation.
+This package wraps Tecplot's TecIO C-library functions for working
+with Tecplot binary formats (szplt and plt). Supports read-only file
+access and in-memory data manipulation.
 
 **Requirements:** Python 3.10+, NumPy, Tecplot 360
 
-## Example
+## Example Usage
 
 ```python
 import numpy as np
@@ -23,23 +23,22 @@ szl = tecio.Read("flow.szplt")
 pressure = szl.zones[0].variables[0].values
 
 # Load and manipulate
-data = tecio.TecData("flow.szplt", zones=[0], vars=["X", "Y", "Pressure"])
-p_idx = data.get_variable_index("Pressure")
-data.normalize_variable(p_idx, 101325.0)
-data.write_szl("normalized.szplt")
+ds = tecio.Dataset("flow.szplt", zones=[0], vars=["X", "Y", "Pressure"])
+p_idx = ds.get_variable_index("Pressure")
+ds.normalize_variable(p_idx, 101325.0)
+ds.write_szl("normalized.szplt")
 
 # Create new Tecplot object from scratch
-data = tecio.TecData(title="Grid")
-x_idx = data.add_variable("X")
-zone = data.add_zone("Domain", ZoneType.ORDERED, dimensions=(100, 100, 1))
-zone.set_variable_data(x_idx, np.linspace(0, 1, 10000))
-data.write_szl("output.szplt")
+ds = tecio.Dataset(title="Grid")
+zone = ds.add_zone("XGrid", ZoneType.ORDERED)
+x_idx = ds.add_variable(zone, "X", np.linspace(0, 1, 10000))
+ds.write_szl("output.szplt", file_type=FileType.GRID)
 ```
 
 ## Structure
 
-- `szlfile.py` - High level SZL file API
-- `tecdata.py` - Mutable in-memory data structures. Consistent for all initializations (plt, szplt, empty)
+- `szl.py`      - High level SZL file API
+- `dataset.py`  - NOT YET IMPLEMENTED: Mutable in-memory data structures. Consistent for all initializations (plt, szplt, empty)
 - `libtecio.py` - TecIO C bindings
 
 ## Development
