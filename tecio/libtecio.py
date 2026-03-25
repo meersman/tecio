@@ -1,8 +1,4 @@
-"""Library of Python wrapper for tecio C-functions.
-
-Intended to accept pythonic inputs and convert outputs to numpy data
-formats where ever possible.
-"""
+"""Python interface for TecIO C library functions."""
 
 from __future__ import annotations
 
@@ -20,18 +16,20 @@ TECIO_LIB_PATH = tecutils.get_tecio_lib()
 lib = ctypes.cdll.LoadLibrary(TECIO_LIB_PATH)
 
 
-# --------------------------------------------------------------------
-# ---- Tecio exception classes ---------------------------------------
-# --------------------------------------------------------------------
-
-
 class TecioError(RuntimeError):
-    """Base exception for all libtecio C/C++ library errors."""
+    """Catch-all exception for all libtecio C/C++ library errors."""
 
 
-# --------------------------------------------------------------------
-# ---- Definition of Enums -------------------------------------------
-# --------------------------------------------------------------------
+#=======================================================================================
+# Meaningful integers
+# - The TecIO library often uses integers with special meanings (zone types, data types,
+#   data locations)
+# - The same values are used both for writing (tec*142 functions) and for SZL reading
+#   and writing (tec_* functions)
+# - The classes below provide a more readable format of these values
+# - Where available, the equivalent keywords used in Tecplot ASCII files are set as the
+#   class property, returning the corresponding int value.
+#=======================================================================================
 
 
 class FileFormat(Enum):
@@ -191,12 +189,15 @@ class Debug(Enum):
     TRUE = 1
 
 
-# --------------------------------------------------------------------
-# ---- Helper functions ----------------------------------
-# --------------------------------------------------------------------
+#=======================================================================================
+# Helper functions
+# - Used to convert Numpy array-like input to C-compatible pointers for passing to the C
+#   API
+# - Used to convert special integer values (enums, ints, or sequences) to int values for
+#   passing to the C API, with optional validation against an Enum class
+#=======================================================================================
 
 
-# ---- helper to prepare numpy arrays for ctypes -----------------------
 def _prepare_array_for_ctypes(
     values: npt.ArrayLike, np_dtype, ctype
 ) -> tuple[ctypes.POINTER, int, npt.NDArray]:
@@ -252,11 +253,16 @@ def _process_sequence( seq: Sequence[int | Enum] | None) -> ctypes.Array | None:
     return (ctypes.c_int32 * len(values))(*values)
 
 
-# --------------------------------------------------------------------
-# ---- C library bindings: SZL Read ----------------------------------
-# --------------------------------------------------------------------
+#=======================================================================================
+# C library bindings
+# - Set the input and output C types for each C function used in this library
+#=======================================================================================
 
-# ---- Reading SZL files ---------------------------------------------
+#---------------------------------------------------------------------------------------
+# New SZL API bindings
+#---------------------------------------------------------------------------------------
+
+# Reading SZL files
 lib.tecFileReaderOpen.restype = ctypes.c_int32
 lib.tecFileReaderOpen.argtypes = [
     ctypes.c_char_p,
@@ -288,7 +294,7 @@ lib.tecDataSetAuxDataGetNumItems.argtypes = [
     ctypes.POINTER(ctypes.c_int32),
 ]
 
-# ---- Reading SZL zones ---------------------------------------------
+# Reading SZL zones
 lib.tecZoneGetIJK.restype = ctypes.c_int32
 lib.tecZoneGetIJK.argtypes = [
     ctypes.c_void_p,
@@ -350,7 +356,7 @@ lib.tecZoneNodeMapGet.argtypes = [
     ctypes.POINTER(ctypes.c_int32),
 ]
 
-# ---- Reading SZL variable data -------------------------------------
+# Reading SZL variable data
 lib.tecVarGetName.restype = ctypes.c_int32
 lib.tecVarGetName.argtypes = [
     ctypes.c_void_p,
@@ -444,7 +450,7 @@ lib.tecZoneVarGetUInt8Values.argtypes = [
     ctypes.POINTER(ctypes.c_uint8),  # Values
 ]
 
-# ---- Reading SZL aux data ------------------------------------------
+# Reading SZL aux data
 lib.tecDataSetAuxDataGetNumItems.restype = ctypes.c_int32
 lib.tecDataSetAuxDataGetNumItems.argtypes = [
     ctypes.c_void_p,
@@ -486,11 +492,7 @@ lib.tecZoneAuxDataGetItem.argtypes = [
     ctypes.POINTER(ctypes.c_char_p),
 ]
 
-# --------------------------------------------------------------------
-# ---- C library bindings: SZL Write ---------------------------------
-# --------------------------------------------------------------------
-
-# ---- Initialization and File Handling ------------------------------
+# Output file initialization and file handling
 lib.tecFileWriterOpen.restype = ctypes.c_int32
 lib.tecFileWriterOpen.argtypes = [
     ctypes.c_char_p,  # fileName
@@ -507,7 +509,7 @@ lib.tecFileWriterClose.argtypes = [
     ctypes.POINTER(ctypes.c_void_p),
 ]
 
-# ---- Write Zone Headers --------------------------------------------
+# Write Zone Headers
 lib.tecZoneCreateIJK.restype = ctypes.c_int32
 lib.tecZoneCreateIJK.argtypes = [
     ctypes.c_void_p,  # file_handle
@@ -541,7 +543,7 @@ lib.tecZoneCreateFE.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # out zone
 ]
 
-# ---- Optional fields -----------------------------------------------
+# Optional fields
 lib.tecZoneSetUnsteadyOptions.restype = ctypes.c_int32
 lib.tecZoneSetUnsteadyOptions.argtypes = [
     ctypes.c_void_p,  # file_handle
@@ -570,7 +572,7 @@ lib.tecZoneAddAuxData.argtypes = [
     ctypes.c_char_p,  # value
 ]
 
-# ---- Write variable value functions --------------------------------
+# Write variable value functions
 lib.tecZoneVarWriteDoubleValues.restype = ctypes.c_int32
 lib.tecZoneVarWriteDoubleValues.argtypes = [
     ctypes.c_void_p,  # file handle
@@ -625,7 +627,7 @@ lib.tecZoneVarWriteUInt8Values.argtypes = [
     ctypes.POINTER(ctypes.c_uint8),  # pointer to values array
 ]
 
-# ---- Write Zone Connectivity (FE zones only) -----------------------
+# Write Zone Connectivity (FE zones only)
 lib.tecZoneNodeMapWrite32.restype = ctypes.c_int32
 lib.tecZoneNodeMapWrite32.argtypes = [
     ctypes.c_void_p,  # fileHandle
@@ -657,11 +659,11 @@ lib.tecZoneFaceNbrWriteConnections64.argtypes = [
     ctypes.POINTER(ctypes.c_int64),  # faceNeighbors
 ]
 
-# --------------------------------------------------------------------
-# ---- C library bindings: PLT Functions -----------------------------
-# --------------------------------------------------------------------
+#---------------------------------------------------------------------------------------
+# Classic API bindings
+#---------------------------------------------------------------------------------------
 
-# ---- File initialization and finalization --------------------------
+# File initialization and finalization
 lib.tecini142.restype = ctypes.c_int32
 lib.tecini142.argtypes = [
     ctypes.c_char_p,  # Title
@@ -689,7 +691,7 @@ lib.tecforeign142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # OutputForeignByteOrder
 ]
 
-# ---- Zone creation -------------------------------------------------
+# Zone creation
 lib.teczne142.restype = ctypes.c_int32
 lib.teczne142.argtypes = [
     ctypes.c_char_p,  # ZoneTitle
@@ -751,7 +753,7 @@ lib.tecznefemixed142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # ShareConnectivityFromZone
 ]
 
-# ---- Partitioned zone creation -------------------------------------
+# Partitioned zone creation
 lib.tecijkptn142.restype = ctypes.c_int32
 lib.tecijkptn142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # PartitionOwnerZone
@@ -776,7 +778,7 @@ lib.tecfemixedptn142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # NumNodesPerElement
 ]
 
-# ---- Data writing --------------------------------------------------
+# Data writing
 lib.tecdat142.restype = ctypes.c_int32
 lib.tecdat142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # N (number of values)
@@ -784,7 +786,7 @@ lib.tecdat142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # IsDouble (1=double, 0=float)
 ]
 
-# ---- Connectivity writing ------------------------------------------
+# Connectivity writing
 lib.tecnod142.restype = ctypes.c_int32
 lib.tecnod142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # NData (connectivity array)
@@ -819,7 +821,7 @@ lib.tecpolybconn142.argtypes = [
     ctypes.POINTER(ctypes.c_int16),  # BoundaryConnectionZones
 ]
 
-# ---- Auxiliary data ------------------------------------------------
+# Auxiliary data
 lib.tecauxstr142.restype = ctypes.c_int32
 lib.tecauxstr142.argtypes = [
     ctypes.c_char_p,  # Name
@@ -839,26 +841,51 @@ lib.teczauxstr142.argtypes = [
     ctypes.c_char_p,  # Value
 ]
 
-# ---- MPI initialization (for parallel I/O) -------------------------
+# MPI initialization (for parallel I/O)
 lib.tecmpiinit142.restype = ctypes.c_int32
 lib.tecmpiinit142.argtypes = [
     ctypes.POINTER(ctypes.c_int32),  # Communicator
     ctypes.POINTER(ctypes.c_int32),  # MainRank
 ]
 
-# ---- User-defined data (custom records) ----------------------------
+# User-defined data (custom records)
 lib.tecusr142.restype = ctypes.c_int32
 lib.tecusr142.argtypes = [
     ctypes.c_char_p,  # UserRec
 ]
 
+#=======================================================================================
+# Wrappers for C functions
+# - 1-to-1 python functions to format python inputs/ouputs to C TecIO functions
+# - "New" API functions (tecXxxXxx) are wrapped by equivaltly named tec_xxx_xxx
+#   python funcitons
+# - "Classic" API functions (TECXXXX142) wrapped by equivaltly named tecxxx142 python
+#   funcitons
+# - Scope for this library is limited to IO for data related file records (geometry and
+#   text records are ignored)
+# - Some MPI funcion python wrappers are included, but not yet fully implemented
+# - Wherever data arrays are output, conversion to numpy arrays is handled in the
+#   wrapper function
+#=======================================================================================
 
-# --------------------------------------------------------------------
-# ---- Wrappers for C functions: SZL Read ----------------------------
-# --------------------------------------------------------------------
+#---------------------------------------------------------------------------------------
+# New read API (SZL/.szplt):
+# - tec_file_reader_open returns an explicit file handle that is passed to every
+#   subsequent call, making the target file unambiguous
+# - Multiple files can be read simultaneously by holding multiple handles at once
+# - Fucntions are available to query dataset/zone/variable metadata before reading any
+#   data, and data can be read in any order by referencing the file handle +
+#   zone/variable index
+# - General organization of functions:
+#   - tec_file_* functions operate on the file
+#   - tec_data_set_* functions query whole dataset metadata
+#   - tec_zone_* functions query zone level metadata (type, dimensions, title, solution
+#     time, strand ID, node map, aux data)
+#   - tec_var_* functions query variable-level metadata (name, aux data)
+#   - tec_zone_var_* functions read variable values for a given zone and variable index
+#---------------------------------------------------------------------------------------
 
-
-# ---- Reading SZL files ---------------------------------------------
+# Reading SZL files
 def tec_file_reader_open(file_name: str) -> ctypes.c_void_p:
     """Open an SZL reader file.
 
@@ -965,7 +992,7 @@ def tec_data_set_get_num_zones(handle: ctypes.c_void_p) -> int:
     return num_zones.value
 
 
-# ---- Reading SZL zones ---------------------------------------------
+# Reading SZL zones
 def tec_zone_get_ijk(handle: ctypes.c_void_p, zone_index: int) -> tuple[int, int, int]:
     """Get zone dimensions or FE counts.
 
@@ -979,16 +1006,16 @@ def tec_zone_get_ijk(handle: ctypes.c_void_p, zone_index: int) -> tuple[int, int
       * For FE zones: I = number of nodes, J = number of elements, K unused.
 
     """
-    I = ctypes.c_int64(0)
-    J = ctypes.c_int64(0)
-    K = ctypes.c_int64(0)
+    imax = ctypes.c_int64(0)
+    jmax = ctypes.c_int64(0)
+    kmax = ctypes.c_int64(0)
 
     ret = lib.tecZoneGetIJK(
         handle,
         ctypes.c_int32(zone_index),
-        ctypes.byref(I),
-        ctypes.byref(J),
-        ctypes.byref(K),
+        ctypes.byref(imax),
+        ctypes.byref(jmax),
+        ctypes.byref(kmax),
     )
     if ret != 0:
         raise TecioError(
@@ -996,7 +1023,7 @@ def tec_zone_get_ijk(handle: ctypes.c_void_p, zone_index: int) -> tuple[int, int
             f"zone_index={zone_index}, return_code={ret}"
         )
 
-    return I.value, J.value, K.value
+    return imax.value, jmax.value, kmax.value
 
 
 def tec_zone_get_title(handle: ctypes.c_void_p, zone_index: int) -> str:
@@ -1232,7 +1259,7 @@ def tec_zone_node_map_get(
     return np.ctypeslib.as_array(nodemap).reshape(num_elements, nodes_per_cell)
 
 
-# ---- Reading SZL variable data -------------------------------------
+# Reading SZL variable data
 def tec_var_get_name(handle: ctypes.c_void_p, var_index: int) -> str:
     """Get the name of a variable by index.
 
@@ -1651,7 +1678,7 @@ def tec_zone_var_get_uint8_values(
     return np.ctypeslib.as_array(values)
 
 
-# ---- Reading SZL aux data ------------------------------------------
+# Reading SZL aux data
 def tec_data_set_aux_data_get_num_items(handle: ctypes.c_void_p) -> int:
     """Get the number of dataset-level auxiliary data items.
 
@@ -1820,15 +1847,23 @@ def tec_zone_aux_data_get_item(
     return name.value.decode("utf-8"), value.value.decode("utf-8")
 
 
-# --------------------------------------------------------------------
-# ---- Wrappers for C functions: SZL Write ---------------------------
-# --------------------------------------------------------------------
+#---------------------------------------------------------------------------------------
+# New write API (SZL/.szplt):
+# - tec_file_writer_open returns an explicit file handle that is passed to every
+#   subsequent call, making the target file unambiguous
+# - Multiple files can be written simultaneously by holding multiple handles at once
+#   tec_zone_create_ijk / tec_zone_create_fe append a new zone record and return a
+#   1-based zone index
+# - Variable data, node maps, aux data, and unsteady options are written by referencing
+#   the file handle + zone/variable index, so they can be written in any order after
+#   zone creation
+# - tec_file_writer_close finalizes and flushes the file
+#---------------------------------------------------------------------------------------
 
-
-# ---- Initialization and File Handling ------------------------------
+# Initialization and File Handling
 def tec_file_writer_open(
-    fname: str,
-    variables: str,
+    filename: str,
+    variables: Sequence[str],
     title: str = "Untitled",
     file_type: FileType = FileType.FULL,
     use_szl: int = 1,
@@ -1852,22 +1887,24 @@ def tec_file_writer_open(
     if not isinstance(file_type, FileType):
         raise TypeError("file_type must be a libtecio.FileType enum")
 
+    assert all(len(v) <= 128 for v in variables), "Variables limited to 128 characters"
+
+    varstring = ", ".join(variables)
     handle = ctypes.c_void_p()
-    ft_int = int(file_type.value)
 
     ret = lib.tecFileWriterOpen(
-        ctypes.c_char_p(fname.encode("utf-8")),
+        ctypes.c_char_p(filename.encode("utf-8")),
         ctypes.c_char_p(title.encode("utf-8")),
-        ctypes.c_char_p(variables.encode("utf-8")),
+        ctypes.c_char_p(varstring.encode("utf-8")),
         ctypes.c_int32(use_szl),
-        ctypes.c_int32(ft_int),
+        ctypes.c_int32(file_type.value),
         ctypes.c_int32(0),
         grid_file_handle if grid_file_handle is not None else None,
         ctypes.byref(handle),
     )
     if ret != 0:
         raise TecioError(
-            f"tecFileWriterOpen Error: file_name={fname!r}, title={title!r}, "
+            f"tecFileWriterOpen Error: file_name={filename!r}, title={title!r}, "
             f"variables={variables!r}, file_type={file_type!r}, return_code={ret}"
         )
     return handle
@@ -1886,13 +1923,13 @@ def tec_file_writer_close(handle: ctypes.c_void_p) -> None:
         )
 
 
-# ---- Write Zone Headers --------------------------------------------
+# Write Zone Headers
 def tec_zone_create_ijk(
     handle: ctypes.c_void_p,
     zone_title: str,
-    I: int,
-    J: int,
-    K: int,
+    imax: int,
+    jmax: int,
+    kmax: int,
     var_types: Sequence[DataType | int],
     var_sharing: Sequence[int] | None = None,
     value_locations: Sequence[int | ValueLocation] | None = None,
@@ -1906,7 +1943,7 @@ def tec_zone_create_ijk(
     Inputs:
     - handle: ctypes.c_void_p writer handle
     - zone_title: zone title string
-    - I, J, K: zone dimensions (integers)
+    - imax, jmax, kmax: zone dimensions (integers)
     - var_types: sequence of DataType enums specifying storage type
       per variable (length should match dataset variables if provided)
     - var_sharing: optional sequence indicating variable sharing
@@ -1955,9 +1992,9 @@ def tec_zone_create_ijk(
     ret = lib.tecZoneCreateIJK(
         handle,
         ctypes.c_char_p(zone_title.encode("utf-8")),
-        ctypes.c_int64(I),
-        ctypes.c_int64(J),
-        ctypes.c_int64(K),
+        ctypes.c_int64(imax),
+        ctypes.c_int64(jmax),
+        ctypes.c_int64(kmax),
         var_types_ptr,
         var_sharing_ptr,
         value_locations_ptr,
@@ -1971,8 +2008,10 @@ def tec_zone_create_ijk(
     )
     if ret != 0:
         raise TecioError(
-            f"tecZoneCreateIJK Error: zone_title={zone_title!r}, I={I}, J={J}, K={K}, "
-            f"var_types_len={len(var_types) if var_types is not None else 0}, return_code={ret}"
+            f"tecZoneCreateIJK Error: zone_title={zone_title!r}, "
+            f"imax={imax}, jmax={jmax}, kmax={kmax}, "
+            f"var_types_len={len(var_types) if var_types is not None else 0}, "
+            f"return_code={ret}"
         )
     return zone_out.value
 
@@ -2068,12 +2107,13 @@ def tec_zone_create_fe(
         raise TecioError(
             f"tecZoneCreateIJK Error: zone_title={zone_title!r}, "
             f"ZoneType={zone_type!r}, NODES={num_nodes}, CELLS={num_cells}, "
-            f"var_types_len={len(var_types) if var_types is not None else 0}, return_code={ret}"
+            f"var_types_len={len(var_types) if var_types is not None else 0}, "
+            f"return_code={ret}"
         )
     return zone_out.value
 
 
-# ---- Optional fields -----------------------------------------------
+# Optional fields
 def tec_zone_set_unsteady_options(
     handle: ctypes.c_void_p, zone: int, strand: int = 0, solution_time: float = 0.0
 ) -> None:
@@ -2324,7 +2364,7 @@ def tec_zone_var_write_uint8_values(
         )
 
 
-# ---- Write Zone Connectivity (FE zones only) -----------------------
+# Write Zone Connectivity (FE zones only)
 def tec_zone_node_map_write32(
     handle: ctypes.c_void_p,
     zone: int,
@@ -2477,15 +2517,23 @@ def tec_zone_face_nbr_write_connections64(
         )
 
 
-# --------------------------------------------------------------------
-# ---- Wrappers for C functions: PLT ---------------------------------
-# --------------------------------------------------------------------
+#---------------------------------------------------------------------------------------
+# Classic API (PLT/.plt AND SZL/.szplt):
+# - No handle is returned — the library maintains a single implicit global file context
+# - Only one file can be active at a time; tecfil142 must be called to switch between
+#   files if writing multiple files simultainously
+# - tecini142 initializes the file and sets the global context; all subsequent calls
+#   implicitly target this file
+# - Zone records (teczne142), data (tecdat142), and node maps (tecnode142) must be
+#   written strictly in order — each zone's header followed immediately by its data
+#   before the next zone is declared
+# - tecend142 finalizes and closes the active file
+#---------------------------------------------------------------------------------------
 
-
-# ---- File initialization and finalization --------------------------
+# File initialization and finalization
 def tecini142(
-    fname: str,
-    variables: str,
+    filename: str,
+    variables: Sequence[str],
     title: str ="Untitled",
     scratch_dir: str = ".",
     file_format: int | FileFormat = FileFormat.PLT,
@@ -2498,7 +2546,7 @@ def tecini142(
     Inputs:
     - title: Dataset title
     - variables: Space or comma-separated variable names
-    - fname: Output file name (.plt or .szplt)
+    - filename: Output file name (.plt or .szplt)
     - scratch_dir: Scratch directory for temporary files
     - file_format: FileFormat.PLT (0) or FileFormat.SZPLT (1)
     - file_type: FileType.FULL (0), GRID (1), or SOLUTION (2)
@@ -2510,13 +2558,19 @@ def tecini142(
     - Call tecend142() to finalize the file
 
     """
+    if not isinstance(file_type, FileType):
+        raise TypeError("file_type must be a libtecio.FileType enum")
+
+    assert all(len(v) <= 128 for v in variables), "Variables limited to 128 characters"
+
+    varstring = ", ".join(variables)
     vis_double_c = ctypes.c_int32(
         1 if _to_int_value(vis_double) == DataType.DOUBLE.value else 0
     )
     ret = lib.tecini142(
         ctypes.c_char_p(title.encode("utf-8")),
-        ctypes.c_char_p(variables.encode("utf-8")),
-        ctypes.c_char_p(fname.encode("utf-8")),
+        ctypes.c_char_p(varstring.encode("utf-8")),
+        ctypes.c_char_p(filename.encode("utf-8")),
         ctypes.c_char_p(scratch_dir.encode("utf-8")),
         ctypes.c_int32(_to_int_value(file_format)),
         ctypes.c_int32(_to_int_value(file_type)),
@@ -2524,7 +2578,7 @@ def tecini142(
         vis_double_c,
     )
     if ret != 0:
-        raise TecioError(f"tecini142 Error: fname={fname!r}, return_code={ret}")
+        raise TecioError(f"tecini142 Error: filename={filename!r}, return_code={ret}")
 
 
 def tecend142() -> None:
@@ -2609,7 +2663,7 @@ def tecforeign142(output_foreign_byte_order: int) -> None:
         raise TecioError(f"tecforeign142 Error: return_code={ret}")
 
 
-# ---- Zone creation -------------------------------------------------
+# Zone creation
 def teczne142(
     zone_title: str,
     zone_type: int | ZoneType,
@@ -2688,7 +2742,7 @@ def teczne142(
         ctypes.c_double(solution_time),
         ctypes.c_int32(strand),
         ctypes.c_int32(0),  # Deprecated. Enter 0 for this value
-        ctypes.c_int32(_to_int_value(DataFormat.BLOCK)),  # Deprecated. Always set to 1/Block.
+        ctypes.c_int32(_to_int_value(DataFormat.BLOCK)),  # Deprecated. Always set to 1
         ctypes.c_int32(num_face_connections),
         ctypes.c_int32(_to_int_value(face_nbr_mode)),
         ctypes.c_int32(total_num_face_nodes),
@@ -2891,7 +2945,7 @@ def tecznefemixed142(
         )
 
 
-# ---- Data writing --------------------------------------------------
+# Data writing
 def tecdat142(
     field_data: npt.ArrayLike,
     is_double: bool = True,
@@ -2929,7 +2983,7 @@ def tecdat142(
         )
 
 
-# ---- Connectivity writing ------------------------------------------
+# Connectivity writing
 def tecnode142(nodes: npt.ArrayLike) -> None:
     """Write node connectivity for FE zone.
 
@@ -3074,7 +3128,7 @@ def tecpolybconn142(
         )
 
 
-# ---- Auxiliary data ------------------------------------------------
+# Auxiliary data
 def tecauxstr142(name: str, value: str) -> None:
     """Add dataset-level auxiliary data.
 
@@ -3143,7 +3197,7 @@ def teczauxstr142(name: str, value: str) -> None:
         )
 
 
-# ---- User-defined data (custom records) ----------------------------
+# User-defined data (custom records)
 def tecusr142(user_rec: str) -> None:
     """Write user-defined data record.
 

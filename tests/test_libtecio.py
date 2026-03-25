@@ -17,9 +17,9 @@ from tecio.libtecio import (
 )
 
 
-# ====================================================================
+#=======================================================================================
 # Local functions to create all supported data formats
-# ====================================================================
+#=======================================================================================
 def _create_ordered(
     ijk: tuple[int, ...],
 ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:
@@ -415,24 +415,23 @@ def _create_FE_mixed() -> tuple[
     return x, y, z, node_map, num_nodes_per_element
 
 
-# ====================================================================
+#=======================================================================================
 # MVP style tests for each data type
-# ====================================================================
+#=======================================================================================
 
-
-# --------------------------------------------------------------------
+#---------------------------------------------------------------------------------------
 # New API (SZL/.szplt):
-# - tec_file_writer_open returns an explicit file handle that is
-#   passed to every subsequent call, making the target file
-#   unambiguous
-# - Multiple files can be written simultaneously by holding multiple
-#   handles at once tec_zone_create_ijk / tec_zone_create_fe append a
-#   new zone record and return a 1-based zone index
-# - Variable data, node maps, aux data, and unsteady options are
-#   written by referencing the file handle + zone/variable index, so
-#   they can be written in any order after zone creation
+# - tec_file_writer_open returns an explicit file handle that is passed to every
+#   subsequent call, making the target file unambiguous
+# - Multiple files can be written simultaneously by holding multiple handles at once
+#   tec_zone_create_ijk / tec_zone_create_fe append a new zone record and return a
+#   1-based zone index
+# - Variable data, node maps, aux data, and unsteady options are written by referencing
+#   the file handle + zone/variable index, so they can be written in any order after
+#   zone creation
 # - tec_file_writer_close finalizes and flushes the file
-# --------------------------------------------------------------------
+#---------------------------------------------------------------------------------------
+
 def test_tec_zone_create_ijk() -> None:
     """Test ORDERED zone type."""
     try:
@@ -442,7 +441,7 @@ def test_tec_zone_create_ijk() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_ijk.szplt",
-            "x, y, z, c",
+            variables=["x", "y", "z", "c"],
         )
         zone_idx = libtecio.tec_zone_create_ijk(
             handle,
@@ -460,7 +459,7 @@ def test_tec_zone_create_ijk() -> None:
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_ijk")
     except Exception as e:
-        print(f"FAIL: test_tec_zone_create_ijk - {e}")
+        print(f"FAIL: test_tec_zone_create_ijk: {e}")
 
 
 def test_tec_zone_create_fe_lineseg() -> None:
@@ -471,7 +470,7 @@ def test_tec_zone_create_fe_lineseg() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_fe_lineseg.szplt",
-            "x, y, c",
+            variables=["x", "y","c"],
         )
         zone_idx = libtecio.tec_zone_create_fe(
             handle,
@@ -489,7 +488,7 @@ def test_tec_zone_create_fe_lineseg() -> None:
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_fe_lineseg")
     except Exception as e:
-        print(f"FAIL: test_tec_zone_create_fe_lineseg - {e}")
+        print(f"FAIL: test_tec_zone_create_fe_lineseg: {e}")
 
 
 def test_tec_zone_create_fe_tri() -> None:
@@ -500,7 +499,7 @@ def test_tec_zone_create_fe_tri() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_fe_tri.szplt",
-            "x, y, c",
+            variables=["x", "y", "c"],
         )
         zone_idx = libtecio.tec_zone_create_fe(
             handle,
@@ -518,7 +517,7 @@ def test_tec_zone_create_fe_tri() -> None:
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_fe_tri")
     except Exception as e:
-        print(f"FAIL: test_tec_zone_create_fe_tri - {e}")
+        print(f"FAIL: test_tec_zone_create_fe_tri: {e}")
 
 
 def test_tec_zone_create_fe_quad() -> None:
@@ -529,7 +528,7 @@ def test_tec_zone_create_fe_quad() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_fe_quad.szplt",
-            "x, y, c",
+            variables=["x", "y", "c"],
         )
         zone_idx = libtecio.tec_zone_create_fe(
             handle,
@@ -547,7 +546,7 @@ def test_tec_zone_create_fe_quad() -> None:
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_fe_quad")
     except Exception as e:
-        print(f"FAIL: test_tec_zone_create_fe_quad - {e}")
+        print(f"FAIL: test_tec_zone_create_fe_quad: {e}")
 
 
 def test_tec_zone_create_fe_tet() -> None:
@@ -557,7 +556,7 @@ def test_tec_zone_create_fe_tet() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_fe_tet.szplt",
-            "x, y, z, c",
+            variables=["x", "y", "z", "c"],
         )
         zone_idx = libtecio.tec_zone_create_fe(
             handle,
@@ -576,7 +575,7 @@ def test_tec_zone_create_fe_tet() -> None:
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_fe_tet")
     except Exception as e:
-        print(f"FAIL: test_tec_zone_create_fe_tet - {e}")
+        print(f"FAIL: test_tec_zone_create_fe_tet: {e}")
 
 
 def test_tec_zone_create_fe_pyramid() -> None:
@@ -586,7 +585,7 @@ def test_tec_zone_create_fe_pyramid() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_fe_pyramid.szplt",
-            "x, y, z, c",
+            variables=["x", "y", "z", "c"],
         )
         zone_idx = libtecio.tec_zone_create_fe(
             handle,
@@ -605,7 +604,7 @@ def test_tec_zone_create_fe_pyramid() -> None:
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_fe_pyramid")
     except Exception as e:
-        print(f"FAIL: test_tec_zone_create_fe_pyramid - {e}")
+        print(f"FAIL: test_tec_zone_create_fe_pyramid: {e}")
 
 
 def test_tec_zone_create_fe_prism() -> None:
@@ -615,7 +614,7 @@ def test_tec_zone_create_fe_prism() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_fe_prism.szplt",
-            "x, y, z, c",
+            variables=["x", "y", "z", "c"],
         )
         zone_idx = libtecio.tec_zone_create_fe(
             handle,
@@ -634,7 +633,7 @@ def test_tec_zone_create_fe_prism() -> None:
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_fe_prism")
     except Exception as e:
-        print(f"FAIL: test_tec_zone_create_fe_prism - {e}")
+        print(f"FAIL: test_tec_zone_create_fe_prism: {e}")
 
 
 def test_tec_zone_create_fe_brick() -> None:
@@ -645,7 +644,7 @@ def test_tec_zone_create_fe_brick() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_create_fe_brick.szplt",
-            "x, y, z, c",
+            variables=["x", "y", "z", "c"],
         )
         zone_idx = libtecio.tec_zone_create_fe(
             handle,
@@ -664,7 +663,7 @@ def test_tec_zone_create_fe_brick() -> None:
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_fe_brick")
     except Exception as e:
-        print(f"FAIL: test_tec_zone_create_fe_brick - {e}")
+        print(f"FAIL: test_tec_zone_create_fe_brick: {e}")
 
 
 def test_tec_zone_face_nbr_write_connections() -> None:
@@ -674,7 +673,7 @@ def test_tec_zone_face_nbr_write_connections() -> None:
         c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
         handle = libtecio.tec_file_writer_open(
             "test_tec_zone_face_nbr.szplt",
-            "x, y, z, c",
+            variables=["x", "y", "z", "c"],
         )
         zone_idx = libtecio.tec_zone_create_fe(
             handle,
@@ -698,7 +697,7 @@ def test_tec_zone_face_nbr_write_connections() -> None:
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_face_nbr_write_connections")
     except Exception as e:
-        print(f"FAIL: test_tec_zone_face_nbr_write_connections - {e}")
+        print(f"FAIL: test_tec_zone_face_nbr_write_connections: {e}")
 
 
 def test_tec_zone_aux_data_and_unsteady() -> None:
@@ -710,7 +709,7 @@ def test_tec_zone_aux_data_and_unsteady() -> None:
 
         handle = libtecio.tec_file_writer_open(
             "test_tec_aux_data_unsteady.szplt",
-            "x, y, z, c",
+            variables=["x", "y", "z", "c"],
         )
 
         # Dataset-level aux data
@@ -758,23 +757,22 @@ def test_tec_zone_aux_data_and_unsteady() -> None:
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_aux_data_and_unsteady")
     except Exception as e:
-        print(f"FAIL: test_tec_zone_aux_data_and_unsteady - {e}")
+        print(f"FAIL: test_tec_zone_aux_data_and_unsteady: {e}")
 
 
-# --------------------------------------------------------------------
+#---------------------------------------------------------------------------------------
 # Classic API (PLT/.plt AND SZL/.szplt):
-# - No handle is returned — the library maintains a single implicit
-#   global file context
-# - Only one file can be active at a time; tecfil142 must be called to
-#   switch between files if writing multiple files simultainously
-# - tecini142 initializes the file and sets the global context; all
-#   subsequent calls implicitly target this file
-# - Zone records (teczne142), data (tecdat142), and node maps
-#   (tecnode142) must be written strictly in order — each zone's
-#   header followed immediately by its data before the next zone is
-#   declared
+# - No handle is returned — the library maintains a single implicit global file context
+# - Only one file can be active at a time; tecfil142 must be called to switch between
+#   files if writing multiple files simultainously
+# - tecini142 initializes the file and sets the global context; all subsequent calls
+#   implicitly target this file
+# - Zone records (teczne142), data (tecdat142), and node maps (tecnode142) must be
+#   written strictly in order — each zone's header followed immediately by its data
+#   before the next zone is declared
 # - tecend142 finalizes and closes the active file
-# --------------------------------------------------------------------
+#---------------------------------------------------------------------------------------
+
 def test_plt_tec_zone_create_ijk() -> None:
     """Test PLT ordered IJK zone using classic API."""
     try:
@@ -784,7 +782,7 @@ def test_plt_tec_zone_create_ijk() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_ijk.plt",
-            "x, y, z, c",
+            variables=["x", "y", "z", "c"],
         )
         libtecio.teczne142(
             "test_ordered_ijk",
@@ -801,7 +799,7 @@ def test_plt_tec_zone_create_ijk() -> None:
         libtecio.tecend142()
         print("PASS: test_plt_tec_zone_create_ijk")
     except Exception as e:
-        print(f"FAIL: test_plt_tec_zone_create_ijk - {e}")
+        print(f"FAIL: test_plt_tec_zone_create_ijk: {e}")
 
 
 def test_plt_tec_zone_create_fe_lineseg() -> None:
@@ -812,7 +810,7 @@ def test_plt_tec_zone_create_fe_lineseg() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_fe_lineseg.plt",
-            "x, y, c",
+            variables=["x", "y", "c"],
             file_format=FileFormat.PLT,
             file_type=FileType.FULL,
         )
@@ -831,7 +829,7 @@ def test_plt_tec_zone_create_fe_lineseg() -> None:
         libtecio.tecend142()
         print("PASS: test_plt_tec_zone_create_fe_lineseg")
     except Exception as e:
-        print(f"FAIL: test_plt_tec_zone_create_fe_lineseg - {e}")
+        print(f"FAIL: test_plt_tec_zone_create_fe_lineseg: {e}")
 
 
 def test_plt_tec_zone_create_fe_tri() -> None:
@@ -842,7 +840,7 @@ def test_plt_tec_zone_create_fe_tri() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_fe_tri.plt",
-            "x, y, c",
+            variables=["x", "y", "c"],
         )
         libtecio.teczne142(
             "test_fe_tri",
@@ -859,7 +857,7 @@ def test_plt_tec_zone_create_fe_tri() -> None:
         libtecio.tecend142()
         print("PASS: test_plt_tec_zone_create_fe_tri")
     except Exception as e:
-        print(f"FAIL: test_plt_tec_zone_create_fe_tri - {e}")
+        print(f"FAIL: test_plt_tec_zone_create_fe_tri: {e}")
 
 
 def test_plt_tec_zone_create_fe_quad() -> None:
@@ -870,7 +868,7 @@ def test_plt_tec_zone_create_fe_quad() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_fe_quad.plt",
-            "x, y, c",
+            variables=["x", "y", "c"],
         )
         libtecio.teczne142(
             "test_fe_quad",
@@ -887,7 +885,7 @@ def test_plt_tec_zone_create_fe_quad() -> None:
         libtecio.tecend142()
         print("PASS: test_plt_tec_zone_create_fe_quad")
     except Exception as e:
-        print(f"FAIL: test_plt_tec_zone_create_fe_quad - {e}")
+        print(f"FAIL: test_plt_tec_zone_create_fe_quad: {e}")
 
 
 def test_plt_tec_zone_create_fe_tet() -> None:
@@ -898,7 +896,7 @@ def test_plt_tec_zone_create_fe_tet() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_fe_tet.plt",
-            "x, y, z, c",
+            variables=["x", "y", "z", "c"],
         )
         libtecio.teczne142(
             "test_fe_tet",
@@ -916,7 +914,7 @@ def test_plt_tec_zone_create_fe_tet() -> None:
         libtecio.tecend142()
         print("PASS: test_plt_tec_zone_create_fe_tet")
     except Exception as e:
-        print(f"FAIL: test_plt_tec_zone_create_fe_tet - {e}")
+        print(f"FAIL: test_plt_tec_zone_create_fe_tet: {e}")
 
 
 def test_plt_tec_zone_create_fe_pyramid() -> None:
@@ -927,7 +925,7 @@ def test_plt_tec_zone_create_fe_pyramid() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_fe_pyramid.plt",
-            "x, y, z, c",
+            variables=["x", "y", "z", "c"],
         )
         libtecio.teczne142(
             "test_fe_pyramid",
@@ -945,7 +943,7 @@ def test_plt_tec_zone_create_fe_pyramid() -> None:
         libtecio.tecend142()
         print("PASS: test_plt_tec_zone_create_fe_pyramid")
     except Exception as e:
-        print(f"FAIL: test_plt_tec_zone_create_fe_pyramid - {e}")
+        print(f"FAIL: test_plt_tec_zone_create_fe_pyramid: {e}")
 
 
 def test_plt_tec_zone_create_fe_prism() -> None:
@@ -956,7 +954,7 @@ def test_plt_tec_zone_create_fe_prism() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_fe_prism.plt",
-            "x, y, z, c",
+            variables=["x", "y", "z", "c"],
         )
         libtecio.teczne142(
             "test_fe_prism",
@@ -974,7 +972,7 @@ def test_plt_tec_zone_create_fe_prism() -> None:
         libtecio.tecend142()
         print("PASS: test_plt_tec_zone_create_fe_prism")
     except Exception as e:
-        print(f"FAIL: test_plt_tec_zone_create_fe_prism - {e}")
+        print(f"FAIL: test_plt_tec_zone_create_fe_prism: {e}")
 
 
 def test_plt_tec_zone_create_fe_brick() -> None:
@@ -985,7 +983,7 @@ def test_plt_tec_zone_create_fe_brick() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_create_fe_brick.plt",
-            "x, y, z, c",
+            variables=["x", "y", "z", "c"],
         )
         libtecio.teczne142(
             "test_fe_brick",
@@ -1003,7 +1001,7 @@ def test_plt_tec_zone_create_fe_brick() -> None:
         libtecio.tecend142()
         print("PASS: test_plt_tec_zone_create_fe_brick")
     except Exception as e:
-        print(f"FAIL: test_plt_tec_zone_create_fe_brick - {e}")
+        print(f"FAIL: test_plt_tec_zone_create_fe_brick: {e}")
 
 
 def test_plt_tec_zone_face_nbr_write_connections() -> None:
@@ -1014,7 +1012,7 @@ def test_plt_tec_zone_face_nbr_write_connections() -> None:
 
         libtecio.tecini142(
             "test_plt_zone_face_nbr.plt",
-            "x, y, z, c",
+            variables=["x", "y", "z", "c"],
         )
         libtecio.teczne142(
             "test_two_bricks",
@@ -1035,7 +1033,7 @@ def test_plt_tec_zone_face_nbr_write_connections() -> None:
         libtecio.tecend142()
         print("PASS: test_plt_tec_zone_face_nbr_write_connections")
     except Exception as e:
-        print(f"FAIL: test_plt_tec_zone_face_nbr_write_connections - {e}")
+        print(f"FAIL: test_plt_tec_zone_face_nbr_write_connections: {e}")
 
 
 def test_plt_tec_zone_aux_data_and_unsteady() -> None:
@@ -1047,7 +1045,7 @@ def test_plt_tec_zone_aux_data_and_unsteady() -> None:
 
         libtecio.tecini142(
             "test_plt_aux_data_unsteady.plt",
-            "x, y, z, c",
+            variables=["x", "y", "z", "c"],
         )
 
         # Dataset-level aux data
@@ -1087,12 +1085,12 @@ def test_plt_tec_zone_aux_data_and_unsteady() -> None:
         libtecio.tecend142()
         print("PASS: test_plt_tec_zone_aux_data_and_unsteady")
     except Exception as e:
-        print(f"FAIL: test_plt_tec_zone_aux_data_and_unsteady - {e}")
+        print(f"FAIL: test_plt_tec_zone_aux_data_and_unsteady: {e}")
 
 
-# ====================================================================
+#=======================================================================================
 # Run all tests
-# ====================================================================
+#=======================================================================================
 if __name__ == "__main__":
     # New API tests (SZL/.szplt)
     test_tec_zone_create_ijk()

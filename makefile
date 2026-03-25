@@ -75,8 +75,9 @@ clean:
 	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete
 	find . -type f -name "*.pyo" -delete
+	find . -type f -name "test*.plt" -delete
+	find . -type f -name "test*.szplt" -delete
 	rm -rf build/ dist/ .coverage htmlcov/
-	rm -rf *.szplt
 	@echo "✓ Cleanup complete"
 
 # Show current versions of tools
