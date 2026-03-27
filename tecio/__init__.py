@@ -10,16 +10,9 @@ try:
 except metadata.PackageNotFoundError:
     __version__ = "0.0.0"
 
-from . import libtecio, tecutils
-from .szl import Read, ReadAuxData, ReadVariable, ReadZone, Write, write_data
+from . import libtecio, tecutils, szl
 
 __all__ = [
-    "Read",
-    "ReadZone",
-    "ReadVariable",
-    "ReadAuxData",
-    "Write",
-    "write_data",
     "libtecio",
     "szl",
     "tecutils",

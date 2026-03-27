@@ -5,19 +5,19 @@ from pathlib import Path
 
 import numpy as np
 
-import tecio
-from tecio import szlfile
+from tecio import szl
+from tecio.libtecio import ZoneType
+
 
 test_dir = Path(tecio.__file__).parent.parent
 input_file = test_dir / "tests" / "Onera.szplt"
 input_file = input_file.as_posix()
 
-
 # Set numpy array print option
 np.set_printoptions(threshold=100)
 
 # Create szl reader object
-szl = szlfile.Read(input_file)
+szl = szl.Read(input_file)
 
 print("\nFile Record")
 print("="*70)
@@ -84,7 +84,7 @@ for i in range(szl.num_zones):
         print(f"    Values        : {value_str}")
 
     # Show node map for FE zones
-    if zone.zone_type != szlfile.ZoneType.ORDERED:
+    if zone.zone_type != ZoneType.ORDERED:
         print(f"  Node Map Shape  : {zone.node_map.shape}")
         value_str = np.array2string(
             zone.node_map,

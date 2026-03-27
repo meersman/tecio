@@ -633,9 +633,6 @@ class Write:
 
     For the SZL API, file contents can be written out of order after creating zones.
 
-    Idea: Set default variable names for the whole dataset if 1st zone is initialized
-    with a list of data, but no variables strings.
-
     Idea: Make public zone method for users that want more manual data handling.
     """
 
@@ -650,6 +647,7 @@ class Write:
         self.path = path
         self.title = title
         self.file_type = file_type
+        self.current_zone = 0
 
         # Add created data to the buffer and flush once a file handle is created.
         # Dataset-level aux data buffer (flushed on first zone)
@@ -745,6 +743,136 @@ class Write:
         self.dataset_aux.clear()
         self.var_aux.clear()
 
+    def write_ijk_zone(
+            self,
+            data: Sequence[npt.NDArray] | None,
+            title: str | None = None,
+            variables: list[str] | None = None,
+            value_locations: Sequence[ValueLocation] | None = None,
+            passive_vars: Sequence[bool | int] | None = None,
+            solution_time: float = 0.0,
+            strand_id: int = 0,
+            aux: dict[str, Any] | None = None,
+    ) -> None:
+        """Write a whole ijk-ordered zone at once.
+
+        Notes:
+        - Takes into account current state of output file
+          - If already initialized, minimally can be called without any additional info
+          - If not initialized, requires variable list
+          - Use input variable array shape as imax, jmax, and kmax
+          - Assume numpy array data input if want more generic data format use
+            "write_data" directly
+            - Assume correct variable types are already set in the numpy arrays
+          - If no value locations, set default to nodal
+          - If only zone header wanted, see public method below
+          - Does not handle separate grid file case where data arrays are all cell
+            centered (Could add a calculation for this case - skipped for now)
+
+        """
+        # Set default title if none provided
+        if title is None:
+            title = f"IJK_Zone_{self.current_zone+1}"
+
+        # Set default variable names if none provided. Only relevant if file lazily
+        # loaded and first zone
+        if variables is None:
+            variables = [f"V{i}" for i in range(1, len(data))]
+
+        # Open and initialize the file if lazily loaded
+        if self.handle is None:
+            self.open(variables)
+            self.flush_aux()
+
+        # Get variable types
+        variable_types = [ _infer_data_type(arr.dtype) for arr in data]
+
+        # Set default value loacations
+        if value_locations is None:
+            value_locations = [ValueLocation.Nodal] * len(data)
+
+        # If no passive vars, set all to active (false)
+        if passive_vars is None:
+            passive_vars = [False] * len(data)
+
+        # Check data for consistent number of variables
+        if len(data) != len(self.variables):
+            raise ValueError(
+                f"Expected {len(self.variables)} data arrays, got {len(data)}"
+                )
+
+        # Check for data array shape consistecy
+        nodal_indices = [
+            i for i, loc in enumerate(value_locations)
+            if loc == ValueLocation.Nodal
+        ]
+
+        # Base imax, jmax, kmax on shape of 1st nodal data array, normalized to 3D
+        ndims = data[nodal_indices[0]].ndim
+        if ndims not in (1, 2, 3):
+            raise ValueError(
+                f"Arrays must be 1D, 2D, or 3D. Got {ndims}D array. For time dependent "
+                f"data, write each time step to separate zone"
+            )
+
+        nodal_shape = data[nodal_indices[0]].shape + (1,) * (3 - ndims)
+        cell_shape = tuple(max(i-1, 1) for i in nodal_shape)
+        imax, jmax, kmax = nodal_shape
+
+        # Data shape validation
+        for i, (arr, loc) in enumerate(zip(data, value_locations, strict=True)):
+            # Check dimension of array
+            if arr.ndim != ndims:
+                raise ValueError(f"Array {i} is {arr.ndim}D, expected {ndims}D")
+
+            shape = arr.shape + (1,) * (3 - arr.ndim)
+
+            if (loc == ValueLocation.NODAL) and (shape != nodal_shape):
+                raise ValueError(
+                    f"Array {i} is NODAL but has shape {shape}, "
+                    f"expected {nodal_shape}"
+                )
+            elif (loc == ValueLocation.CELL_CENTERED) and (shape != cell_shape):
+                    raise ValueError(
+                        f"Array {i} is CELL_CENTERED but has shape {shape}, "
+                        f"expected {cell_shape}"
+                    )
+
+        # Write zone header
+        self.current_zone = libtecio.tec_zone_create_ijk(
+            self.handle,
+            title,
+            imax,
+            jmax,
+            kmax,
+            var_types=variable_types,
+            value_locations=value_locations,
+            pas_vars=passive_vars,
+        )
+
+        # Unsteady options
+        if strand_id != 0 or solution_time != 0.0:
+            libtecio.tec_zone_set_unsteady_options(
+                handle=self.handle,
+                zone=self.current_zone,
+                strand=strand_id,
+                solution_time=solution_time,
+            )
+
+        # Write aux data
+        if aux is not None:
+            write_zone_aux_data(self.handle, {self.current_zone: aux})
+
+        # Write data
+        for var_idx, arr, dtype in enumerate(zip(data, variable_types, strict=True), start=1):
+            write_data(
+                self.handle,
+                zone_num=self.current_zone,
+                var_num=var_idx,
+                data=arr,
+                dt=dtype,
+            )
+
     def write_zone(
         self,
         title: str,
@@ -819,7 +947,7 @@ class Write:
             )
 
         # Variable data
-        for var_idx, (arr, dt) in enumerate(zip(arrays, var_types)):
+        for var_idx, (arr, dt) in enumerate(zip(arrays, var_types, strict=True)):
             write_data(self.handle, zone_num, var_idx + 1, arr.ravel(), dt)
 
         # Connectivity
@@ -887,3 +1015,66 @@ def write_data(
         libtecio.tec_zone_var_write_uint8_values(handle, zone_num, var_num, arr)
     else:
         raise ValueError(f"Unsupported DataType: {data_type!r}")
+
+def write_zone_aux_data(handle: ctypes.c_void_p, aux: dict[int, dict[str, Any]]) -> None:
+    """Write zone aux data to file.
+
+    Aux data should be structured as {zone_idx: {name, value}}
+    """
+    for zone_idx, subdict in aux.item():
+        for name, value in subdict.items():
+            libtecio.tec_zone_add_aux_data(handle, zone_idx, str(name), str(value))
+
+def write_variable_aux_data(handle: ctypes.c_void_p, aux: dict[int, dict[str, Any]]) -> None:
+    """Write variable aux data to file.
+
+    Aux data should be structured as {var_idx: {name, value}}
+    """
+    for var_idx, subdict in aux.item():
+        for name, value in subdict.items():
+            libtecio.tec_var_add_aux_data(handle, var_idx, str(name), str(value))
+
+def write_dataset_aux_data(handle: ctypes.c_void_p, aux: dict[str, Any]) -> None:
+    """Write whole dataset aux data to file.
+
+    Aux data should be structured as {var_idx: {name, value}}
+    """
+    for var_idx, subdict in aux.item():
+        for name, value in subdict.items():
+            libtecio.tec_zone_add_aux_data(handle, var_idx, str(name), str(value))
+
+def write_aux_data(handle: ctypes.c_void_p, aux: dict[str, dict[Any]]) -> None:
+    """Write formatted aux data dictionary containing all types of aux data to file.
+
+    Aux data dictionary format:
+    {
+        "AUXDATASET":
+            {name1: value1}
+            {name2: value2}
+        "AUXVAR":
+            {
+                1:
+                    {name1: value1}
+                2:
+                    {name1: value1}
+            }
+        "AUXZONE":
+            {
+                1:
+                    {name1: value1}
+                    {name2: value2}
+            }
+    }
+    """
+    for auxtype, auxdict in aux.items():
+        if auxtype.lower() == "auxdata":
+            for name, value in auxdict.items():
+                libtecio.tec_data_set_add_aux_data(handle, str(name), str(value))
+        elif auxtype.lower() == "auxvar":
+            for var, subdict in auxdict.items():
+                for name, value in subdict.items():
+                    libtecio.tec_var_add_aux_data(handle, var, name, value)
+        elif auxtype.lower() == "auxzone":
+            for zone, subdict in auxdict.items():
+                for name, value in subdict.items():
+                    libtecio.tec_zone_add_aux_data(handle, zone, name, value)

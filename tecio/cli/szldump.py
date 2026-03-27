@@ -7,7 +7,8 @@ import argparse
 
 import numpy as np
 
-from .. import szlfile
+from .. import szl
+from ..libtecio import ZoneType
 
 
 def main():
@@ -52,7 +53,7 @@ def main():
     np.set_printoptions(threshold=args.maxvals)
 
     # Create szl reader object
-    szl = szlfile.Read(args.filename)
+    szl = szl.Read(args.filename)
 
     print("\nFile Record")
     print("="*70)
@@ -121,7 +122,7 @@ def main():
                     print(f"    Values        : {value_str}")
 
             # Show node map for FE zones
-            if zone.zone_type != szlfile.ZoneType.ORDERED:
+            if zone.zone_type != ZoneType.ORDERED:
                 print(f"  Node Map Shape  : {zone.node_map.shape}")
                 value_str = np.array2string(
                     zone.node_map,
