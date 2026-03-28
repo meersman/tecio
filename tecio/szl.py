@@ -646,6 +646,7 @@ class Write:
         """Store minimum necessary info until first zone is ready to write."""
         self.path = path
         self.title = title
+        self.variables = variables
         self.file_type = file_type
         self.current_zone = 0
 
@@ -653,7 +654,7 @@ class Write:
         # Dataset-level aux data buffer (flushed on first zone)
         self.auxdataset: dict[str, str] = {}
         # Variable-level aux data buffer: {var_name: {key: value}}
-        self.var_auxdata: dict[int, dict[str, str]] = {}
+        self.auxvar: dict[int, dict[str, str]] = {}
 
         # Initialize if all needed info provided, else set to null
         if self.variables is not None:
@@ -706,12 +707,12 @@ class Write:
         buffered then flushed on first zone creation.
         """
         # Write dataset-level aux data
-        for name, value in self.dataset_aux.items():
+        for name, value in self.auxdataset.items():
             libtecio.tec_data_set_add_aux_data(self._handle, str(name), str(value))
 
         # Variable-level aux data keys can be variable index or variable names,
         # therefore need to normalize to index before writing to file
-        for key, subdict in self.var_aux.items():
+        for key, subdict in self.auxvar.items():
             if isinstance(key, int):
                 var_idx = key - 1  # Convert to 0-based
                 if var_idx not in range(len(self.variables)):
@@ -740,19 +741,19 @@ class Write:
                 )
 
         # Clear for future aux data definitions
-        self.dataset_aux.clear()
-        self.var_aux.clear()
+        self.auxdataset.clear()
+        self.auxvar.clear()
 
     def write_ijk_zone(
-            self,
-            data: Sequence[npt.NDArray] | None,
-            title: str | None = None,
-            variables: list[str] | None = None,
-            value_locations: Sequence[ValueLocation] | None = None,
-            passive_vars: Sequence[bool | int] | None = None,
-            solution_time: float = 0.0,
-            strand_id: int = 0,
-            aux: dict[str, Any] | None = None,
+        self,
+        data: Sequence[npt.NDArray] | None,
+        title: str | None = None,
+        variables: list[str] | None = None,
+        value_locations: Sequence[ValueLocation] | None = None,
+        passive_vars: Sequence[bool | int] | None = None,
+        solution_time: float = 0.0,
+        strand_id: int = 0,
+        aux: dict[str, Any] | None = None,
     ) -> None:
         """Write a whole ijk-ordered zone at once.
 
@@ -772,12 +773,12 @@ class Write:
         """
         # Set default title if none provided
         if title is None:
-            title = f"IJK_Zone_{self.current_zone+1}"
+            title = f"IJK_Zone_{self.current_zone + 1}"
 
         # Set default variable names if none provided. Only relevant if file lazily
         # loaded and first zone
         if variables is None:
-            variables = [f"V{i}" for i in range(1, len(data))]
+            variables = [f"V{i}" for i in range(1, len(data) + 1)]
 
         # Open and initialize the file if lazily loaded
         if self.handle is None:
@@ -785,11 +786,11 @@ class Write:
             self.flush_aux()
 
         # Get variable types
-        variable_types = [ _infer_data_type(arr.dtype) for arr in data]
+        variable_types = [_infer_data_type(arr.dtype) for arr in data]
 
         # Set default value loacations
         if value_locations is None:
-            value_locations = [ValueLocation.Nodal] * len(data)
+            value_locations = [ValueLocation.NODAL] * len(data)
 
         # If no passive vars, set all to active (false)
         if passive_vars is None:
@@ -799,12 +800,11 @@ class Write:
         if len(data) != len(self.variables):
             raise ValueError(
                 f"Expected {len(self.variables)} data arrays, got {len(data)}"
-                )
+            )
 
         # Check for data array shape consistecy
         nodal_indices = [
-            i for i, loc in enumerate(value_locations)
-            if loc == ValueLocation.Nodal
+            i for i, loc in enumerate(value_locations) if loc == ValueLocation.NODAL
         ]
 
         # Base imax, jmax, kmax on shape of 1st nodal data array, normalized to 3D
@@ -816,7 +816,7 @@ class Write:
             )
 
         nodal_shape = data[nodal_indices[0]].shape + (1,) * (3 - ndims)
-        cell_shape = tuple(max(i-1, 1) for i in nodal_shape)
+        cell_shape = tuple(max(i - 1, 1) for i in nodal_shape)
         imax, jmax, kmax = nodal_shape
 
         # Data shape validation
@@ -829,14 +829,13 @@ class Write:
 
             if (loc == ValueLocation.NODAL) and (shape != nodal_shape):
                 raise ValueError(
-                    f"Array {i} is NODAL but has shape {shape}, "
-                    f"expected {nodal_shape}"
+                    f"Array {i} is NODAL but has shape {shape}, expected {nodal_shape}"
                 )
             elif (loc == ValueLocation.CELL_CENTERED) and (shape != cell_shape):
-                    raise ValueError(
-                        f"Array {i} is CELL_CENTERED but has shape {shape}, "
-                        f"expected {cell_shape}"
-                    )
+                raise ValueError(
+                    f"Array {i} is CELL_CENTERED but has shape {shape}, "
+                    f"expected {cell_shape}"
+                )
 
         # Write zone header
         self.current_zone = libtecio.tec_zone_create_ijk(
@@ -864,7 +863,9 @@ class Write:
             write_zone_aux_data(self.handle, {self.current_zone: aux})
 
         # Write data
-        for var_idx, arr, dtype in enumerate(zip(data, variable_types, strict=True), start=1):
+        for var_idx, (arr, dtype) in enumerate(
+            zip(data, variable_types, strict=True), start=1
+        ):
             write_data(
                 self.handle,
                 zone_num=self.current_zone,
@@ -979,6 +980,7 @@ def write_data(
     1. Inferrs data_typeype for nummpy arrays
     2. Defaults to double precision for array-like (list, tuple, etc)
     3. Optionally casts to input DataType or numpy dtype.
+    4. Assumes data is in the correct shape and order (column major / Fortran order)
     """
     # Mappings between C-supported data types and numpy dtypes
     dtype_to_datatype: dict[np.dtype, DataType] = {
@@ -998,9 +1000,11 @@ def write_data(
 
     if dt is not None:
         data_type = _infer_data_type(dt)
-        arr = np.ascontiguousarray(data, dtype=datatype_to_dtype[data_type]).ravel()
+        arr = np.ascontiguousarray(data, dtype=datatype_to_dtype[data_type]).ravel(
+            order="F"
+        )
     else:
-        arr = np.ascontiguousarray(data).ravel()
+        arr = np.ascontiguousarray(data).ravel(order="F")
         data_type = dtype_to_datatype[arr.dtype]
 
     if data_type == DataType.DOUBLE:
@@ -1016,32 +1020,40 @@ def write_data(
     else:
         raise ValueError(f"Unsupported DataType: {data_type!r}")
 
-def write_zone_aux_data(handle: ctypes.c_void_p, aux: dict[int, dict[str, Any]]) -> None:
+
+def write_zone_aux_data(
+    handle: ctypes.c_void_p, aux: dict[int, dict[str, Any]]
+) -> None:
     """Write zone aux data to file.
 
     Aux data should be structured as {zone_idx: {name, value}}
     """
-    for zone_idx, subdict in aux.item():
+    for zone_idx, subdict in aux.items():
         for name, value in subdict.items():
             libtecio.tec_zone_add_aux_data(handle, zone_idx, str(name), str(value))
 
-def write_variable_aux_data(handle: ctypes.c_void_p, aux: dict[int, dict[str, Any]]) -> None:
+
+def write_variable_aux_data(
+    handle: ctypes.c_void_p, aux: dict[int, dict[str, Any]]
+) -> None:
     """Write variable aux data to file.
 
     Aux data should be structured as {var_idx: {name, value}}
     """
-    for var_idx, subdict in aux.item():
+    for var_idx, subdict in aux.items():
         for name, value in subdict.items():
             libtecio.tec_var_add_aux_data(handle, var_idx, str(name), str(value))
+
 
 def write_dataset_aux_data(handle: ctypes.c_void_p, aux: dict[str, Any]) -> None:
     """Write whole dataset aux data to file.
 
     Aux data should be structured as {var_idx: {name, value}}
     """
-    for var_idx, subdict in aux.item():
+    for var_idx, subdict in aux.items():
         for name, value in subdict.items():
             libtecio.tec_zone_add_aux_data(handle, var_idx, str(name), str(value))
+
 
 def write_aux_data(handle: ctypes.c_void_p, aux: dict[str, dict[Any]]) -> None:
     """Write formatted aux data dictionary containing all types of aux data to file.
@@ -1051,19 +1063,17 @@ def write_aux_data(handle: ctypes.c_void_p, aux: dict[str, dict[Any]]) -> None:
         "AUXDATASET":
             {name1: value1}
             {name2: value2}
-        "AUXVAR":
-            {
-                1:
-                    {name1: value1}
-                2:
-                    {name1: value1}
-            }
-        "AUXZONE":
-            {
-                1:
-                    {name1: value1}
-                    {name2: value2}
-            }
+        "AUXVAR": {
+                    1:
+                       {name1: value1}
+                    2:
+                       {name1: value1}
+                },
+        "AUXZONE": {
+                    1:
+                        {name1: value1}
+                        {name2: value2}
+                }
     }
     """
     for auxtype, auxdict in aux.items():
