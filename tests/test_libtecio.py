@@ -56,8 +56,8 @@ def _create_FE_lineseg() -> tuple[
     # xy coords
     points = np.array([
         [0, 0],  # point A
-        [1, 1],  # point B
-        [2, 0],  # Point C
+        [0.5, 1],  # point B
+        [1, 0],  # Point C
     ])
     x = points[:, 0]
     y = points[:, 1]
@@ -84,8 +84,8 @@ def _create_FE_tri() -> tuple[
     points = np.array([
         [0, 0],
         [1, 0],
-        [0.5, 1],
-        [1.5, 0.5],
+        [0, 1],
+        [1, 1],
     ])
     x = points[:, 0]
     y = points[:, 1]
@@ -110,11 +110,11 @@ def _create_FE_quad() -> tuple[
     # Can create polygon from the same two FE tri cells above
     points = np.array([
         [0, 0],
+        [0.5, 0],
         [1, 0],
-        [2, 0],
-        [0, 1],
+        [0, 0.3],
+        [0.5, 0.6],
         [1, 1],
-        [2, 2],
     ])
     x = points[:, 0]
     y = points[:, 1]
@@ -260,14 +260,14 @@ def _create_FE_brick() -> tuple[
 ]:
     """Create coordinates and nodemap for FEBRICK zone type."""
     points = np.array([
-        [0, 3, 0],  # XYZ
-        [3, 3, 0],  # XYZ
-        [3, 1, 0],  # XYZ
-        [0, 1, 0],  # XYZ
-        [0, 3, 1],  # XYZ
-        [3, 3, 1],  # XYZ
-        [3, 1, 1],  # XYZ
-        [0, 1, 1],  # XYZ
+        [0, 0, 0],  # 1
+        [1, 0, 0],  # 2
+        [1, 1, 0],  # 3
+        [0, 1, 0],  # 4
+        [0, 0, 1],  # 5
+        [1, 0, 1],  # 6
+        [1, 1, 1],  # 7
+        [0, 1, 1],  # 8
     ])
     x = points[:, 0]
     y = points[:, 1]

@@ -2026,7 +2026,7 @@ def tec_zone_create_fe(
     var_sharing: Sequence[int] | None = None,
     value_locations: Sequence[int | ValueLocation] | None = None,
     pas_vars: Sequence[bool | int] | None = None,
-    con_sharing: int | None = 0,
+    con_sharing: int = 0,
     num_face_cons: int = 0,
     face_nbr_mode: FaceNeighborMode | int = FaceNeighborMode.LOCAL_ONE_TO_ONE,
 ) -> int:
@@ -2047,7 +2047,7 @@ def tec_zone_create_fe(
       0/False. Must be same length as var_types if provided. None/null
       means all variables are active.
     - con_sharing: optional zone index that the connectivity is shared
-      from (zone must have same number of points and elemensts and be
+      from (zone must have same number of points and elements and be
       the same zone type). Pass 0 to indicate no connectivity
       sharing. You must pass 0 for the first zone in a data set.
       NOTE: Connectivity and/or face neighbors cannot be shared when
@@ -2691,7 +2691,8 @@ def teczne142(
     - jmax: J-dimension (or NumElements for FE)
     - kmax: K-dimension (or NumFaces for FEPOLYGON and FEPOLYHEDRON). Not used for all
       other finite element zone types.
-    - var_sharing: List of zone indices to share variables from
+    - var_sharing: List of zone indices to share variables from (0: No sharing, Null: no
+      variables are shared from other zones)
     - value_locations: List of ValueLocation enums or 0/1 for nodal/cell-centered
     - pas_vars: List of VarStatus enums or 0/1 for passive variables
     - con_sharing: Zone index to share connectivity from

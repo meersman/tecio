@@ -7,7 +7,7 @@ import argparse
 
 import numpy as np
 
-from .. import szl
+from ..szl import Read
 from ..libtecio import ZoneType
 
 
@@ -53,7 +53,7 @@ def main():
     np.set_printoptions(threshold=args.maxvals)
 
     # Create szl reader object
-    szl = szl.Read(args.filename)
+    szl = Read(args.filename)
 
     print("\nFile Record")
     print("="*70)
@@ -114,12 +114,14 @@ def main():
                     print(f"    Shared Zone   : {var.shared_zone}")
                     print(f"    Num Values    : {var.num_values}")
 
-                    # Get first 100 values or all if fewer than 100
-                    value_str = np.array2string(
-                        var.values,
-                        prefix="    Values        : ", separator=", "
-                    )
-                    print(f"    Values        : {value_str}")
+                    # Check if variable is shared or passive (no data)
+                    if (var.shared_zone is None) and (not var.is_passive()):
+                        # Get first 100 values or all if fewer than 100
+                        value_str = np.array2string(
+                            var.values,
+                            prefix="    Values        : ", separator=", "
+                        )
+                        print(f"    Values        : {value_str}")
 
             # Show node map for FE zones
             if zone.zone_type != ZoneType.ORDERED:
