@@ -10,10 +10,11 @@ try:
 except metadata.PackageNotFoundError:
     __version__ = "0.0.0"
 
-from . import libtecio, tecutils, szl
+from . import libtecio, plt, szl, tecutils
 
 __all__ = [
     "libtecio",
+    "plt",
     "szl",
     "tecutils",
     "__version__",
