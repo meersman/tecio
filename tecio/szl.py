@@ -140,6 +140,20 @@ class ReadZone:
             ]
         return self._variables
 
+    def __getattr__(self, name: str) -> Any:
+        """
+        Dynamic attribute access for variable names.
+
+        Example:
+            zone.pressure -> returns the NumPy array for variable "Pressure"
+        """
+        # Only called if normal attributes do not exist
+        for var in self.variables:
+            if var.name.lower() == name.lower():  # case-insensitive match
+                return var.values
+        # If no match, raise normal AttributeError
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
     @property
     def title(self) -> str:
         """Return the tile of the current zone."""
