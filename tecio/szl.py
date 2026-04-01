@@ -13,12 +13,11 @@ import numpy.typing as npt
 from . import libtecio
 from .libtecio import (
     DataType,
+    FaceNeighborMode,
     FileType,
     ValueLocation,
     ZoneType,
-    FaceNeighborMode,
 )
-
 
 # ======================================================================================
 # SZL Reader class:
@@ -27,6 +26,7 @@ from .libtecio import (
 # - Aux data is stored in dictionaries since query functions require indices
 # TODO: Fix ReadAuxData to separate out dataset, variable, and zone aux data functions
 # ======================================================================================
+
 
 class Read:
     """Read data from Tecplot szplt formatted binary files."""
@@ -552,7 +552,7 @@ class ReadAuxData:
 
 
 # ======================================================================================
-# SZL Writer class:
+# SZL Write class:
 # - Supports lazy loading such that file and aux data are buffered until first zone
 #   assignment if variable list not provided when intialized.
 # - Some writing steps that can easily be automated (such as writing variable data)
@@ -606,27 +606,17 @@ def _infer_data_type(dt: DataType | np.dtype) -> DataType:
     if isinstance(dt, DataType):
         return dt
 
-    # Convert to NumPy dtype
     dt_np = np.dtype(dt)
 
-    # Return exact match if in dtype map
     for key in closest_dtype_map:
         if dt_np == key:
             return closest_dtype_map[key]
 
-    # If no exact match, handle broader type catagories
     if np.issubdtype(dt_np, np.floating):
-        # Anything floating → DOUBLE or FLOAT depending on precision
-        if dt_np.itemsize <= 4:
-            return DataType.FLOAT
-        else:
-            return DataType.DOUBLE
+        return DataType.FLOAT if dt_np.itemsize <= 4 else DataType.DOUBLE
 
     if np.issubdtype(dt_np, np.signedinteger):
-        if dt_np.itemsize <= 2:
-            return DataType.INT16
-        else:
-            return DataType.INT32
+        return DataType.INT16 if dt_np.itemsize <= 2 else DataType.INT32
 
     if np.issubdtype(dt_np, np.unsignedinteger):
         return DataType.BYTE
@@ -695,11 +685,9 @@ class Write:
             self.close()
         except Exception:
             if exc_type is None:
-                # Only raise if no exception in with block, else suppress to not mask
-                # original exception
                 raise
 
-    def open(self, var_names: list[str]) -> None:
+    def _open(self, var_names: list[str]) -> None:
         """Open the file handle.  Called exactly once on the first zone."""
         self.variables = var_names
         self.handle = libtecio.tec_file_writer_open(
@@ -729,41 +717,43 @@ class Write:
         """
         # Write dataset-level aux data
         for name, value in self.auxdataset.items():
-            libtecio.tec_data_set_add_aux_data(self._handle, str(name), str(value))
+            libtecio.tec_data_set_add_aux_data(self.handle, str(name), str(value))
 
-        # Variable-level aux data keys can be variable index or variable names,
-        # therefore need to normalize to index before writing to file
+        # Variable-level aux data.  Keys may be 1-based int indices or names.
         for key, subdict in self.auxvar.items():
             if isinstance(key, int):
                 var_idx = key - 1  # Convert to 0-based
                 if var_idx not in range(len(self.variables)):
                     raise IndexError(
-                        f"Index {var_idx + 1} out of bounds of "
-                        f"number of variables ({len(self.variables)})"
+                        f"Variable index {var_idx} out of bounds "
+                        f"[1, {len(self.variables)}]"
                     )
             elif isinstance(key, str):
                 try:
                     var_idx = self.variables.index(key)
-                except ValueError as e:
+                except ValueError as exc:
                     raise KeyError(
-                        f"Variable aux data key '{key}' not in available "
-                        f"variable names ({self.variables})"
-                    ) from e
+                        f"Variable aux data key '{key}' not found in "
+                        f"variable list ({self.variables})"
+                    ) from exc
             else:
                 raise TypeError(
-                    f"Key must be variable index or variable name. '{key}' not found."
+                    f"Aux data key must be a variable name (str) or 1-based "
+                    f"index (int), got {key!r}"
                 )
 
-            # Write nested key/value to file
             for name, value in subdict.items():
-                # Correct variable index to 1-based and call libtecio
                 libtecio.tec_var_add_aux_data(
-                    self._handle, var_idx + 1, str(name), str(value)
+                    self.handle, var_idx + 1, str(name), str(value)
                 )
 
-        # Clear for future aux data definitions
+        # Clear buffers — each item is written exactly once.
         self.auxdataset.clear()
         self.auxvar.clear()
+
+    # ------------------------------------------------------------------
+    # Zone writers
+    # ------------------------------------------------------------------
 
     def write_ijk_zone(
         self,
@@ -804,7 +794,7 @@ class Write:
 
         # Open and initialize the file if lazily loaded
         if self.handle is None:
-            self.open(variables)
+            self._open(variables)
             self.flush_aux()
 
         # Get variable types (local variable -> length = number of supplied data arrays)
@@ -815,61 +805,81 @@ class Write:
             # Local variable -> length = number of supplied data arrays
             value_locations = [ValueLocation.NODAL] * len(data)
 
-        # If no passive vars, set all to active (false)
+        # Default passive / sharing arrays — length equals dataset variable count
         if passive_vars is None:
-            # Already a global variable -> length = dataset var list
             passive_vars = [False] * len(self.variables)
-
-        # If no variable sharing zone indices, set all to no sharing (0)
         if var_sharing is None:
-            # Already a global variable -> length = dataset var list
             var_sharing = [0] * len(self.variables)
 
-        # Check data for consistent number of variables
+        # Validate active variable count
         if len(data) != len(self.variables):
-            # Calcuate the number of expected variables based on passive and shared variables
+            # Calcuate the number of expected variables based on passive and shared
+            # variables
             expected_vars = sum(
-                1 for is_passive, sharing_zone_idx in zip(passive_vars, var_sharing, strict=True)
-                if not is_passive and not sharing_zone_idx
+                1
+                for is_passive, share_zone in zip(
+                    passive_vars, var_sharing, strict=True
+                )
+                if not is_passive and not share_zone
             )
             if expected_vars == 0:
                 raise ValueError(
-                    "No active variables to write. All variables are either passive or shared."
+                    "No active variables to write — all variables are either "
+                    "passive or shared."
                 )
             elif len(data) == 0:
                 raise ValueError(
-                    f"No data arrays provided for active variables. Expected {expected_vars} active variables based on passive_vars and var_sharing settings."
+                    f"No data arrays provided. Expected {expected_vars} active "
+                    "variable arrays based on passive_vars and var_sharing."
                 )
             elif len(data) != expected_vars:
                 raise ValueError(
                     f"Expected {expected_vars} data arrays, got {len(data)}"
                 )
 
-        # Check for data array shape consistecy
+        # Infer zone dimensions from first nodal array or first cell array if no nodal
         nodal_indices = [
             i for i, loc in enumerate(value_locations) if loc == ValueLocation.NODAL
         ]
+        cell_indices = [
+            i
+            for i, loc in enumerate(value_locations)
+            if loc == ValueLocation.CELL_CENTERED
+        ]
+        if len(nodal_indices) >= 1:
+            ndims = data[nodal_indices[0]].ndim
+            if ndims not in (1, 2, 3):
+                raise ValueError(
+                    f"Arrays must be 1D, 2D, or 3D; got {ndims}-D array.  "
+                    "For time-dependent data, write each time step as a separate zone."
+                )
 
-        # Base imax, jmax, kmax on shape of 1st nodal data array, normalized to 3D
-        ndims = data[nodal_indices[0]].ndim
-        if ndims not in (1, 2, 3):
+            nodal_shape = data[nodal_indices[0]].shape + (1,) * (3 - ndims)
+            cell_shape = tuple(max(i - 1, 1) for i in nodal_shape)
+            imax, jmax, kmax = nodal_shape
+        elif len(cell_indices) >= 1:
+            ndims = data[cell_indices[0]].ndim
+            if ndims not in (1, 2, 3):
+                raise ValueError(
+                    f"Arrays must be 1D, 2D, or 3D; got {ndims}-D array.  "
+                    "For time-dependent data, write each time step as a separate zone."
+                )
+
+            cell_shape = data[cell_indices[0]].shape + (1,) * (3 - ndims)
+            nodal_shape = tuple(max(i + 1, 1) for i in cell_shape)
+            imax, jmax, kmax = nodal_shape
+        else:
             raise ValueError(
-                f"Arrays must be 1D, 2D, or 3D. Got {ndims}D array. For time dependent "
-                f"data, write each time step to separate zone"
+                "Could not determine nodal and cell-centered indices. "
+                f"Got Nodal: {nodal_indices}, Cell-centered: {cell_indices}"
             )
-
-        nodal_shape = data[nodal_indices[0]].shape + (1,) * (3 - ndims)
-        cell_shape = tuple(max(i - 1, 1) for i in nodal_shape)
-        imax, jmax, kmax = nodal_shape
 
         # Data shape validation
         for i, (arr, loc) in enumerate(zip(data, value_locations, strict=True)):
             # Check dimension of array
             if arr.ndim != ndims:
                 raise ValueError(f"Array {i} is {arr.ndim}D, expected {ndims}D")
-
             shape = arr.shape + (1,) * (3 - arr.ndim)
-
             if (loc == ValueLocation.NODAL) and (shape != nodal_shape):
                 raise ValueError(
                     f"Array {i} is NODAL but has shape {shape}, expected {nodal_shape}"
@@ -880,7 +890,8 @@ class Write:
                     f"expected {cell_shape}"
                 )
 
-        # Determine which variables to write based on (not passive and not shared, 1-based)
+        # Determine which variables to write based on (not passive and not shared,
+        # 1-based)
         active_var_idx = [
             var_idx
             for var_idx, (is_passive, sharing_zone_idx) in enumerate(
@@ -893,11 +904,10 @@ class Write:
         # Define global var type and value locations using active variable index
         variable_types_global = [DataType.DOUBLE] * len(self.variables)
         value_locations_global = [ValueLocation.NODAL] * len(self.variables)
-
         # Replace the active indices with the real types/locations
         for local_idx, var_idx in enumerate(active_var_idx):
-            variable_types_global[var_idx-1] = variable_types[local_idx]
-            value_locations_global[var_idx-1] = value_locations[local_idx]
+            variable_types_global[var_idx - 1] = variable_types[local_idx]
+            value_locations_global[var_idx - 1] = value_locations[local_idx]
 
         # Write zone header
         self.current_zone = libtecio.tec_zone_create_ijk(
@@ -926,7 +936,9 @@ class Write:
             write_zone_aux_data(self.handle, {self.current_zone: aux})
 
         # Write active data only
-        for var_idx, arr, dtype in zip(active_var_idx, data, variable_types, strict=True):
+        for var_idx, arr, dtype in zip(
+            active_var_idx, data, variable_types, strict=True
+        ):
             self.current_var = var_idx
             write_data(
                 self.handle,
@@ -1011,7 +1023,7 @@ class Write:
 
         # Open and initialise the file if lazily loaded
         if self.handle is None:
-            self.open(variables)
+            self._open(variables)
             self.flush_aux()
 
         # Infer per-variable data types from array dtypes
@@ -1021,28 +1033,33 @@ class Write:
         if value_locations is None:
             value_locations = [ValueLocation.NODAL] * len(data)
 
-        # Set all variables active by default
+        # Default passive / sharing arrays
         if passive_vars is None:
             passive_vars = [False] * len(self.variables)
-
-        # If no variable sharing zone indices, set all to no sharing (0)
         if var_sharing is None:
             var_sharing = [0] * len(self.variables)
 
         # Check data for consistent number of variables
         if len(data) != len(self.variables):
-            # Calcuate the number of expected variables based on passive and shared variables
+            # Calcuate the number of expected variables based on passive and shared
+            # variables
             expected_vars = sum(
-                1 for is_passive, sharing_zone_idx in zip(passive_vars, var_sharing, strict=True)
+                1
+                for is_passive, sharing_zone_idx in zip(
+                    passive_vars, var_sharing, strict=True
+                )
                 if not is_passive and not sharing_zone_idx
             )
             if expected_vars == 0:
                 raise ValueError(
-                    "No active variables to write. All variables are either passive or shared."
+                    "No active variables to write. All variables are either passive or "
+                    "shared."
                 )
             elif len(data) == 0:
                 raise ValueError(
-                    f"No data arrays provided for active variables. Expected {expected_vars} active variables based on passive_vars and var_sharing settings."
+                    "No data arrays provided for active variables. Expected "
+                    f"{expected_vars} active variables based on passive_vars and "
+                    "var_sharing settings."
                 )
             elif len(data) != expected_vars:
                 raise ValueError(
@@ -1072,14 +1089,15 @@ class Write:
         # Determine face-neighbor count for the zone header
         num_face_cons = len(face_neighbors) if face_neighbors is not None else 0
 
-        # Determine which variables to write based on (not passive and not shared, 1-based)
+        # Determine which variables to write based on (not passive and not shared,
+        # 1-based)
         active_var_idx = [
             var_idx
-            for var_idx, (is_passive, sharing_zone_idx) in enumerate(
+            for var_idx, (is_passive, share_zone) in enumerate(
                 zip(passive_vars, var_sharing, strict=True),
                 start=1,
             )
-            if (not is_passive) and (not sharing_zone_idx)
+            if (not is_passive) and (not share_zone)
         ]
 
         # Define global var type and value locations using active variable index
@@ -1088,8 +1106,8 @@ class Write:
 
         # Replace the active indices with the real types/locations
         for local_idx, var_idx in enumerate(active_var_idx):
-            variable_types_global[var_idx-1] = variable_types[local_idx]
-            value_locations_global[var_idx-1] = value_locations[local_idx]
+            variable_types_global[var_idx - 1] = variable_types[local_idx]
+            value_locations_global[var_idx - 1] = value_locations[local_idx]
 
         # Write zone header
         self.current_zone = libtecio.tec_zone_create_fe(
@@ -1120,7 +1138,9 @@ class Write:
             write_zone_aux_data(self.handle, {self.current_zone: aux})
 
         # Write active data only
-        for var_idx, arr, dtype in zip(active_var_idx, data, variable_types, strict=True):
+        for var_idx, arr, dtype in zip(
+            active_var_idx, data, variable_types, strict=True
+        ):
             self.current_var = var_idx
             write_data(
                 self.handle,
@@ -1141,7 +1161,7 @@ def write_data(
     zone_num: int,
     var_num: int,
     data: npt.ArrayLike,
-    dt: np.dtype | DataType = None,
+    dt: np.dtype | DataType | None = None,
 ) -> None:
     """Single simplified function to write data using NEW SZL API.
 
@@ -1189,6 +1209,7 @@ def write_data(
     else:
         raise ValueError(f"Unsupported DataType: {data_type!r}")
 
+
 def write_connectivity(
     handle: ctypes.c_void_p,
     zone_num: int,
@@ -1219,15 +1240,11 @@ def write_connectivity(
         face_nbr_flat = np.ascontiguousarray(face_neighbors).ravel(order="C")
         if face_nbr_flat.max() > np.iinfo(np.int32).max:
             libtecio.tec_zone_face_nbr_write_connections64(
-                handle,
-                zone_num,
-                face_nbr_flat
+                handle, zone_num, face_nbr_flat
             )
         else:
             libtecio.tec_zone_face_nbr_write_connections32(
-                handle,
-                zone_num,
-                face_nbr_flat
+                handle, zone_num, face_nbr_flat
             )
 
 

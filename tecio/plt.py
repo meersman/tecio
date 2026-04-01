@@ -40,7 +40,6 @@ from .libtecio import (
     ZoneType,
 )
 
-
 # ---------------------------------------------------------------------------
 # Zone-type sets (mirrors szl.py)
 # ---------------------------------------------------------------------------
@@ -59,22 +58,24 @@ _FE_SIMPLE: frozenset[ZoneType] = frozenset({
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _infer_data_type(dt: DataType | np.dtype) -> DataType:
     """Return a C-supported :class:`DataType` for a :class:`DataType` or NumPy dtype.
 
-    Maps NumPy dtypes to the closest supported Tecplot data type.  Half
-    precision is promoted to ``FLOAT``; 64-bit integers are promoted to
-    ``INT32``; ``int8`` and ``uint8`` map to ``BYTE``.
+    Maps NumPy dtypes to the closest supported Tecplot data type.  For PLT format only
+    FLOAT and DOUBLE are supported; all integer types are upcast to DOUBLE.  precision
+    is promoted to ``FLOAT``; 64-bit integers are promoted to ``INT32``; ``int8`` and
+    ``uint8`` map to ``BYTE``.
     """
     closest: dict[np.dtype, DataType] = {
         np.dtype(np.float64): DataType.DOUBLE,
         np.dtype(np.float32): DataType.FLOAT,
         np.dtype(np.float16): DataType.FLOAT,
-        np.dtype(np.int64):   DataType.INT32,
-        np.dtype(np.int32):   DataType.INT32,
-        np.dtype(np.int16):   DataType.INT16,
-        np.dtype(np.int8):    DataType.BYTE,
-        np.dtype(np.uint8):   DataType.BYTE,
+        np.dtype(np.int64): DataType.INT32,
+        np.dtype(np.int32): DataType.INT32,
+        np.dtype(np.int16): DataType.INT16,
+        np.dtype(np.int8): DataType.BYTE,
+        np.dtype(np.uint8): DataType.BYTE,
     }
 
     if isinstance(dt, DataType):
@@ -96,49 +97,6 @@ def _infer_data_type(dt: DataType | np.dtype) -> DataType:
         return DataType.BYTE
 
     raise ValueError(f"Unsupported dtype: {dt_np}")
-
-
-def _write_var_data(arr: npt.ArrayLike, data_type: DataType) -> None:
-    """Write a single variable's data using ``tecdat142``.
-
-    ``tecdat142`` only accepts ``float32`` or ``float64``; integer types are
-    upcast to ``float64``.  The array is ravelled in Fortran (column-major)
-    order before writing, which matches Tecplot's expected BLOCK layout.
-
-    Args:
-        arr:       Array-like of values to write.
-        data_type: Intended :class:`DataType` for the variable.
-
-    """
-    if data_type in (DataType.FLOAT,):
-        out = np.ascontiguousarray(arr, dtype=np.float32).ravel(order="F")
-        libtecio.tecdat142(out, is_double=False)
-    else:
-        # DOUBLE, INT32, INT16, BYTE — all written as float64 in PLT format.
-        out = np.ascontiguousarray(arr, dtype=np.float64).ravel(order="F")
-        libtecio.tecdat142(out, is_double=True)
-
-
-def _write_connectivity(
-    node_map: npt.ArrayLike,
-    face_neighbors: npt.ArrayLike | None = None,
-) -> None:
-    """Write FE connectivity: node map and optional face-neighbour data.
-
-    Args:
-        node_map:       Integer array of shape ``(num_cells, nodes_per_cell)``
-                        with 1-based node indices.
-        face_neighbors: Optional face-neighbour connection array.
-
-    """
-    nodes_flat = np.ascontiguousarray(node_map, dtype=np.int32).ravel(order="F")
-    libtecio.tecnode142(nodes_flat)
-
-    if face_neighbors is not None:
-        face_flat = np.ascontiguousarray(face_neighbors, dtype=np.int32).ravel(
-            order="F"
-        )
-        libtecio.tecface142(face_flat)
 
 
 # ---------------------------------------------------------------------------
@@ -295,15 +253,15 @@ class Write:
         # Variable-level aux data.  Keys may be 1-based int indices or names.
         for key, subdict in self.auxvar.items():
             if isinstance(key, int):
-                var_idx = key
-                if var_idx < 1 or var_idx > len(self.variables):
+                var_idx = key - 1  # Convert to 0-based
+                if var_idx < 1 not in range(len(self.variables)):
                     raise IndexError(
                         f"Variable index {var_idx} out of bounds "
                         f"[1, {len(self.variables)}]"
                     )
             elif isinstance(key, str):
                 try:
-                    var_idx = self.variables.index(key) + 1  # 1-based
+                    var_idx = self.variables.index(key)
                 except ValueError as exc:
                     raise KeyError(
                         f"Variable aux data key '{key}' not found in "
@@ -316,7 +274,7 @@ class Write:
                 )
 
             for name, value in subdict.items():
-                libtecio.tecvauxstr142(var_idx, str(name), str(value))
+                libtecio.tecvauxstr142(var_idx + 1, str(name), str(value))
 
         # Clear buffers — each item is written exactly once.
         self.auxdataset.clear()
@@ -411,7 +369,9 @@ class Write:
         if len(data) != len(self.variables):
             expected_vars = sum(
                 1
-                for is_passive, share_zone in zip(passive_vars, var_sharing, strict=True)
+                for is_passive, share_zone in zip(
+                    passive_vars, var_sharing, strict=True
+                )
                 if not is_passive and not share_zone
             )
             if expected_vars == 0:
@@ -430,32 +390,51 @@ class Write:
                     f"got {len(data)}."
                 )
 
-        # Infer zone dimensions from first nodal array
+        # Infer zone dimensions from first nodal array or first cell array if no nodal
         nodal_indices = [
             i for i, loc in enumerate(value_locations) if loc == ValueLocation.NODAL
         ]
-        ndims = data[nodal_indices[0]].ndim
-        if ndims not in (1, 2, 3):
-            raise ValueError(
-                f"Arrays must be 1-D, 2-D, or 3-D; got {ndims}-D array.  "
-                "For time-dependent data, write each time step as a separate zone."
-            )
+        cell_indices = [
+            i
+            for i, loc in enumerate(value_locations)
+            if loc == ValueLocation.CELL_CENTERED
+        ]
+        if len(nodal_indices) >= 1:
+            ndims = data[nodal_indices[0]].ndim
+            if ndims not in (1, 2, 3):
+                raise ValueError(
+                    f"Arrays must be 1D, 2D, or 3D; got {ndims}-D array.  "
+                    "For time-dependent data, write each time step as a separate zone."
+                )
 
-        nodal_shape = data[nodal_indices[0]].shape + (1,) * (3 - ndims)
-        cell_shape = tuple(max(s - 1, 1) for s in nodal_shape)
-        imax, jmax, kmax = nodal_shape
+            nodal_shape = data[nodal_indices[0]].shape + (1,) * (3 - ndims)
+            cell_shape = tuple(max(i - 1, 1) for i in nodal_shape)
+            imax, jmax, kmax = nodal_shape
+        elif len(cell_indices) >= 1:
+            ndims = data[cell_indices[0]].ndim
+            if ndims not in (1, 2, 3):
+                raise ValueError(
+                    f"Arrays must be 1D, 2D, or 3D; got {ndims}-D array.  "
+                    "For time-dependent data, write each time step as a separate zone."
+                )
+
+            cell_shape = data[cell_indices[0]].shape + (1,) * (3 - ndims)
+            nodal_shape = tuple(max(i + 1, 1) for i in cell_shape)
+            imax, jmax, kmax = nodal_shape
+        else:
+            raise ValueError(
+                "Could not determine nodal and cell-centered indices. "
+                f"Got Nodal: {nodal_indices}, Cell-centered: {cell_indices}"
+            )
 
         # Validate individual array shapes
         for i, (arr, loc) in enumerate(zip(data, value_locations, strict=True)):
             if arr.ndim != ndims:
-                raise ValueError(
-                    f"Array {i} is {arr.ndim}-D, expected {ndims}-D."
-                )
+                raise ValueError(f"Array {i} is {arr.ndim}D, expected {ndims}D.")
             shape = arr.shape + (1,) * (3 - arr.ndim)
             if loc == ValueLocation.NODAL and shape != nodal_shape:
                 raise ValueError(
-                    f"Array {i} is NODAL but has shape {shape}, "
-                    f"expected {nodal_shape}."
+                    f"Array {i} is NODAL but has shape {shape}, expected {nodal_shape}."
                 )
             if loc == ValueLocation.CELL_CENTERED and shape != cell_shape:
                 raise ValueError(
@@ -467,7 +446,8 @@ class Write:
         active_var_idx = [
             var_idx
             for var_idx, (is_passive, share_zone) in enumerate(
-                zip(passive_vars, var_sharing, strict=True), start=1
+                zip(passive_vars, var_sharing, strict=True),
+                start=1,
             )
             if not is_passive and not share_zone
         ]
@@ -502,8 +482,11 @@ class Write:
                 libtecio.teczauxstr142(str(name), str(value))
 
         # Write active variable data in dataset-variable order
-        for var_idx, arr, dtype in zip(active_var_idx, data, variable_types, strict=True):
-            _write_var_data(arr, dtype)
+        for var_idx, arr, dtype in zip(
+            active_var_idx, data, variable_types, strict=True
+        ):
+            self.current_var = var_idx
+            write_data(arr, dtype)
 
     def write_fe_zone(
         self,
@@ -611,7 +594,9 @@ class Write:
         if len(data) != len(self.variables):
             expected_vars = sum(
                 1
-                for is_passive, share_zone in zip(passive_vars, var_sharing, strict=True)
+                for is_passive, share_zone in zip(
+                    passive_vars, var_sharing, strict=True
+                )
                 if not is_passive and not share_zone
             )
             if expected_vars == 0:
@@ -656,7 +641,8 @@ class Write:
         active_var_idx = [
             var_idx
             for var_idx, (is_passive, share_zone) in enumerate(
-                zip(passive_vars, var_sharing, strict=True), start=1
+                zip(passive_vars, var_sharing, strict=True),
+                start=1,
             )
             if not is_passive and not share_zone
         ]
@@ -681,8 +667,9 @@ class Write:
             strand=strand_id,
             solution_time=solution_time,
             num_face_connections=num_face_cons,
-            face_nbr_mode=face_nbr_mode if num_face_cons > 0
-                else FaceNeighborMode.LOCAL_ONE_TO_ONE,
+            face_nbr_mode=face_nbr_mode
+            if num_face_cons > 0
+            else FaceNeighborMode.LOCAL_ONE_TO_ONE,
         )
         self.current_zone += 1
 
@@ -693,9 +680,72 @@ class Write:
                 libtecio.teczauxstr142(str(name), str(value))
 
         # Write active variable data in dataset-variable order
-        for var_idx, arr, dtype in zip(active_var_idx, data, variable_types, strict=True):
-            _write_var_data(arr, dtype)
+        for var_idx, arr, dtype in zip(
+            active_var_idx, data, variable_types, strict=True
+        ):
+            self.current_var = var_idx
+            write_data(arr, dtype)
 
         # Write connectivity (must come after all tecdat142 calls)
         if (not con_sharing) or (self.current_zone == 1):
-            _write_connectivity(node_map, face_neighbors)
+            # If first zone, must supply connectivity
+            write_connectivity(node_map, face_neighbors)
+
+
+def write_data(arr: npt.ArrayLike, dt: np.dtype | DataType | None = None) -> None:
+    """Write a single variable's data using ``tecdat142``.
+
+    ``tecdat142`` only accepts ``float32`` or ``float64``; integer types are
+    upcast to ``float64``.  The array is ravelled in Fortran (column-major)
+    order before writing, which matches Tecplot's expected BLOCK layout.
+
+    Args:
+        arr:       Array-like of values to write.
+        dt:        Intended :class:`DataType` for the variable.
+
+    Output defaults:
+    1. Inferrs data_typeype for nummpy arrays
+    2. Defaults to double precision for array-like (list, tuple, etc)
+    3. Optionally casts to input DataType or numpy dtype.
+    4. Assumes data is in the correct shape and order (column major / Fortran order)
+
+    """
+    # Mappings between C-supported data types and numpy dtypes
+    dtype_to_datatype: dict[np.dtype, DataType] = {
+        np.dtype(np.float64): DataType.DOUBLE,
+        np.dtype(np.float32): DataType.FLOAT,
+        np.dtype(np.int32): DataType.INT32,
+        np.dtype(np.int16): DataType.INT16,
+        np.dtype(np.uint8): DataType.BYTE,
+    }
+
+    data_type = _infer_data_type(dt) if dt is not None else dtype_to_datatype[arr.dtype]
+
+    # tecdat142 already returns a contiguous array so no need to cast before calling
+    if data_type in (DataType.FLOAT,):
+        libtecio.tecdat142(arr.ravel(order="F"), is_double=False)
+    else:
+        # DOUBLE, INT32, INT16, BYTE — all written as float64 in PLT format.
+        libtecio.tecdat142(arr.ravel(order="F"), is_double=True)
+
+
+def write_connectivity(
+    node_map: npt.ArrayLike,
+    face_neighbors: npt.ArrayLike | None = None,
+) -> None:
+    """Write FE connectivity: node map and optional face-neighbour data.
+
+    Args:
+        node_map:       Integer array of shape ``(num_cells, nodes_per_cell)``
+                        with 1-based node indices.
+        face_neighbors: Optional face-neighbour connection array.
+
+    """
+    nodes_flat = np.ascontiguousarray(node_map, dtype=np.int32).ravel(order="C")
+    libtecio.tecnode142(nodes_flat)
+
+    if face_neighbors is not None:
+        face_flat = np.ascontiguousarray(face_neighbors, dtype=np.int32).ravel(
+            order="C"
+        )
+        libtecio.tecface142(face_flat)

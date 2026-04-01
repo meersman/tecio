@@ -37,10 +37,6 @@ always exercise identical geometric cases.
 """
 
 import numpy as np
-
-from tecio import plt
-from tecio.libtecio import FaceNeighborMode, ValueLocation, ZoneType
-
 from test_libtecio import (
     _create_FE_brick,
     _create_FE_lineseg,
@@ -53,10 +49,13 @@ from test_libtecio import (
     _create_ordered,
 )
 
+from tecio import plt
+from tecio.libtecio import FaceNeighborMode, ValueLocation, ZoneType
 
 # ===========================================================================
 # Local helpers
 # ===========================================================================
+
 
 def _scalar_field(
     x: np.ndarray,
@@ -72,6 +71,7 @@ def _scalar_field(
 # ===========================================================================
 # IJK-ordered zone tests
 # ===========================================================================
+
 
 def test_write_ijk_3d() -> None:
     """Write a 3-D ordered zone (I, J, K all > 1).
@@ -95,14 +95,10 @@ def test_write_ijk_3d() -> None:
                 title="zone_3d",
             )
             writer.write_ijk_zone(
-                data=[x, y, z, cc],
+                data=[cc],
                 title="zone_cc",
-                value_locations=[
-                    ValueLocation.NODAL,
-                    ValueLocation.NODAL,
-                    ValueLocation.NODAL,
-                    ValueLocation.CELL_CENTERED,
-                ],
+                var_sharing=[1, 1, 1, 0],
+                value_locations=[ValueLocation.CELL_CENTERED],
             )
         print("PASS: test_write_ijk_3d")
     except Exception as e:
@@ -122,6 +118,7 @@ def test_write_ijk_unsteady() -> None:
         as part of the zone header via ``teczne142``.  The first zone in a
         strand must supply all variable data; subsequent zones may share
         coordinate variables from zone 1 and supply only the changing field.
+
     """
     try:
         i, j, k = 100, 50, 20
@@ -160,6 +157,7 @@ def test_write_ijk_unsteady() -> None:
 # Exception-raising tests for invalid input data
 # ---------------------------------------------------------------------------
 
+
 def test_write_ijk_var_count_mismatch() -> None:
     """write_ijk_zone must raise ValueError when data count != active variable count.
 
@@ -180,8 +178,7 @@ def test_write_ijk_var_count_mismatch() -> None:
                 title="zone_bad",
             )
             print(
-                "FAIL: test_write_ijk_var_count_mismatch: "
-                "expected ValueError, got none"
+                "FAIL: test_write_ijk_var_count_mismatch: expected ValueError, got none"
             )
     except ValueError:
         print("PASS: test_write_ijk_var_count_mismatch")
@@ -198,7 +195,7 @@ def test_write_ijk_shape_mismatch() -> None:
     try:
         i, j, k = 4, 5, 1
         x, y, _ = _create_ordered((i, j, k))
-        x = x.squeeze(0)        # shape (j, i) = (5, 4)
+        x = x.squeeze(0)  # shape (j, i) = (5, 4)
         y_bad = y.squeeze(0)[:-1, :]  # shape (4, 4) — wrong
 
         with plt.Write(
@@ -221,6 +218,7 @@ def test_write_ijk_shape_mismatch() -> None:
 # FE zone tests — one per zone type
 # ===========================================================================
 
+
 def test_write_fe_cells() -> None:
     """Write all FE cell shapes.
 
@@ -233,6 +231,7 @@ def test_write_fe_cells() -> None:
         Unlike the SZL writer, the PLT classic API writes all zones to a
         single file sequentially.  The ``with`` block therefore covers every
         zone shape.
+
     """
     offset = 2
     try:
@@ -247,7 +246,8 @@ def test_write_fe_cells() -> None:
                     data=[x, y, c],
                     node_map=nodes,
                     title="FE_LineSeg",
-                    variables=["x", "y", "c"],
+                    variables=["x", "y", "z", "c"],
+                    passive_vars=[False, False, True, False]
                 )
                 print("PASS: test_write_fe_lineseg")
             except Exception as e:
@@ -263,7 +263,8 @@ def test_write_fe_cells() -> None:
                     data=[x, y, c],
                     node_map=nodes,
                     title="FE_Tri",
-                    variables=["x", "y", "c"],
+                    variables=["x", "y", "z", "c"],
+                    passive_vars=[False, False, True, False]
                 )
                 print("PASS: test_write_fe_tri")
             except Exception as e:
@@ -279,7 +280,8 @@ def test_write_fe_cells() -> None:
                     data=[x, y, c],
                     node_map=nodes,
                     title="FE_Quad",
-                    variables=["x", "y", "c"],
+                    variables=["x", "y", "z", "c"],
+                    passive_vars=[False, False, True, False]
                 )
                 print("PASS: test_write_fe_quad")
             except Exception as e:
@@ -416,6 +418,7 @@ def test_write_fe_unsteady() -> None:
 # Exception-raising tests for invalid input data
 # ---------------------------------------------------------------------------
 
+
 def test_write_fe_var_count_mismatch() -> None:
     """write_fe_zone must raise ValueError when data count != active variable count."""
     try:
@@ -443,7 +446,7 @@ def test_write_fe_array_length_mismatch() -> None:
     """write_fe_zone must raise ValueError when a nodal array has the wrong length."""
     try:
         x, y, nodes = _create_FE_tri()  # 4 nodes
-        x_short = x[:-1]               # 3 values — one too few
+        x_short = x[:-1]  # 3 values — one too few
 
         with plt.Write(
             "test_plt_write_fe_len_mismatch.plt", title="fe_len_test"
@@ -461,9 +464,7 @@ def test_write_fe_array_length_mismatch() -> None:
     except ValueError:
         print("PASS: test_write_fe_array_length_mismatch")
     except Exception as e:
-        print(
-            f"FAIL: test_write_fe_array_length_mismatch: unexpected exception: {e}"
-        )
+        print(f"FAIL: test_write_fe_array_length_mismatch: unexpected exception: {e}")
 
 
 def test_write_fe_unsupported_zone_type() -> None:
@@ -488,9 +489,7 @@ def test_write_fe_unsupported_zone_type() -> None:
     except NotImplementedError:
         print("PASS: test_write_fe_unsupported_zone_type")
     except Exception as e:
-        print(
-            f"FAIL: test_write_fe_unsupported_zone_type: unexpected exception: {e}"
-        )
+        print(f"FAIL: test_write_fe_unsupported_zone_type: unexpected exception: {e}")
 
 
 # ===========================================================================
@@ -500,10 +499,10 @@ if __name__ == "__main__":
     # Ordered zone tests
     test_write_ijk_3d()
     test_write_ijk_unsteady()
-    # FE zone tests
+    # # FE zone tests
     test_write_fe_cells()
     test_write_fe_unsteady()
-    # Validation tests (PASS = expected exception raised)
+    # # Validation tests (PASS = expected exception raised)
     test_write_ijk_var_count_mismatch()
     test_write_ijk_shape_mismatch()
     test_write_fe_var_count_mismatch()

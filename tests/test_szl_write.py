@@ -63,6 +63,7 @@ def test_write_ijk_3d() -> None:
     Demonstrates:
     - 3D Structured zone writing
     - Mixed nodal / cell-centred variables
+    - Variable sharing across zones
     """
     try:
         i, j, k = 3, 4, 5
@@ -79,14 +80,10 @@ def test_write_ijk_3d() -> None:
                 title="zone_3d",
             )
             writer.write_ijk_zone(
-                data=[x, y, z, cc],
+                data=[cc],
                 title="zone_cc",
-                value_locations=[
-                    ValueLocation.NODAL,
-                    ValueLocation.NODAL,
-                    ValueLocation.NODAL,
-                    ValueLocation.CELL_CENTERED,
-                ],
+                var_sharing=[1, 1, 1, 0],  # share x,y,z from first zone
+                value_locations=[ValueLocation.CELL_CENTERED],
             )
         print("PASS: test_write_ijk_3d")
     except Exception as e:
