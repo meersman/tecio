@@ -1,39 +1,8 @@
 #!/usr/bin/env python3
 r"""Tests for the :class:`plt.Write` higher-level writing API.
 
-This test suite is a 1-for-1 mirror of ``test_szl_write.py``.  Every test
-exercises the same geometric case and the same capability as its SZL
-counterpart, but targets the PLT format via :class:`plt.Write` instead of
-:class:`szl.Write`.
-
-Key differences from the SZL tests:
-
-* Output filenames end in ``.plt`` instead of ``.szplt``.
-* The PLT format does not support per-variable ``DataType`` selection at zone
-  creation time — all numeric data is stored as ``float32`` or ``float64``
-  on disk regardless of the NumPy array dtype.
-* Variable sharing across zones is supported by ``teczne142`` but sharing
-  is more constrained than in SZL: the shared source zone must already have
-  been written and the library writes data strictly in order.
-* Only one PLT file may be active at a time; tests that write to different
-  files within a single ``with`` block are therefore not possible with the
-  classic API.
-
-Capabilities exercised:
-
-* dimensionality  (1-D, 2-D, 3-D)
-* data types      (float32, float64, mixed)
-* value locations (all-nodal, mixed nodal / cell-centred)
-* unsteady options (strand ID and solution time)
-* zone auxiliary data
-* lazy-open path  (variables supplied on first zone-write call)
-* eager-open path (variables supplied to ``Write.__init__``)
-* context-manager close
-* variable-count mismatch guard
-* array-shape mismatch guard
-
-Data-generation helpers are shared with ``test_libtecio`` so both suites
-always exercise identical geometric cases.
+Data-generation helpers are shared with ``test_libtecio`` so both test suites always
+exercise identical geometric cases.
 """
 
 import numpy as np
@@ -49,7 +18,7 @@ from test_libtecio import (
     _create_ordered,
 )
 
-from tecio import plt
+import tecio
 from tecio.libtecio import FaceNeighborMode, ValueLocation, ZoneType
 
 # ===========================================================================
@@ -88,13 +57,13 @@ def test_write_ijk_3d() -> None:
         # Cell-centred array: shape (I-1) x (J-1) x (K-1)
         cc = np.random.rand(i - 1, j - 1, k - 1)
 
-        with plt.Write("test_plt_write_ijk_3d.plt", title="3D_test") as writer:
-            writer.write_ijk_zone(
+        with tecio.open("test_plt_write_ijk_3d.plt", "w") as pltfile:
+            pltfile.write_ijk_zone(
                 data=[x, y, z, c],
                 variables=["x", "y", "z", "c"],
                 title="zone_3d",
             )
-            writer.write_ijk_zone(
+            pltfile.write_ijk_zone(
                 data=[cc],
                 title="zone_cc",
                 var_sharing=[1, 1, 1, 0],
@@ -127,12 +96,12 @@ def test_write_ijk_unsteady() -> None:
         solution_times = np.linspace(0.0, 2 * np.pi, 100)
         aux = {"MeshType": "structured", "Author": "test_plt_write"}
 
-        with plt.Write("test_plt_write_ijk_unsteady.plt") as writer:
+        with tecio.open("test_plt_write_ijk_unsteady.plt", "w") as pltfile:
             for n, t in enumerate(solution_times):
                 c = _scalar_field(x + t, y + t, z).astype(np.float32)
                 if n == 0:
                     # First write: supply all variable arrays
-                    writer.write_ijk_zone(
+                    pltfile.write_ijk_zone(
                         data=[x, y, z, c],
                         variables=["x", "y", "z", "c"],
                         strand_id=1,
@@ -141,7 +110,7 @@ def test_write_ijk_unsteady() -> None:
                     )
                 else:
                     # Subsequent writes: share x, y, z from zone 1; write only c
-                    writer.write_ijk_zone(
+                    pltfile.write_ijk_zone(
                         data=[c],
                         var_sharing=[1, 1, 1, 0],  # share x,y,z from zone 1
                         strand_id=1,
@@ -168,12 +137,13 @@ def test_write_ijk_var_count_mismatch() -> None:
         i, j, k = 3, 3, 1
         x, y, _ = _create_ordered((i, j, k))
 
-        with plt.Write(
+        with tecio.open(
             "test_plt_write_ijk_var_mismatch.plt",
+            "w",
             title="mismatch_test",
             variables=["x", "y", "c"],  # 3 variables declared
-        ) as writer:
-            writer.write_ijk_zone(
+        ) as pltfile:
+            pltfile.write_ijk_zone(
                 data=[x, y],  # only 2 arrays supplied
                 title="zone_bad",
             )
@@ -198,11 +168,12 @@ def test_write_ijk_shape_mismatch() -> None:
         x = x.squeeze(0)  # shape (j, i) = (5, 4)
         y_bad = y.squeeze(0)[:-1, :]  # shape (4, 4) — wrong
 
-        with plt.Write(
+        with tecio.open(
             "test_plt_write_ijk_shape_mismatch.plt",
+            "w",
             title="shape_test",
-        ) as writer:
-            writer.write_ijk_zone(
+        ) as pltfile:
+            pltfile.write_ijk_zone(
                 data=[x, y_bad],
                 title="zone_bad",
                 variables=["x", "y"],
@@ -235,13 +206,13 @@ def test_write_fe_cells() -> None:
     """
     offset = 2
     try:
-        with plt.Write("test_plt_write_fe_cells.plt") as writer:
+        with tecio.open("test_plt_write_fe_cells.plt", "w") as pltfile:
 
             # FE line segment
             try:
                 x, y, nodes = _create_FE_lineseg()
                 c = _scalar_field(x, y)
-                writer.write_fe_zone(
+                pltfile.write_fe_zone(
                     zone_type=ZoneType.FELINESEG,
                     data=[x, y, c],
                     node_map=nodes,
@@ -258,7 +229,7 @@ def test_write_fe_cells() -> None:
                 x, y, nodes = _create_FE_tri()
                 c = _scalar_field(x, y)
                 x = x + offset
-                writer.write_fe_zone(
+                pltfile.write_fe_zone(
                     zone_type=ZoneType.FETRIANGLE,
                     data=[x, y, c],
                     node_map=nodes,
@@ -275,7 +246,7 @@ def test_write_fe_cells() -> None:
                 x, y, nodes = _create_FE_quad()
                 c = _scalar_field(x, y)
                 x = x + 2 * offset
-                writer.write_fe_zone(
+                pltfile.write_fe_zone(
                     zone_type=ZoneType.FEQUADRILATERAL,
                     data=[x, y, c],
                     node_map=nodes,
@@ -292,7 +263,7 @@ def test_write_fe_cells() -> None:
                 x, y, z, nodes = _create_FE_tet()
                 c = _scalar_field(x, y)
                 x = x + 3 * offset
-                writer.write_fe_zone(
+                pltfile.write_fe_zone(
                     zone_type=ZoneType.FETETRAHEDRON,
                     data=[x, y, z, c],
                     node_map=nodes,
@@ -308,7 +279,7 @@ def test_write_fe_cells() -> None:
                 x, y, z, nodes = _create_FE_pyramid()
                 c = _scalar_field(x, y)
                 x = x + 4 * offset
-                writer.write_fe_zone(
+                pltfile.write_fe_zone(
                     zone_type=ZoneType.FEBRICK,
                     data=[x, y, z, c],
                     node_map=nodes,
@@ -324,7 +295,7 @@ def test_write_fe_cells() -> None:
                 x, y, z, nodes = _create_FE_prism()
                 c = _scalar_field(x, y)
                 x = x + 5 * offset
-                writer.write_fe_zone(
+                pltfile.write_fe_zone(
                     zone_type=ZoneType.FEBRICK,
                     data=[x, y, z, c],
                     node_map=nodes,
@@ -340,7 +311,7 @@ def test_write_fe_cells() -> None:
                 x, y, z, _faces, nodes = _create_FE_brick()
                 c = _scalar_field(x, y)
                 x = x + 6 * offset
-                writer.write_fe_zone(
+                pltfile.write_fe_zone(
                     zone_type=ZoneType.FEBRICK,
                     data=[x, y, z, c],
                     node_map=nodes,
@@ -356,7 +327,7 @@ def test_write_fe_cells() -> None:
                 x, y, z, nodes, face_neighbors = _create_FE_two_bricks()
                 c = np.array([1, 2])
                 x = x + 7 * offset
-                writer.write_fe_zone(
+                pltfile.write_fe_zone(
                     zone_type=ZoneType.FEBRICK,
                     data=[x, y, z, c],
                     node_map=nodes,
@@ -390,17 +361,18 @@ def test_write_fe_unsteady() -> None:
         x, y, z, nodes = _create_FE_tet()
         solution_times = np.linspace(0.0, 2 * np.pi, 100)
 
-        with plt.Write(
+        with tecio.open(
             "test_plt_write_fe_unsteady.plt",
+            "w",
             title="fe_unsteady_test",
             variables=["x", "y", "z", "c"],
-        ) as writer:
+        ) as pltfile:
             for step, t in enumerate(solution_times):
                 c = np.sin(x + t) * np.cos(y + t)
                 x = x + np.random.rand() / 10
                 y = y + np.random.rand() / 10
                 z = z + np.random.rand() / 10
-                writer.write_fe_zone(
+                pltfile.write_fe_zone(
                     zone_type=ZoneType.FETETRAHEDRON,
                     data=[x, y, z, c],
                     node_map=nodes,
@@ -424,12 +396,13 @@ def test_write_fe_var_count_mismatch() -> None:
     try:
         x, y, nodes = _create_FE_tri()
 
-        with plt.Write(
+        with tecio.open(
             "test_plt_write_fe_var_mismatch.plt",
+            "w",
             title="fe_mismatch_test",
             variables=["x", "y", "c"],  # 3 variables declared
-        ) as writer:
-            writer.write_fe_zone(
+        ) as pltfile:
+            pltfile.write_fe_zone(
                 zone_type=ZoneType.FETRIANGLE,
                 data=[x, y],  # only 2 arrays
                 node_map=nodes,
@@ -448,10 +421,8 @@ def test_write_fe_array_length_mismatch() -> None:
         x, y, nodes = _create_FE_tri()  # 4 nodes
         x_short = x[:-1]  # 3 values — one too few
 
-        with plt.Write(
-            "test_plt_write_fe_len_mismatch.plt", title="fe_len_test"
-        ) as writer:
-            writer.write_fe_zone(
+        with tecio.open("test_plt_write_fe_len_mismatch.plt", "w") as pltfile:
+            pltfile.write_fe_zone(
                 zone_type=ZoneType.FETRIANGLE,
                 data=[x_short, y],
                 node_map=nodes,
@@ -472,10 +443,8 @@ def test_write_fe_unsupported_zone_type() -> None:
     try:
         x, y, nodes = _create_FE_tri()
 
-        with plt.Write(
-            "test_plt_write_fe_polygon.plt", title="fe_polygon_test"
-        ) as writer:
-            writer.write_fe_zone(
+        with tecio.open("test_plt_write_fe_polygon.plt", "w") as pltfile:
+            pltfile.write_fe_zone(
                 zone_type=ZoneType.FEPOLYGON,
                 data=[x, y],
                 node_map=nodes,

@@ -412,6 +412,87 @@ def _create_FE_mixed() -> tuple[
     return x, y, z, node_map, num_nodes_per_element
 
 
+def _create_FE_polygon() -> tuple[
+    npt.NDArray[np.float32],
+    npt.NDArray[np.float32],
+    npt.NDArray[np.int32],
+    npt.NDArray[np.int32],
+    npt.NDArray[np.int32],
+    npt.NDArray[np.int32],
+]:
+    r"""Create coordinates and face data for an FEPOLYGON zone.
+
+    Geometry: two adjacent convex polygons sharing one edge.
+
+    - Element 1: pentagon  — nodes 1, 2, 3, 4, 5
+    - Element 2: triangle  — nodes 2, 6, 3
+
+    Layout (approximate)::
+
+        4 ---- 3 --- 6
+        |  E1  | E  /
+        5      | 2 /
+         \     |  /
+          1--- 3 /
+
+    For FEPOLYGON, every face is an *edge* (2 nodes).  Faces are defined
+    once and shared between adjacent elements via left/right element indices.
+    A value of 0 in left/right means the face is on the domain boundary.
+
+    Face table (1-based node indices, 1-based element indices)::
+
+        Face  Nodes   Left  Right
+        ----  ------  ----  -----
+         1    1–2       1     0    boundary of E1
+         2    2–3       1     2    shared edge
+         3    3–4       1     0    boundary of E1
+         4    4–5       1     0    boundary of E1
+         5    5–1       1     0    boundary of E1
+         6    2–6       2     0    boundary of E2
+         7    6–3       2     0    boundary of E2
+
+    Returns:
+        x, y:             Node coordinates (float32, shape ``(6,)``).
+        face_node_counts: Nodes per face (int32, shape ``(7,)`` — all 2).
+        face_nodes:       Concatenated node lists (int32, shape ``(14,)``).
+        face_left_elems:  Left element per face (int32, shape ``(7,)``).
+        face_right_elems: Right element per face (int32, shape ``(7,)``).
+
+    """
+    points = np.array(
+        [
+            [0.0, 0.0],   # 1
+            [1.0, 0.0],   # 2
+            [1.0, 1.0],   # 3
+            [0.5, 1.5],   # 4
+            [-0.5, 1.0],  # 5
+            [2.0, 1.0],   # 6
+        ],
+        dtype=np.float32,
+    )
+    x = points[:, 0]
+    y = points[:, 1]
+
+    # Each row: [node_a, node_b, left_elem, right_elem]
+    faces = np.array([
+            [1, 2],  # face 1 — E1 boundary
+            [2, 3],  # face 2 — shared
+            [3, 4],  # face 3 — E1 boundary
+            [4, 5],  # face 4 — E1 boundary
+            [5, 1],  # face 5 — E1 boundary
+            [2, 6],  # face 6 — E2 boundary
+            [6, 3],  # face 7 — E2 boundary
+        ])
+    # All polygon faces are edges → 2 nodes each
+    num_faces = len(faces)
+    face_node_counts = np.full(num_faces, 2)
+    face_nodes = faces.ravel()
+    face_left_elems = faces[:, 0]
+    face_right_elems = faces[:, 1]
+
+    return x, y, face_nodes, face_node_counts, face_left_elems, face_right_elems
+
+
 #=======================================================================================
 # MVP style tests for each data type
 #=======================================================================================
@@ -440,7 +521,7 @@ def test_tec_zone_create_ijk() -> None:
             "test_tec_zone_create_ijk.szplt",
             variables=["x", "y", "z", "c"],
         )
-        zone_idx = libtecio.tec_zone_create_ijk(
+        izone = libtecio.tec_zone_create_ijk(
             handle,
             "test_ordered_ijk",
             i,
@@ -449,10 +530,10 @@ def test_tec_zone_create_ijk() -> None:
             var_types=[DataType.FLOAT] * 4,
             value_locations=[ValueLocation.NODAL] * 4,
         )
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 3, z.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 4, c.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 1, x.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 2, y.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 3, z.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 4, c.ravel(order="F"))
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_ijk")
     except Exception as e:
@@ -469,7 +550,7 @@ def test_tec_zone_create_fe_lineseg() -> None:
             "test_tec_zone_create_fe_lineseg.szplt",
             variables=["x", "y","c"],
         )
-        zone_idx = libtecio.tec_zone_create_fe(
+        izone = libtecio.tec_zone_create_fe(
             handle,
             "test_fe_lineseg",
             ZoneType.FELINESEG,
@@ -478,10 +559,10 @@ def test_tec_zone_create_fe_lineseg() -> None:
             var_types=[DataType.FLOAT] * 3,
             value_locations=[ValueLocation.NODAL] * 3,
         )
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 3, c.ravel(order="F"))
-        libtecio.tec_zone_node_map_write32(handle, zone_idx, nodes.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 1, x.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 2, y.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 3, c.ravel(order="F"))
+        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel(order="F"))
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_fe_lineseg")
     except Exception as e:
@@ -498,7 +579,7 @@ def test_tec_zone_create_fe_tri() -> None:
             "test_tec_zone_create_fe_tri.szplt",
             variables=["x", "y", "c"],
         )
-        zone_idx = libtecio.tec_zone_create_fe(
+        izone = libtecio.tec_zone_create_fe(
             handle,
             "test_fe_triangle",
             ZoneType.FETRIANGLE,
@@ -507,10 +588,10 @@ def test_tec_zone_create_fe_tri() -> None:
             var_types=[DataType.FLOAT] * 3,
             value_locations=[ValueLocation.NODAL] * 3,
         )
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 3, c.ravel(order="F"))
-        libtecio.tec_zone_node_map_write32(handle, zone_idx, nodes.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 1, x.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 2, y.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 3, c.ravel(order="F"))
+        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel(order="F"))
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_fe_tri")
     except Exception as e:
@@ -527,7 +608,7 @@ def test_tec_zone_create_fe_quad() -> None:
             "test_tec_zone_create_fe_quad.szplt",
             variables=["x", "y", "c"],
         )
-        zone_idx = libtecio.tec_zone_create_fe(
+        izone = libtecio.tec_zone_create_fe(
             handle,
             "test_fe_quad",
             ZoneType.FEQUADRILATERAL,
@@ -536,10 +617,10 @@ def test_tec_zone_create_fe_quad() -> None:
             var_types=[DataType.FLOAT] * 3,
             value_locations=[ValueLocation.NODAL] * 3,
         )
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 3, c.ravel(order="F"))
-        libtecio.tec_zone_node_map_write32(handle, zone_idx, nodes.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 1, x.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 2, y.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 3, c.ravel(order="F"))
+        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel(order="F"))
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_fe_quad")
     except Exception as e:
@@ -555,7 +636,7 @@ def test_tec_zone_create_fe_tet() -> None:
             "test_tec_zone_create_fe_tet.szplt",
             variables=["x", "y", "z", "c"],
         )
-        zone_idx = libtecio.tec_zone_create_fe(
+        izone = libtecio.tec_zone_create_fe(
             handle,
             "test_fe_tet",
             ZoneType.FETETRAHEDRON,
@@ -564,11 +645,11 @@ def test_tec_zone_create_fe_tet() -> None:
             var_types=[DataType.FLOAT] * 4,
             value_locations=[ValueLocation.NODAL] * 4,
         )
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 3, z.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 4, c.ravel(order="F"))
-        libtecio.tec_zone_node_map_write32(handle, zone_idx, nodes.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 1, x.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 2, y.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 3, z.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 4, c.ravel(order="F"))
+        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel(order="F"))
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_fe_tet")
     except Exception as e:
@@ -584,7 +665,7 @@ def test_tec_zone_create_fe_pyramid() -> None:
             "test_tec_zone_create_fe_pyramid.szplt",
             variables=["x", "y", "z", "c"],
         )
-        zone_idx = libtecio.tec_zone_create_fe(
+        izone = libtecio.tec_zone_create_fe(
             handle,
             "test_fe_pyramid",
             ZoneType.FEBRICK,
@@ -593,11 +674,11 @@ def test_tec_zone_create_fe_pyramid() -> None:
             var_types=[DataType.FLOAT] * 4,
             value_locations=[ValueLocation.NODAL] * 4,
         )
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 3, z.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 4, c.ravel(order="F"))
-        libtecio.tec_zone_node_map_write32(handle, zone_idx, nodes.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 1, x.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 2, y.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 3, z.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 4, c.ravel(order="F"))
+        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel(order="F"))
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_fe_pyramid")
     except Exception as e:
@@ -613,7 +694,7 @@ def test_tec_zone_create_fe_prism() -> None:
             "test_tec_zone_create_fe_prism.szplt",
             variables=["x", "y", "z", "c"],
         )
-        zone_idx = libtecio.tec_zone_create_fe(
+        izone = libtecio.tec_zone_create_fe(
             handle,
             "test_fe_prism",
             ZoneType.FEBRICK,
@@ -622,11 +703,11 @@ def test_tec_zone_create_fe_prism() -> None:
             var_types=[DataType.FLOAT] * 4,
             value_locations=[ValueLocation.NODAL] * 4,
         )
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 3, z.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 4, c.ravel(order="F"))
-        libtecio.tec_zone_node_map_write32(handle, zone_idx, nodes.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 1, x.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 2, y.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 3, z.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 4, c.ravel(order="F"))
+        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel(order="F"))
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_fe_prism")
     except Exception as e:
@@ -643,7 +724,7 @@ def test_tec_zone_create_fe_brick() -> None:
             "test_tec_zone_create_fe_brick.szplt",
             variables=["x", "y", "z", "c"],
         )
-        zone_idx = libtecio.tec_zone_create_fe(
+        izone = libtecio.tec_zone_create_fe(
             handle,
             "test_fe_brick",
             ZoneType.FEBRICK,
@@ -652,11 +733,11 @@ def test_tec_zone_create_fe_brick() -> None:
             var_types=[DataType.FLOAT] * 4,
             value_locations=[ValueLocation.NODAL] * 4,
         )
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 3, z.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 4, c.ravel(order="F"))
-        libtecio.tec_zone_node_map_write32(handle, zone_idx, nodes.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 1, x.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 2, y.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 3, z.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 4, c.ravel(order="F"))
+        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel(order="F"))
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_create_fe_brick")
     except Exception as e:
@@ -672,7 +753,7 @@ def test_tec_zone_face_nbr_write_connections() -> None:
             "test_tec_zone_face_nbr.szplt",
             variables=["x", "y", "z", "c"],
         )
-        zone_idx = libtecio.tec_zone_create_fe(
+        izone = libtecio.tec_zone_create_fe(
             handle,
             "test_two_bricks",
             ZoneType.FEBRICK,
@@ -683,13 +764,13 @@ def test_tec_zone_face_nbr_write_connections() -> None:
             num_face_cons=len(face_neighbors),
             face_nbr_mode=FaceNeighborMode.LOCAL_ONE_TO_ONE,
         )
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 3, z.ravel(order="F"))
-        libtecio.tec_zone_var_write_float_values(handle, zone_idx, 4, c.ravel(order="F"))
-        libtecio.tec_zone_node_map_write32(handle, zone_idx, nodes.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 1, x.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 2, y.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 3, z.ravel(order="F"))
+        libtecio.tec_zone_var_write_float_values(handle, izone, 4, c.ravel(order="F"))
+        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel(order="F"))
         libtecio.tec_zone_face_nbr_write_connections32(
-            handle, zone_idx, face_neighbors.ravel(order="F")
+            handle, izone, face_neighbors.ravel(order="F")
         )
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_face_nbr_write_connections")
@@ -724,7 +805,7 @@ def test_tec_zone_aux_data_and_unsteady() -> None:
         for num, t in enumerate(solution_times):
             c = np.sin(2 * np.pi * x + t) * np.cos(2 * np.pi * y + t)
 
-            zone_idx = libtecio.tec_zone_create_ijk(
+            izone = libtecio.tec_zone_create_ijk(
                 handle,
                 f"test_aux_unsteady_{num + 1}",
                 i,
@@ -735,21 +816,21 @@ def test_tec_zone_aux_data_and_unsteady() -> None:
             )
 
             # Zone-level aux data
-            libtecio.tec_zone_add_aux_data(handle, zone_idx, "MeshType", "structured")
-            libtecio.tec_zone_add_aux_data(handle, zone_idx, "IJK", f"{i}x{j}x{k}")
+            libtecio.tec_zone_add_aux_data(handle, izone, "MeshType", "structured")
+            libtecio.tec_zone_add_aux_data(handle, izone, "IJK", f"{i}x{j}x{k}")
 
             # Unsteady options - strand 1 links all zones into a time series
             libtecio.tec_zone_set_unsteady_options(
                 handle,
-                zone_idx,
+                izone,
                 solution_time=t,
                 strand=1,
             )
 
-            libtecio.tec_zone_var_write_float_values(handle, zone_idx, 1, x.ravel(order="F"))
-            libtecio.tec_zone_var_write_float_values(handle, zone_idx, 2, y.ravel(order="F"))
-            libtecio.tec_zone_var_write_float_values(handle, zone_idx, 3, z.ravel(order="F"))
-            libtecio.tec_zone_var_write_float_values(handle, zone_idx, 4, c.ravel(order="F"))
+            libtecio.tec_zone_var_write_float_values(handle, izone, 1, x.ravel(order="F"))
+            libtecio.tec_zone_var_write_float_values(handle, izone, 2, y.ravel(order="F"))
+            libtecio.tec_zone_var_write_float_values(handle, izone, 3, z.ravel(order="F"))
+            libtecio.tec_zone_var_write_float_values(handle, izone, 4, c.ravel(order="F"))
 
         libtecio.tec_file_writer_close(handle)
         print("PASS: test_tec_zone_aux_data_and_unsteady")
@@ -1084,6 +1165,54 @@ def test_plt_tec_zone_aux_data_and_unsteady() -> None:
     except Exception as e:
         print(f"FAIL: test_plt_tec_zone_aux_data_and_unsteady: {e}")
 
+def test_plt_tec_zone_create_fe_polygon() -> None:
+    """Test PLT FEPOLYGON zone using classic API.
+
+    Write sequence:
+        tecini142      — open file
+        tecpolyzne142  — polygon zone header (num_nodes, num_faces,
+                         num_elements, total_num_face_nodes)
+        tecdat142 × N  — one call per variable
+        tecpolyface142 — face connectivity (replaces tecnode142)
+        tecend142      — close file
+    """
+    x, y, face_node_counts, face_nodes, left_elems, right_elems = _create_FE_polygon()
+
+    num_nodes = len(x)
+    num_elements = 2
+    num_faces = len(face_node_counts)
+    total_face_nodes = int(face_nodes.size)
+
+    c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
+
+    # try:
+    libtecio.tecini142(
+        "test_plt_fe_polygon.plt",
+        variables=["x", "y", "c"],
+    )
+    libtecio.tecpolyzne142(
+        zone_title="test_fe_polygon",
+        zone_type=ZoneType.FEPOLYGON,
+        num_nodes=num_nodes,
+        num_faces=num_faces,
+        num_elements=num_elements,
+        total_num_face_nodes=total_face_nodes,
+        value_location=[ValueLocation.NODAL] * 3,
+    )
+    libtecio.tecdat142(x.ravel(order="F"), is_double=False)
+    libtecio.tecdat142(y.ravel(order="F"), is_double=False)
+    libtecio.tecdat142(c.ravel(order="F"), is_double=False)
+    libtecio.tecpolyface142(
+        face_node_counts,
+        face_nodes,
+        left_elems,
+        right_elems,
+    )
+    libtecio.tecend142()
+    #     print("PASS: test_plt_tec_zone_create_fe_polygon")
+    # except Exception as e:
+    #     print(f"FAIL: test_plt_tec_zone_create_fe_polygon: {e}")
+
 
 #=======================================================================================
 # Run all tests
@@ -1111,3 +1240,4 @@ if __name__ == "__main__":
     test_plt_tec_zone_create_fe_brick()
     test_plt_tec_zone_face_nbr_write_connections()
     test_plt_tec_zone_aux_data_and_unsteady()
+    test_plt_tec_zone_create_fe_polygon()

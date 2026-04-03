@@ -20,7 +20,7 @@ class TecioError(RuntimeError):
     """Catch-all exception for all libtecio C/C++ library errors."""
 
 
-# =======================================================================================
+# ======================================================================================
 # Meaningful integers
 # - The TecIO library often uses integers with special meanings (zone types, data types,
 #   data locations)
@@ -29,8 +29,7 @@ class TecioError(RuntimeError):
 # - The classes below provide a more readable format of these values
 # - Where available, the equivalent keywords used in Tecplot ASCII files are set as the
 #   class property, returning the corresponding int value.
-# =======================================================================================
-
+# ======================================================================================
 
 class FileFormat(Enum):
     """Class for binary data formats.
@@ -189,13 +188,13 @@ class Debug(Enum):
     TRUE = 1
 
 
-# =======================================================================================
+# ======================================================================================
 # Helper functions
 # - Used to convert Numpy array-like input to C-compatible pointers for passing to the C
 #   API
 # - Used to convert special integer values (enums, ints, or sequences) to int values for
 #   passing to the C API, with optional validation against an Enum class
-# =======================================================================================
+# ======================================================================================
 
 
 def _prepare_array_for_ctypes(
@@ -253,14 +252,14 @@ def _process_sequence(seq: Sequence[int | Enum] | None) -> ctypes.Array | None:
     return (ctypes.c_int32 * len(values))(*values)
 
 
-# =======================================================================================
+# ======================================================================================
 # C library bindings
 # - Set the input and output C types for each C function used in this library
-# =======================================================================================
+# ======================================================================================
 
-# ---------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # New SZL API bindings
-# ---------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 # Reading SZL files
 lib.tecFileReaderOpen.restype = ctypes.c_int32
@@ -659,9 +658,9 @@ lib.tecZoneFaceNbrWriteConnections64.argtypes = [
     ctypes.POINTER(ctypes.c_int64),  # faceNeighbors
 ]
 
-# ---------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Classic API bindings
-# ---------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 # File initialization and finalization
 lib.tecini142.restype = ctypes.c_int32
@@ -854,7 +853,8 @@ lib.tecusr142.argtypes = [
     ctypes.c_char_p,  # UserRec
 ]
 
-# =======================================================================================
+
+# ======================================================================================
 # Wrappers for C functions
 # - 1-to-1 python functions to format python inputs/ouputs to C TecIO functions
 # - "New" API functions (tecXxxXxx) are wrapped by equivaltly named tec_xxx_xxx
@@ -866,9 +866,9 @@ lib.tecusr142.argtypes = [
 # - Some MPI funcion python wrappers are included, but not yet fully implemented
 # - Wherever data arrays are output, conversion to numpy arrays is handled in the
 #   wrapper function
-# =======================================================================================
+# ======================================================================================
 
-# ---------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # New read API (SZL/.szplt):
 # - tec_file_reader_open returns an explicit file handle that is passed to every
 #   subsequent call, making the target file unambiguous
@@ -883,8 +883,7 @@ lib.tecusr142.argtypes = [
 #     time, strand ID, node map, aux data)
 #   - tec_var_* functions query variable-level metadata (name, aux data)
 #   - tec_zone_var_* functions read variable values for a given zone and variable index
-# ---------------------------------------------------------------------------------------
-
+# --------------------------------------------------------------------------------------
 
 # Reading SZL files
 def tec_file_reader_open(file_name: str) -> ctypes.c_void_p:
@@ -1848,7 +1847,7 @@ def tec_zone_aux_data_get_item(
     return name.value.decode("utf-8"), value.value.decode("utf-8")
 
 
-# ---------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # New write API (SZL/.szplt):
 # - tec_file_writer_open returns an explicit file handle that is passed to every
 #   subsequent call, making the target file unambiguous
@@ -1859,8 +1858,7 @@ def tec_zone_aux_data_get_item(
 #   the file handle + zone/variable index, so they can be written in any order after
 #   zone creation
 # - tec_file_writer_close finalizes and flushes the file
-# ---------------------------------------------------------------------------------------
-
+# --------------------------------------------------------------------------------------
 
 # Initialization and File Handling
 def tec_file_writer_open(
@@ -2519,7 +2517,7 @@ def tec_zone_face_nbr_write_connections64(
         )
 
 
-# ---------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Classic API (PLT/.plt AND SZL/.szplt):
 # - No handle is returned — the library maintains a single implicit global file context
 # - Only one file can be active at a time; tecfil142 must be called to switch between
@@ -2530,8 +2528,7 @@ def tec_zone_face_nbr_write_connections64(
 #   written strictly in order — each zone's header followed immediately by its data
 #   before the next zone is declared
 # - tecend142 finalizes and closes the active file
-# ---------------------------------------------------------------------------------------
-
+# --------------------------------------------------------------------------------------
 
 # File initialization and finalization
 def tecini142(

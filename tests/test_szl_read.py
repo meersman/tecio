@@ -6,7 +6,6 @@ from pathlib import Path
 import numpy as np
 
 import tecio
-from tecio.szl import Read
 from tecio.libtecio import ZoneType
 
 
@@ -18,7 +17,7 @@ input_file = input_file.as_posix()
 np.set_printoptions(threshold=100)
 
 # Create szl reader object
-szl = Read(input_file)
+szl = tecio.open(input_file, "r")
 
 print("\nFile Record")
 print("="*70)

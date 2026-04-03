@@ -132,11 +132,12 @@ dmypy.json
 *.\#*
 .DS_Store
 
-# Tecplot data files (optional - uncomment if you don't want to track them)
+# Tecplot data files
 *.szplt
 *.plt
 *.dat
 *.lay
+tp?*
 
 # Project-specific
 test_output/
