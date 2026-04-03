@@ -39,17 +39,17 @@ with tecio.open("pres.szplt", "w") as szl_out:
             )
         else:
             szl_out.write_fe_zone(
-	        title=szl_in.zone[i].title,
+                title=szl_in.zone[i].title,
                 variables=["x", "y", "z", "pressure"],
                 data=[x[i], y[i], z[i], pressure[i]],
-		node_map=szl_in.zone[i].node_map,
+                node_map=szl_in.zone[i].node_map,
             )    
 ```
 
 ## Structure
 
-- `dat.py`	- High level Tecplot ascii API (Not implemented yet)
-- `plt.py`	- High level PLT file API (Only write implemented so far)
+- `dat.py`      - High level Tecplot ascii API (Not implemented yet)
+- `plt.py`      - High level PLT file API (Only write implemented so far)
 - `szl.py`      - High level SZL file API
 - `libtecio.py` - TecIO C bindings
 
