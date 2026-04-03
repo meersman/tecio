@@ -29,21 +29,21 @@ from tecio.libtecio import ZoneType
 >>> pressure = [szl_in.zone[i].pres for i in range(len(szl_in.zone))]
 
 # Write out just pressure variable
-with tecio.open("pres.szplt", "w") as szl_out:
-    for i in range(len(x)):
-        if szl_in.zone[i].zone_type == ZoneType.ORDERED:
-            szl_out.write_ijk_zone(
-                title=szl_in.zone[i].title,
-                variables=["x", "y", "z", "pressure"],
-                data=[x[i], y[i], z[i], pressure[i]],
-            )
-        else:
-            szl_out.write_fe_zone(
-	        title=szl_in.zone[i].title,
-                variables=["x", "y", "z", "pressure"],
-                data=[x[i], y[i], z[i], pressure[i]],
-		node_map=szl_in.zone[i].node_map,
-            )    
+>>> with tecio.open("pres.szplt", "w") as szl_out:
+...     for i in range(len(x)):
+...         if szl_in.zone[i].zone_type == ZoneType.ORDERED:
+...             szl_out.write_ijk_zone(
+...                 title=szl_in.zone[i].title,
+...                 variables=["x", "y", "z", "pressure"],
+...                 data=[x[i], y[i], z[i], pressure[i]],
+...             )
+...         else:
+...             szl_out.write_fe_zone(
+... 	        title=szl_in.zone[i].title,
+...                 variables=["x", "y", "z", "pressure"],
+...                 data=[x[i], y[i], z[i], pressure[i]],
+... 		node_map=szl_in.zone[i].node_map,
+...             )    
 ```
 
 ## Structure
