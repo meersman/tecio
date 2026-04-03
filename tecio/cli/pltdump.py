@@ -1,6 +1,6 @@
-"""Command line interface to dump all contents of a szlfile.
+"""Command line interface to dump all contents of a plt file.
 
-(like a super verbose szlpltview)
+(like a super verbose szlpltview but for plt)
 """
 
 import argparse
@@ -8,16 +8,16 @@ import argparse
 import numpy as np
 
 from ..libtecio import ZoneType
-from ..szl import Read
+from ..plt import Read
 
 
 def main():
-    """Print all available info for the given SZPLT file."""
+    """Print all available info for the given PLT file."""
     # Get command line input
-    parser = argparse.ArgumentParser(description="Dump all contents of a SZPLT file.")
+    parser = argparse.ArgumentParser(description="Dump all contents of a PLT file.")
     parser.add_argument(
         "filename",
-        help="SZPLT file to print all contents.",
+        help="PLT file to print all contents.",
         type=str,
     )
     parser.add_argument(
@@ -52,31 +52,31 @@ def main():
     # Set numpy array print option
     np.set_printoptions(threshold=args.maxvals)
 
-    # Create szl reader object
-    szl = Read(args.filename)
+    # Create plt reader object
+    plt = Read(args.filename)
 
     print("\nFile Record")
     print("="*70)
-    print(f"File Type         : {szl.file_type}")
-    print(f"Dataset Title     : {szl.title}")
-    print(f"Num Vars          : {szl.num_vars}")
-    print(f"Variables         : {szl.variables}")
-    print(f"Num Zones         : {szl.num_zones}")
-    print(f"Dataset Aux Items : {szl.num_auxdata_items}")
+    print(f"File Type         : {plt.file_type}")
+    print(f"Dataset Title     : {plt.title}")
+    print(f"Num Vars          : {plt.num_vars}")
+    print(f"Variables         : {plt.variables}")
+    print(f"Num Zones         : {plt.num_zones}")
+    print(f"Dataset Aux Items : {plt.num_auxdata_items}")
 
     # Print dataset-level auxiliary data if available
     print("\n\nDataset Auxiliary Data")
     print("-"*70)
-    if len(szl.auxdata) > 0:
-        print(f"Dataset Aux Data  : {dict(szl.auxdata)}")
-        for name, value in szl.auxdata.items():
+    if len(plt.auxdata) > 0:
+        print(f"Dataset Aux Data  : {dict(plt.auxdata)}")
+        for name, value in plt.auxdata.items():
             print(f"  {name:>15} : {value}")
 
     # Print variable-level auxiliary data if available
     print("\n\nVariable Auxiliary Data")
     print("-"*70)
-    for i in range(szl.num_vars):
-        var_aux = szl.get_var_auxdata(i+1)
+    for i in range(plt.num_vars):
+        var_aux = plt.get_var_auxdata(i+1)
         if len(var_aux) > 0:
             print(f"Var {i+1:3} Aux Data  : {dict(var_aux)}")
             for name, value in var_aux.items():
@@ -86,8 +86,8 @@ def main():
     if args.print_zones:
         print("\n\nZone Record")
         print("-"*70)
-        for i in range(szl.num_zones):
-            zone = szl.zone[i]
+        for i in range(plt.num_zones):
+            zone = plt.zone[i]
             print(f"\nZone {i+1:3}")
             print(f"  Title           : {zone.title}")
             print(f"  Zone Type       : {zone.zone_type}")
@@ -103,7 +103,7 @@ def main():
 
             # Print variable record
             if args.print_vars:
-                for j in range(szl.num_vars):
+                for j in range(plt.num_vars):
                     var = zone.variable[j]
                     print(f"  Variable {j+1:3}")
                     print(f"    Name          : {var.name}")

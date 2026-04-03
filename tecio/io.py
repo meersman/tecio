@@ -25,12 +25,12 @@ _HANDLERS = {
     },
     # Classic PLT API
     ".plt": {
-        "r": None,
+        "r": plt.Read,
         "w": plt.Write,
         "a": None,  # lambda path, **kw: _append_plt(path, **kw)
     },
     ".bin": {
-        "r": None,
+        "r": plt.Read,
         "w": plt.Write,
         "a": None,  # lambda path, **kw: _append_plt(path, **kw)
     },

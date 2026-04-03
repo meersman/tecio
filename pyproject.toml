@@ -14,6 +14,7 @@ dependencies = [
 
 [project.scripts]
 szldump = "tecio.cli.szldump:main"
+pltdump = "tecio.cli.pltdump:main"
 
 [project.optional-dependencies]
 dev = ["ruff", "mypy", "pytest"]

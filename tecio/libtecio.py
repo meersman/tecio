@@ -720,13 +720,12 @@ lib.tecpolyzne142.argtypes = [
     ctypes.c_char_p,  # ZoneTitle
     ctypes.POINTER(ctypes.c_int32),  # ZoneType (FEPOLYGON or FEPOLYHEDRON)
     ctypes.POINTER(ctypes.c_int32),  # NumNodes
-    ctypes.POINTER(ctypes.c_int32),  # NumFaces
     ctypes.POINTER(ctypes.c_int32),  # NumElements
+    ctypes.POINTER(ctypes.c_int32),  # NumFaces
     ctypes.POINTER(ctypes.c_int32),  # TotalNumFaceNodes
     ctypes.POINTER(ctypes.c_double),  # SolutionTime
     ctypes.POINTER(ctypes.c_int32),  # StrandID
     ctypes.POINTER(ctypes.c_int32),  # ParentZone
-    ctypes.POINTER(ctypes.c_int32),  # IsBlock
     ctypes.POINTER(ctypes.c_int32),  # NumConnectedBoundaryFaces
     ctypes.POINTER(ctypes.c_int32),  # TotalNumBoundaryConnections
     ctypes.POINTER(ctypes.c_int32),  # PassiveVarList
@@ -2702,7 +2701,7 @@ def teczne142(
     - num_face_connections: Number of face connections (for cell-based FE zones
       only. The number of face connections that will be passed to tecface142)
     - face_nbr_mode: FaceNeighborMode enum. Usedd for cell-based FE and ordered zones
-      only. Type of face connection taht will be passed in rouitine tecface142.
+      only. Type of face connection that will be passed in rouitine tecface142.
     - total_num_face_nodes: Total face nodes (for poly zones)
     - num_connected_boundary_faces: Boundary faces (for poly zones)
     - total_num_boundary_connections: Boundary connections (for poly zones)
@@ -2766,17 +2765,15 @@ def tecpolyzne142(
     num_nodes: int,
     num_faces: int,
     num_elements: int,
-    total_num_face_nodes: int,
+    var_sharing: Sequence[int] | None = None,
+    value_locations: Sequence[int | ValueLocation] | None = None,
+    pas_vars: Sequence[int | VarStatus] | None = None,
+    con_sharing: int = 0,
+    strand: int = 0,
     solution_time: float = 0.0,
-    strand_id: int = 0,
-    parent_zone: int = 0,
-    data_format: int | DataFormat = DataFormat.BLOCK,
+    total_num_face_nodes: int = 0,
     num_connected_boundary_faces: int = 0,
     total_num_boundary_connections: int = 0,
-    passive_var_list: Sequence[int | VarStatus] | None = None,
-    value_location: Sequence[int | ValueLocation] | None = None,
-    share_var_from_zone: Sequence[int] | None = None,
-    share_connectivity_from_zone: int = 0,
 ) -> None:
     """Create a polygonal or polyhedral zone.
 
@@ -2786,70 +2783,54 @@ def tecpolyzne142(
     - num_nodes: Number of nodes
     - num_faces: Number of faces
     - num_elements: Number of elements
-    - total_num_face_nodes: Total number of face nodes
+    - var_sharing: List of zone indices to share variables from (0: No sharing, Null: no
+      variables are shared from other zones)
+    - value_locations: List of ValueLocation enums or 0/1 for nodal/cell-centered
+    - pas_vars: List of VarStatus enums or 0/1 for passive variables
+    - con_sharing: Zone index to share connectivity from
+    - strand: Strand ID for transient data (0 for static data, positive integer for
+      transient data)
     - solution_time: Solution time for transient data
-    - strand_id: Strand ID for transient data
-    - parent_zone: Parent zone index (0=none)
-    - data_format: DataFormat.BLOCK (1) or DataFormat.POINT (0)
-    - num_connected_boundary_faces: Number of boundary faces
-    - total_num_boundary_connections: Total boundary connections
-    - passive_var_list: List of VarStatus enums or 0/1 for passive variables
-    - value_location: List of ValueLocation enums or 0/1 for nodal/cell-centered
-    - share_var_from_zone: List of zone indices to share variables from
-    - share_connectivity_from_zone: Zone index to share connectivity from
+    - total_num_face_nodes: Total face nodes (for poly zones)
+    - num_connected_boundary_faces: Boundary faces (for poly zones)
+    - total_num_boundary_connections: Boundary connections (for poly zones)
     """
-    zone_type_c = ctypes.c_int32(_to_int_value(zone_type))
-    num_nodes_c = ctypes.c_int32(num_nodes)
-    num_faces_c = ctypes.c_int32(num_faces)
-    num_elements_c = ctypes.c_int32(num_elements)
-    total_num_face_nodes_c = ctypes.c_int32(total_num_face_nodes)
-    solution_time_c = ctypes.c_double(solution_time)
-    strand_id_c = ctypes.c_int32(strand_id)
-    parent_zone_c = ctypes.c_int32(parent_zone)
-    is_block_c = ctypes.c_int32(_to_int_value(data_format))
-    num_connected_boundary_faces_c = ctypes.c_int32(num_connected_boundary_faces)
-    total_num_boundary_connections_c = ctypes.c_int32(total_num_boundary_connections)
-    share_connectivity_c = ctypes.c_int32(share_connectivity_from_zone)
 
-    # Handle optional array parameters
-    passive_array = _process_sequence(passive_var_list)
-    passive_ptr = (
-        ctypes.cast(passive_array, ctypes.POINTER(ctypes.c_int32))
-        if passive_array
-        else ctypes.POINTER(ctypes.c_int32)()
-    )
+    # Create C array for passive variable flags
+    pas_vars_ptr = None
+    if pas_vars is not None:
+        pas_vars_ptr = (ctypes.c_int32 * len(pas_vars))(*[
+            _to_int_value(v, Boolean) for v in pas_vars
+        ])
 
-    value_loc_array = _process_sequence(value_location)
-    value_loc_ptr = (
-        ctypes.cast(value_loc_array, ctypes.POINTER(ctypes.c_int32))
-        if value_loc_array
-        else ctypes.POINTER(ctypes.c_int32)()
-    )
+    # Create C array for value locations
+    value_locations_ptr = None
+    if value_locations is not None:
+        value_locations_ptr = (ctypes.c_int32 * len(value_locations))(*[
+            _to_int_value(v, ValueLocation) for v in value_locations
+        ])
 
-    share_var_array = _process_sequence(share_var_from_zone)
-    share_var_ptr = (
-        ctypes.cast(share_var_array, ctypes.POINTER(ctypes.c_int32))
-        if share_var_array
-        else ctypes.POINTER(ctypes.c_int32)()
-    )
+    # Create C array for variable sharing
+    var_sharing_ptr = None
+    if var_sharing is not None:
+        var_sharing_ptr = (ctypes.c_int32 * len(var_sharing))(*list(var_sharing))
 
     ret = lib.tecpolyzne142(
         ctypes.c_char_p(zone_title.encode("utf-8")),
-        ctypes.byref(zone_type_c),
-        ctypes.byref(num_nodes_c),
-        ctypes.byref(num_faces_c),
-        ctypes.byref(num_elements_c),
-        ctypes.byref(total_num_face_nodes_c),
-        ctypes.byref(solution_time_c),
-        ctypes.byref(strand_id_c),
-        ctypes.byref(parent_zone_c),
-        ctypes.byref(is_block_c),
-        ctypes.byref(num_connected_boundary_faces_c),
-        ctypes.byref(total_num_boundary_connections_c),
-        passive_ptr,
-        value_loc_ptr,
-        share_var_ptr,
-        ctypes.byref(share_connectivity_c),
+        ctypes.c_int32(_to_int_value(zone_type)),
+        ctypes.c_int32(num_nodes),
+        ctypes.c_int32(num_elements),
+        ctypes.c_int32(num_faces),
+        ctypes.c_int32(total_num_face_nodes),
+        ctypes.c_double(solution_time),
+        ctypes.c_int32(strand),
+        ctypes.c_int32(0),  # Parent zone deprecated.
+        ctypes.c_int32(num_connected_boundary_faces),
+        ctypes.c_int32(total_num_boundary_connections),
+        pas_vars_ptr,
+        value_locations_ptr,
+        var_sharing_ptr,
+        ctypes.c_int32(con_sharing),
     )
     if ret != 0:
         raise TecioError(

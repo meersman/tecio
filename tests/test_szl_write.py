@@ -6,22 +6,10 @@ always exercise the same geometric cases.
 """
 
 import numpy as np
-
 import tecio
 from tecio.libtecio import ValueLocation, ZoneType, FaceNeighborMode
 
-from test_libtecio import (
-    _create_FE_brick,
-    _create_FE_lineseg,
-    _create_FE_prism,
-    _create_FE_pyramid,
-    _create_FE_quad,
-    _create_FE_tet,
-    _create_FE_tri,
-    _create_FE_two_bricks,
-    _create_ordered,
-)
-
+from create_test_data import *
 
 #=======================================================================================
 # Local functions to create all supported data formats
@@ -52,7 +40,7 @@ def test_write_ijk_3d() -> None:
     """
     try:
         i, j, k = 3, 4, 5
-        x, y, z = _create_ordered((i, j, k))
+        x, y, z = create_ordered((i, j, k))
         c = _scalar_field(x, y, z)
 
         # Cell-centred: (I-1) x (J-1) x (K-1)
@@ -85,7 +73,7 @@ def test_write_ijk_unsteady() -> None:
     """
     try:
         i, j, k = 100, 50, 20
-        x, y, z = _create_ordered((i, j, k))
+        x, y, z = create_ordered((i, j, k))
 
         solution_times = np.linspace(0.0, 2 * np.pi, 100)
         aux = {"MeshType": "structured", "Author": "test_szl_write"}
@@ -128,7 +116,7 @@ def test_write_ijk_var_count_mismatch() -> None:
     """
     try:
         i, j, k = 3, 3, 1
-        x, y, _ = _create_ordered((i, j, k))
+        x, y, _ = create_ordered((i, j, k))
 
         with tecio.open(
             "test_szl_write_ijk_var_mismatch.szplt",
@@ -157,7 +145,7 @@ def test_write_ijk_shape_mismatch() -> None:
     """
     try:
         i, j, k = 4, 5, 1
-        x, y, _ = _create_ordered((i, j, k))
+        x, y, _ = create_ordered((i, j, k))
         x = x.squeeze(0)  # shape (j, i) = (5, 4)
         y_bad = y.squeeze(0)[:-1, :]  # shape (4, 4) — wrong
 
@@ -198,7 +186,7 @@ def test_write_fe_cells() -> None:
 
             # Write a FE line segement cell shape
             try:
-                x, y, nodes = _create_FE_lineseg()
+                x, y, nodes = create_FE_lineseg()
                 c = _scalar_field(x, y)
                 szlfile.write_fe_zone(
                     zone_type=ZoneType.FELINESEG,
@@ -214,7 +202,7 @@ def test_write_fe_cells() -> None:
 
             # Write a FE triangle
             try:
-                x, y, nodes = _create_FE_tri()
+                x, y, nodes = create_FE_tri()
                 c = _scalar_field(x, y)
                 x = x + offset
                 szlfile.write_fe_zone(
@@ -231,7 +219,7 @@ def test_write_fe_cells() -> None:
 
             # Write a FE quadrilateral
             try:
-                x, y, nodes = _create_FE_quad()
+                x, y, nodes = create_FE_quad()
                 c = _scalar_field(x, y)
                 x = x + 2*offset
                 szlfile.write_fe_zone(
@@ -248,7 +236,7 @@ def test_write_fe_cells() -> None:
 
             # Write a FE tetrahedron
             try:
-                x, y, z, nodes = _create_FE_tet()
+                x, y, z, nodes = create_FE_tet()
                 c = _scalar_field(x, y)
                 x = x + 3*offset
                 szlfile.write_fe_zone(
@@ -264,7 +252,7 @@ def test_write_fe_cells() -> None:
 
             # Write a FE pyramid as a degenerate FEBRICK
             try:
-                x, y, z, nodes = _create_FE_pyramid()
+                x, y, z, nodes = create_FE_pyramid()
                 c = _scalar_field(x, y)
                 x = x + 4*offset
                 szlfile.write_fe_zone(
@@ -280,7 +268,7 @@ def test_write_fe_cells() -> None:
 
             # Write a FE prism as a degenerate FEBRICK
             try:
-                x, y, z, nodes = _create_FE_prism()
+                x, y, z, nodes = create_FE_prism()
                 c = _scalar_field(x, y)
                 x = x + 5*offset
                 szlfile.write_fe_zone(
@@ -296,7 +284,7 @@ def test_write_fe_cells() -> None:
 
             # Write a FEBRICK
             try:
-                x, y, z, _faces, nodes = _create_FE_brick()
+                x, y, z, _faces, nodes = create_FE_brick()
                 c = _scalar_field(x, y)
                 x = x + 6*offset
                 szlfile.write_fe_zone(
@@ -312,7 +300,7 @@ def test_write_fe_cells() -> None:
 
             # Write two adjacent FEBRICK cells with explicit face-neighbor connections
             try:
-                x, y, z, nodes, face_neighbors = _create_FE_two_bricks()
+                x, y, z, nodes, face_neighbors = create_FE_two_bricks()
                 c = np.array([1,2])
                 x = x + 7*offset
                 szlfile.write_fe_zone(
@@ -347,7 +335,7 @@ def test_write_fe_unsteady() -> None:
 
     """
     try:
-        x, y, z, nodes = _create_FE_tet()
+        x, y, z, nodes = create_FE_tet()
         solution_times = np.linspace(0.0, 2 * np.pi, 100)
 
         with tecio.open(
@@ -382,7 +370,7 @@ def test_write_fe_unsteady() -> None:
 def test_write_fe_var_count_mismatch() -> None:
     """write_fe_zone must raise ValueError when data length != variable count."""
     try:
-        x, y, nodes = _create_FE_tri()
+        x, y, nodes = create_FE_tri()
 
         with tecio.open(
             "test_szl_write_fe_var_mismatch.szplt",
@@ -406,7 +394,7 @@ def test_write_fe_var_count_mismatch() -> None:
 def test_write_fe_array_length_mismatch() -> None:
     """write_fe_zone must raise ValueError when a nodal array is the wrong length."""
     try:
-        x, y, nodes = _create_FE_tri()  # 4 nodes
+        x, y, nodes = create_FE_tri()  # 4 nodes
         x_short = x[:-1]  # 3 values — one too few
 
         with tecio.open(
@@ -429,7 +417,7 @@ def test_write_fe_array_length_mismatch() -> None:
 def test_write_fe_unsupported_zone_type() -> None:
     """write_fe_zone must raise NotImplementedError for FEPOLYGON."""
     try:
-        x, y, nodes = _create_FE_tri()
+        x, y, nodes = create_FE_tri()
 
         with tecio.open("test_szl_write_fe_polygon.szplt", "w") as szlfile:
             szlfile.write_fe_zone(

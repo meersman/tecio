@@ -1,3 +1,5 @@
+"""General utilities for tecplot."""
+
 from __future__ import annotations
 
 import os
@@ -5,13 +7,18 @@ import platform
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 
 class TecplotNotFoundError(RuntimeError):
     """Raised when Tecplot installation or components cannot be located."""
 
 
-_TEC_EXECUTABLE_ALIASES: tuple[str, ...] = (
+class TecplotConversionError(RuntimeError):
+    """Raised when Tecplot fails a command line conversion operation."""
+
+
+_TEC_EXECUTABLE_ALIASES = (
     "tec360",
     "tec360EX",
     "tecplot",
@@ -128,6 +135,7 @@ def get_tec_exe() -> str:
 
 def get_tec_bin() -> str:
     """Return Tecplot bin directory.
+
     - macOS: Contents/Frameworks
     - Linux: directory containing the executable
     """
@@ -164,8 +172,9 @@ def get_tec_bin() -> str:
 
 def get_tecio_lib() -> str:
     """Return full path to the tecio shared library.
+
     - Linux: libtecio.so
-    - macOS: libtecio.dylib
+    - macOS: libtecio.dylib.
     """
     bin_dir = get_tec_bin()
 
@@ -203,3 +212,70 @@ def get_tec_version() -> str:
         f"Executable: {exe}\n"
         f"Bin dir:    {bin_dir}"
     )
+
+
+def convert_to_szl(
+    input_path: str | os.PathLike,
+    output_path: str | os.PathLike | None = None,
+) -> Path:
+    """Convert a Tecplot data file to SZL (``.szplt``) format from the command line."""
+    input_path = Path(input_path).resolve()
+    if not input_path.is_file():
+        raise FileNotFoundError(f"Input file not found: {input_path}")
+
+    # Resolve output path
+    if output_path is None:
+        szplt_path = input_path.with_suffix(".szplt")
+    else:
+        szplt_path = Path(output_path).resolve()
+
+    # Return immediately if output already exists (no re-conversion)
+    if szplt_path.is_file():
+        return szplt_path
+
+    # Locate the executable (raises TecplotNotFoundError if missing)
+    exe = get_tec_exe()
+
+    # Build the command
+    # tec360ex -convert -quiet -nobatch <input> -o <output>
+    cmd = [
+        str(exe),
+        "-convert",
+        "-quiet",
+        str(input_path),
+        "-o",
+        str(szplt_path),
+    ]
+
+    # Run the conversion
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            check=False,  # we check manually for a clearer error message
+        )
+    except OSError as exc:
+        raise TecplotConversionError(
+            f"Failed to launch Tecplot executable: {exe}\n{exc}"
+        ) from exc
+
+    # Check process exit status
+    if result.returncode != 0:
+        stderr = result.stderr.decode(errors="replace").strip()
+        stdout = result.stdout.decode(errors="replace").strip()
+        detail = stderr or stdout or "(no output)"
+        raise TecplotConversionError(
+            f"Tecplot conversion failed (exit code {result.returncode}).\n"
+            f"Command: {' '.join(cmd)}\n"
+            f"Output:  {detail}"
+        )
+
+    # Verify the output file was actually created
+    if not szplt_path.is_file():
+        raise TecplotConversionError(
+            f"Tecplot exited successfully but the expected output file was "
+            f"not created: {szplt_path}\n"
+            f"Command: {' '.join(cmd)}"
+        )
+
+    return szplt_path

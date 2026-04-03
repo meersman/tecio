@@ -34,7 +34,7 @@ class Read:
     def __init__(self, file_name):
         """Initialize with a C-pointer file handle, metadata, and a list of zones."""
         self.handle = libtecio.tec_file_reader_open(file_name)
-        self.zones = [
+        self.zone = [
             ReadZone(self.handle, i + 1, self.num_vars) for i in range(self.num_zones)
         ]
         self._auxdata: ReadAuxData | None = None
@@ -56,10 +56,10 @@ class Read:
         return libtecio.tec_data_set_get_num_vars(self.handle)
 
     @property
-    def var_list(self) -> list[str]:
+    def variables(self) -> list[str]:
         """Return list of variable names."""
         # Read list of var
-        return [self.zones[0].variables[i].name for i in range(self.num_vars)]
+        return [self.zone[0].variable[i].name for i in range(self.num_vars)]
 
     @property
     def num_zones(self) -> int:
@@ -118,7 +118,7 @@ class ReadZone:
     zone_index: int
     num_vars: int
     _auxdata: ReadAuxData | None = None
-    _variables: list[ReadVariable] | None = None
+    _variable: list[ReadVariable] | None = None
     # Note: For simplicity in calling, lists of objects are initially set to none, then
     #       cached once called.
 
@@ -129,16 +129,16 @@ class ReadZone:
         )
 
     @property
-    def variables(self) -> list[ReadVariable]:
+    def variable(self) -> list[ReadVariable]:
         """Create list of variable-reader objects."""
         # Check cached private variables -> don't run C functions each time this is
         # called if already defined
-        if self._variables is None:
-            self._variables = [
+        if self._variable is None:
+            self._variable = [
                 ReadVariable(self._handle, self.zone_index, i + 1)
                 for i in range(self.num_vars)
             ]
-        return self._variables
+        return self._variable
 
     def __getattr__(self, name: str) -> Any:
         """
@@ -664,6 +664,7 @@ class Write:
         self.variables = variables
         self.file_type = file_type
         self.current_zone = 0
+        self.current_var = 0
 
         # Add created data to the buffer and flush once a file handle is created.
         # Dataset-level aux data buffer (flushed on first zone)

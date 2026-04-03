@@ -24,13 +24,15 @@ that user code can switch between the two formats with minimal changes.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 
-from . import libtecio
+from . import libtecio, szl
 from .libtecio import (
     DataType,
     FaceNeighborMode,
@@ -39,6 +41,41 @@ from .libtecio import (
     ValueLocation,
     ZoneType,
 )
+from .tecutils import convert_to_szl
+
+# ======================================================================================
+# PLT Reader class:
+# - No C-library API to load in any arbitrary plt formated binary
+#   - Can convert to SZL using Tecplot executable (license free)
+#   - Then can read with szl.Read and pass to user
+#   - This is slow and a lot of the performance is lost.
+#   - Until proper PLT read class in implemented, strongly recommend users to first
+#     convert to szplt and continue with SZL functionality of this library.
+# TODO: Custom PLT binary read class (to improve speed of load)
+# ======================================================================================
+
+
+class Read:
+    """Read data from Tecplt plt fomatted binary files.
+
+    This cheats by using Tecplot command line mode to convert to szl format, then read
+    in with szl.Read.
+
+    Known issues:
+    - polygon/polyhedra cells are not supported for reading
+    - slow (due to time of conversion)
+    """
+
+    def __new__(
+        cls,
+        plt_path: str | os.PathLike,
+        szplt_path: str | os.PathLike | None = None,
+    ) -> szl.Read:
+        """Convert to szl and return szl.Read class."""
+        converted = convert_to_szl(Path(plt_path).resolve(), szplt_path)
+        # Return szl.Read.  __init__ is never called on plt.Read
+        return szl.Read(converted.as_posix())
+
 
 # ---------------------------------------------------------------------------
 # Zone-type sets (mirrors szl.py)
@@ -102,6 +139,7 @@ def _infer_data_type(dt: DataType | np.dtype) -> DataType:
 # ---------------------------------------------------------------------------
 # Write class
 # ---------------------------------------------------------------------------
+
 
 class Write:
     """Write Tecplot PLT (``.plt``) files using the classic TecIO API.

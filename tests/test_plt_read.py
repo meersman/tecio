@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lite test for szlfile read functions."""
+"""Lite test for plt read functions."""
 
 from pathlib import Path
 
@@ -8,40 +8,40 @@ import numpy as np
 import tecio
 from tecio.libtecio import ZoneType
 
-def test_szl_read():
-    """Print out all headers and data fields for test szl file."""
+def test_plt_read():
+    """Print out all headers and data fields for test plt file."""
     test_dir = Path(tecio.__file__).parent.parent
-    input_file = test_dir / "tests" / "Onera.szplt"
+    input_file = test_dir / "tests" / "Onera.plt"
     input_file = input_file.as_posix()
 
     # Set numpy array print option
     np.set_printoptions(threshold=100)
 
-    # Create szl reader object
-    szl = tecio.open(input_file, "r")
+    # Create plt reader object
+    pltfile = tecio.open(input_file, "r")
 
     print("\nFile Record")
     print("="*70)
-    print(f"File Type         : {szl.file_type}")
-    print(f"Dataset Title     : {szl.title}")
-    print(f"Num Vars          : {szl.num_vars}")
-    print(f"Variables         : {szl.variables}")
-    print(f"Num Zones         : {szl.num_zones}")
-    print(f"Dataset Aux Items : {szl.num_auxdata_items}")
+    print(f"File Type         : {pltfile.file_type}")
+    print(f"Dataset Title     : {pltfile.title}")
+    print(f"Num Vars          : {pltfile.num_vars}")
+    print(f"Variables         : {pltfile.variables}")
+    print(f"Num Zones         : {pltfile.num_zones}")
+    print(f"Dataset Aux Items : {pltfile.num_auxdata_items}")
 
     # Print dataset-level auxiliary data if available
     print("\n\nDataset Auxiliary Data")
     print("-"*70)
-    if len(szl.auxdata) > 0:
-        print(f"Dataset Aux Data  : {dict(szl.auxdata)}")
-        for name, value in szl.auxdata.items():
+    if len(pltfile.auxdata) > 0:
+        print(f"Dataset Aux Data  : {dict(pltfile.auxdata)}")
+        for name, value in pltfile.auxdata.items():
             print(f"  {name:>15} : {value}")
 
     # Print variable-level auxiliary data if available
     print("\n\nVariable Auxiliary Data")
     print("-"*70)
-    for i in range(szl.num_vars):
-        var_aux = szl.get_var_auxdata(i+1)
+    for i in range(pltfile.num_vars):
+        var_aux = pltfile.get_var_auxdata(i+1)
         if len(var_aux) > 0:
             print(f"Var {i+1:3} Aux Data  : {dict(var_aux)}")
             for name, value in var_aux.items():
@@ -50,8 +50,8 @@ def test_szl_read():
     # Print zone record
     print("\n\nZone Record")
     print("-"*70)
-    for i in range(szl.num_zones):
-        zone = szl.zone[i]
+    for i in range(pltfile.num_zones):
+        zone = pltfile.zone[i]
         print(f"\nZone {i+1:3}")
         print(f"  Title           : {zone.title}")
         print(f"  Zone Type       : {zone.zone_type}")
@@ -66,7 +66,7 @@ def test_szl_read():
                 print(f"  {name:>15} : {value}")
 
         # Print variable record
-        for j in range(szl.num_vars):
+        for j in range(pltfile.num_vars):
             var = zone.variable[j]
             print(f"  Variable {j+1:3}")
             print(f"    Name          : {var.name}")
@@ -94,4 +94,4 @@ def test_szl_read():
             print(f"  Connectivity    : {value_str}")
 
 if __name__ == "__main__":
-    test_szl_read()
+    test_plt_read()
