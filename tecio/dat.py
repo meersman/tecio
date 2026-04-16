@@ -1,129 +1,178 @@
 r"""
-:mod:`datwriter`: Tecplot ASCII DAT file writer
-================================================
+:mod:`dat`: Tecplot ASCII DAT file writer
+=========================================
 
 This module provides :class:`Write`, a context-manager-based writer for
-Tecplot 360 ASCII data files (``.dat``).  The interface mirrors the binary
-SZL and PLT writers so that calling code can swap file formats with minimal
-changes::
+Tecplot 360 ASCII data files (``.dat`` / ``.tec``).  The interface mirrors
+:class:`szl.Write` and :class:`plt.Write` exactly so that calling code can
+swap output formats by changing only the file extension::
 
-    with Write("output.dat", title="My Dataset",
-                   variables=["X", "Y", "Z", "Pressure"],
-                   file_type="FULL") as writer:
-        # optional dataset and variable auxiliary data
-        writer.write_dataset_auxdata("Common.ReferencePressure", "101325.0")
-        writer.write_var_auxdata(3, "Common.PressureRef", "101325.0")
+    # SZL binary
+    with tecio.open("result.szplt", "w", title="Demo",
+                    variables=["X", "Y", "P"]) as w:
+        w.write_ijk_zone(data=[x, y, p], title="Zone 1")
 
-        # ordered zone
-        writer.write_ordered_zone(
-            title="Grid",
-            ijk=(100, 50, 1),
-            var_data=[x_arr, y_arr, z_arr, p_arr],
-            solution_time=1.0,
-            strand_id=1,
-        )
+    # ASCII – identical call-site
+    with tecio.open("result.dat", "w", title="Demo",
+                    variables=["X", "Y", "P"]) as w:
+        w.write_ijk_zone(data=[x, y, p], title="Zone 1")
 
-        # finite-element zone
-        writer.write_fe_zone(
-            title="Surface",
-            zone_type="FETRIANGLE",
-            num_points=n_pts,
-            num_elements=n_tri,
-            var_data=[x_arr, y_arr, z_arr, p_arr],
-            connectivity=conn,          # (N, nodes_per_elem) int array
-        )
+Lazy-open support
+-----------------
+Like the binary writers, ``variables`` may be omitted from ``__init__``.
+The file header is then deferred until the first call to
+:meth:`write_ijk_zone` or :meth:`write_fe_zone`, which must supply
+``variables``.  Dataset- and variable-level auxiliary data set via
+:attr:`auxdataset` / :attr:`auxvar` are buffered and flushed automatically
+at that point.
 
-File structure written
-----------------------
+File format written
+-------------------
 ::
 
-    TITLE = "<title>"
-    [FILETYPE = GRID | SOLUTION]   (omitted when FULL – the default)
+    TITLE     = "<title>"
+    [FILETYPE = GRID | SOLUTION]        (omitted when FULL)
     VARIABLES = "v1" "v2" ...
-    DATASETAUXDATA <name> = "<value>"    (zero or more)
-    VARAUXDATA  <1-based-index> <name> = "<value>"  (zero or more)
-    ZONE T="<title>", ZONETYPE=ORDERED, I=i, J=j, K=k,
-         DATAPACKING=BLOCK, SOLUTIONTIME=t, STRANDID=s
-    <var0 data block>
-    <var1 data block>
+    DATASETAUXDATA <name> = "<value>"   (zero or more)
+    VARAUXDATA <1-based> <name> = "<value>"  (zero or more)
+    ZONE T="<title>", ZONETYPE=Ordered, I=i, J=j, K=k,
+         DATAPACKING=BLOCK, STRANDID=s, SOLUTIONTIME=t
+         [VARLOCATION=([n]=CELLCENTERED)]
+         [PASSIVEVARLIST=[i,j,...]]
+         [VARSHARELIST=([i=z,...])]
+    <var 0 data block>
+    <var 1 data block>
     ...
-    [ZONE ...]
-
-Numbers per line
-----------------
-The writer emits :attr:`Write.VALUES_PER_LINE` values per line (default
-10) for variable data and connectivity, matching common Tecplot practice.
 
 Format specification reference
 -------------------------------
-Tecplot 360 Data Format Guide 2025 R2, "ASCII Data" chapter (pp. 143–197).
+Tecplot 360 Data Format Guide 2025 R2, "ASCII Data" chapter.
 
 Supported zone types
 --------------------
-* Ordered (``ORDERED``)
-* ``FELINESEG``
-* ``FETRIANGLE``
-* ``FEQUADRILATERAL``
-* ``FETETRAHEDRON``
-* ``FEBRICK``
-* ``FEPOLYGON`` (variable nodes per face; pass *face_node_counts* and
-  *face_nodes*)
-* ``FEPOLYHEDRON`` (variable faces per element; pass *face_node_counts*,
-  *face_nodes*, *face_left_elems*, *face_right_elems*)
+* ``ORDERED``
+* ``FELINESEG``, ``FETRIANGLE``, ``FEQUADRILATERAL``
+* ``FETETRAHEDRON``, ``FEBRICK``
 
-Passive and shared variables
------------------------------
-Pass ``passive_vars`` (list of 0-based variable indices) or
-``shared_vars`` (dict mapping 0-based index → 1-based source zone number,
-or the string ``"FECONNECT"`` to share only the connectivity list) to the
-zone-writing methods.
-
-Notes
------
-* All data arrays are accepted as any array-like convertible to
-  :class:`numpy.ndarray`.
-* Variable values are written in BLOCK format (one variable at a time),
-  which is by far the most efficient layout for loading into Tecplot 360.
-* Floating-point values are written with :attr:`Write.FLOAT_FMT`
-  significant figures (default ``".9g"``).
-* The class writes to a :func:`io.BufferedWriter`-backed text file
-  (``newline="\\n"``) so that line endings are always ``LF`` on every
-  platform.
+``FEPOLYGON`` and ``FEPOLYHEDRON`` raise :exc:`NotImplementedError`
+(face-based connectivity is not yet implemented).
 """
+
+from __future__ import annotations
 
 # Standard library
 import io
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
+from typing import Any
 
 # Third-party
 import numpy as np
-from numpy.typing import ArrayLike, NDArray
+import numpy.typing as npt
+
+# ---------------------------------------------------------------------------
+# Local enums — imported from the project's libtecio bindings.
+# A lightweight fallback is provided so the module can be imported and tested
+# in isolation without a Tecplot installation.
+# ---------------------------------------------------------------------------
+try:
+    from .libtecio import (
+        DataType,
+        FaceNeighborMode,
+        FileType,
+        ValueLocation,
+        ZoneType,
+    )
+except ImportError:
+    # Stand-alone / unit-test fallback
+    from enum import IntEnum  # type: ignore[assignment]
+
+    class FileType(IntEnum):  # type: ignore[no-redef]
+        FULL = 0
+        GRID = 1
+        SOLUTION = 2
+
+    class ZoneType(IntEnum):  # type: ignore[no-redef]
+        ORDERED = 0
+        FELINESEG = 1
+        FETRIANGLE = 2
+        FEQUADRILATERAL = 3
+        FETETRAHEDRON = 4
+        FEBRICK = 5
+        FEPOLYGON = 6
+        FEPOLYHEDRON = 7
+
+    class ValueLocation(IntEnum):  # type: ignore[no-redef]
+        NODAL = 0
+        CELL_CENTERED = 1
+
+    class DataType(IntEnum):  # type: ignore[no-redef]
+        FLOAT = 1
+        DOUBLE = 2
+        INT32 = 3
+        INT16 = 4
+        BYTE = 5
+
+    class FaceNeighborMode(IntEnum):  # type: ignore[no-redef]
+        LOCAL_ONE_TO_ONE = 0
 
 
 # ---------------------------------------------------------------------------
-# Public constants
+# Module-level constants
 # ---------------------------------------------------------------------------
 
-#: Zone-type keyword strings accepted by :class:`Write`.
-ORDERED_ZONE_TYPE: str = "ORDERED"
+#: FE zone types fully supported by :meth:`Write.write_fe_zone`.
+_FE_SIMPLE: frozenset[ZoneType] = frozenset({
+    ZoneType.FELINESEG,
+    ZoneType.FETRIANGLE,
+    ZoneType.FEQUADRILATERAL,
+    ZoneType.FETETRAHEDRON,
+    ZoneType.FEBRICK,
+})
 
-#: Valid ``file_type`` values for :class:`Write`.
-#: ``"FULL"`` is the default and need not be written to the file header.
-VALID_FILE_TYPES: frozenset = frozenset({"FULL", "GRID", "SOLUTION"})
+#: Zone types whose connectivity is face-based (not yet supported).
+_FE_POLY: frozenset[ZoneType] = frozenset({
+    ZoneType.FEPOLYGON,
+    ZoneType.FEPOLYHEDRON,
+})
 
-#: Mapping from zone-type name → nodes per element (0 = variable).
-_NODES_PER_ELEM: Dict[str, int] = {
-    "FELINESEG": 2,
-    "FETRIANGLE": 3,
-    "FEQUADRILATERAL": 4,
-    "FETETRAHEDRON": 4,
-    "FEBRICK": 8,
-    "FEPOLYGON": 0,       # variable; face-based
-    "FEPOLYHEDRON": 0,    # variable; face-based
+#: Nodes per element for each simple FE type.
+_NODES_PER_ELEM: dict[ZoneType, int] = {
+    ZoneType.FELINESEG: 2,
+    ZoneType.FETRIANGLE: 3,
+    ZoneType.FEQUADRILATERAL: 4,
+    ZoneType.FETETRAHEDRON: 4,
+    ZoneType.FEBRICK: 8,
 }
 
-# Zone types whose connectivity is face-based rather than element-node-based.
-_FACE_BASED_ZONE_TYPES: frozenset = frozenset({"FEPOLYGON", "FEPOLYHEDRON"})
+#: ASCII keyword for each ZoneType.
+_ZONETYPE_STR: dict[ZoneType, str] = {
+    ZoneType.ORDERED: "Ordered",
+    ZoneType.FELINESEG: "FELineSeg",
+    ZoneType.FETRIANGLE: "FETriangle",
+    ZoneType.FEQUADRILATERAL: "FEQuadrilateral",
+    ZoneType.FETETRAHEDRON: "FETetrahedron",
+    ZoneType.FEBRICK: "FEBrick",
+    ZoneType.FEPOLYGON: "FEPolygon",
+    ZoneType.FEPOLYHEDRON: "FEPolyhedron",
+}
+
+#: ASCII keyword for each FileType (FULL intentionally omitted from output).
+_FILETYPE_STR: dict[FileType, str] = {
+    FileType.GRID: "GRID",
+    FileType.SOLUTION: "SOLUTION",
+}
+
+#: DataType → NumPy dtype string used for casting before formatting.
+_DT_TO_DTYPE: dict[DataType, str] = {
+    DataType.FLOAT: "f4",
+    DataType.DOUBLE: "f8",
+    DataType.INT32: "i4",
+    DataType.INT16: "i2",
+    DataType.BYTE: "u1",
+}
+
+#: Number of values written per line for variable data.
+_VALUES_PER_LINE: int = 5
 
 
 # ---------------------------------------------------------------------------
@@ -131,611 +180,694 @@ _FACE_BASED_ZONE_TYPES: frozenset = frozenset({"FEPOLYGON", "FEPOLYHEDRON"})
 # ---------------------------------------------------------------------------
 
 def _quote(s: str) -> str:
-    r"""Wrap *s* in double quotes, escaping any embedded double-quote with ``\``."""
-    return '"' + s.replace('"', '\\"') + '"'
+    """Wrap *s* in double-quotes, escaping embedded double-quotes."""
+    return '"' + str(s).replace('"', '\\"') + '"'
 
 
-def _needs_quoting(name: str) -> bool:
-    """Return ``True`` if *name* contains spaces or special characters."""
-    special = set(' \t\n\r,=')
-    return bool(special.intersection(name))
+def _infer_data_type(arr: npt.NDArray) -> DataType:
+    """Return the most appropriate :class:`DataType` for *arr*'s dtype."""
+    dt = arr.dtype
+    if dt.kind == "f":
+        return DataType.DOUBLE if dt.itemsize >= 8 else DataType.FLOAT
+    if dt.kind in ("i", "u"):
+        if dt.itemsize >= 4:
+            return DataType.INT32
+        if dt.itemsize == 2:
+            return DataType.INT16
+        return DataType.BYTE
+    return DataType.FLOAT
 
 
-def _fmt_name(name: str) -> str:
-    """Quote *name* only when necessary."""
-    if _needs_quoting(name):
-        return _quote(name)
-    return name
+def _write_array(fp: io.TextIOWrapper, arr: npt.NDArray, float_fmt: str) -> None:
+    """Write a flat 1-D array to *fp*, :data:`_VALUES_PER_LINE` values per line.
 
+    Floating-point arrays are formatted with *float_fmt*; integer arrays use
+    plain ``%d``-style rendering.  A trailing newline is always written.
+    """
+    flat = np.asarray(arr).ravel()
+    n = flat.size
+    if n == 0:
+        fp.write("\n")
+        return
+
+    is_float = np.issubdtype(flat.dtype, np.floating)
+    vpl = _VALUES_PER_LINE
+
+    for start in range(0, n, vpl):
+        chunk = flat[start: start + vpl]
+        if is_float:
+            line = "\t".join(format(float(v), float_fmt) for v in chunk)
+        else:
+            line = "\t".join(str(int(v)) for v in chunk)
+        fp.write(line + "\n")
+
+
+# ---------------------------------------------------------------------------
+# Write class
+# ---------------------------------------------------------------------------
 
 class Write:
     r"""Context-manager writer for Tecplot 360 ASCII (``.dat``) files.
+
+    The public interface is identical to :class:`szl.Write` and
+    :class:`plt.Write`.
 
     Parameters
     ----------
     path:
         Destination file path.
     title:
-        Dataset title written to the file header.
+        Dataset title written to the file header.  Defaults to
+        ``"untitled"``.
     variables:
-        Ordered list of variable names.  Must not be empty.
+        Ordered list of variable name strings.  When *None* the file
+        header is deferred until the first zone-writing call (lazy open).
     file_type:
-        One of ``"FULL"`` (default), ``"GRID"``, or ``"SOLUTION"``.
-        ``"FULL"`` contains both grid and solution data and is the most
-        common case; the keyword is **omitted** from the header when
-        ``"FULL"`` is used so that older Tecplot versions that do not
-        recognise the keyword continue to work.  ``"GRID"`` and
-        ``"SOLUTION"`` write the ``FILETYPE`` keyword explicitly and are
-        used when splitting grid and solution into separate files for
-        transient datasets.
-    float_fmt:
-        ``%``-style or ``str.format``-compatible format string used to
-        render every floating-point value.  Defaults to ``".9g"`` which
-        gives up to 9 significant digits (Tecplot's own default).
-    values_per_line:
-        Number of values emitted per line for variable data and
-        connectivity lists.  Default is ``10``.
+        :class:`~libtecio.FileType` enum value.  Defaults to
+        :attr:`~libtecio.FileType.FULL`.
+
+    Attributes
+    ----------
+    auxdataset : dict[str, str]
+        Dataset-level auxiliary data buffer.  Assign entries before the
+        first zone write; they will be flushed automatically.
+    auxvar : dict[int | str, dict[str, str]]
+        Variable-level auxiliary data buffer.  Keys are either 1-based
+        integer variable indices or variable name strings.
+    current_zone : int
+        1-based index of the most recently written zone (0 before any zone
+        is written).
 
     Examples
     --------
-    .. code-block:: python
+    Eager open (variables known up front)::
 
-        import numpy as np
-        from datwriter import Write
+        with Write("out.dat", title="Demo", variables=["X", "Y", "P"]) as w:
+            w.auxdataset["Author"] = "PyTecplot"
+            w.write_ijk_zone(data=[x, y, p], title="Zone 1")
 
-        x = np.linspace(0.0, 1.0, 5)
-        y = np.zeros(5)
+    Lazy open (variables supplied per zone)::
 
-        with Write("out.dat", title="Demo", variables=["X", "Y"]) as w:
-            w.write_dataset_auxdata("Author", "PyTecplot")
-            w.write_ordered_zone("Line", (5, 1, 1), [x, y])
-
-    Grid / solution split for transient data::
-
-        with Write("grid.dat", title="Grid", variables=["X", "Y", "Z"],
-                       file_type="GRID") as w:
-            w.write_ordered_zone("Base", (100, 50, 1), [x, y, z])
-
-        with Write("sol.dat", title="Solution t=1",
-                       variables=["X", "Y", "Z", "Pressure"],
-                       file_type="SOLUTION") as w:
-            w.write_ordered_zone("Base", (100, 50, 1),
-                                 [None, None, None, p],
-                                 shared_vars={0: 1, 1: 1, 2: 1})
+        with Write("out.dat", title="Demo") as w:
+            w.write_ijk_zone(
+                data=[x, y, p],
+                variables=["X", "Y", "P"],
+                title="Zone 1",
+            )
     """
 
-    #: Default float format string (significant digits).
+    #: Default float format (significant digits), matches Tecplot's own output.
     FLOAT_FMT: str = ".9g"
-
-    #: Default number of values per output line.
-    VALUES_PER_LINE: int = 10
-
-    # ------------------------------------------------------------------
-    # Construction / context management
-    # ------------------------------------------------------------------
 
     def __init__(
         self,
         path: str,
-        title: str = "",
-        variables: Optional[Sequence[str]] = None,
-        file_type: str = "FULL",
-        float_fmt: Optional[str] = None,
-        values_per_line: Optional[int] = None,
+        title: str = "untitled",
+        variables: list[str] | None = None,
+        file_type: FileType = FileType.FULL,
     ) -> None:
-        if variables is None or len(variables) == 0:
-            raise ValueError("Write requires at least one variable name.")
+        """Store configuration; open the file immediately if *variables* given."""
+        self.path: str = str(path)
+        self.title: str = title
+        self.variables: list[str] | None = variables
+        self.file_type: FileType = file_type
+        self.current_zone: int = 0
 
-        file_type_upper = file_type.upper()
-        if file_type_upper not in VALID_FILE_TYPES:
-            raise ValueError(
-                f"Invalid file_type {file_type!r}.  "
-                f"Expected one of {sorted(VALID_FILE_TYPES)}."
-            )
+        # Buffered aux data — flushed to disk before the first zone.
+        self.auxdataset: dict[str, str] = {}
+        self.auxvar: dict[int | str, dict[str, str]] = {}
 
-        self._path: str = path
-        self._title: str = title
-        self._variables: List[str] = list(variables)
-        self._file_type: str = file_type_upper
-        self._float_fmt: str = float_fmt if float_fmt is not None else self.FLOAT_FMT
-        self._vpl: int = (
-            values_per_line if values_per_line is not None else self.VALUES_PER_LINE
-        )
-        self._fp: Optional[io.TextIOWrapper] = None
-        self._header_written: bool = False
+        # Internal state
+        self._fp: io.TextIOWrapper | None = None
+        self._opened: bool = False
+        self._float_fmt: str = self.FLOAT_FMT
 
-    def __enter__(self) -> "Write":
-        # Open with explicit LF line endings and UTF-8 encoding.
-        self._fp = open(  # noqa: WPS515
-            self._path, "w", encoding="utf-8", newline="\n"
-        )
-        self._write_file_header()
+        if self.variables is not None:
+            self._open(self.variables)
+
+    # ------------------------------------------------------------------
+    # Context manager
+    # ------------------------------------------------------------------
+
+    def __enter__(self) -> Write:
+        """Support ``with`` statement — returns *self*."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        """Close the file on context-manager exit."""
+        try:
+            self.close()
+        except Exception:
+            if exc_type is None:
+                raise
+
+    # ------------------------------------------------------------------
+    # File lifecycle
+    # ------------------------------------------------------------------
+
+    def _open(self, var_names: list[str]) -> None:
+        """Open the output file and write the dataset header.
+
+        Called at most once per instance — either from ``__init__``
+        (eager open) or on the first zone-writing call (lazy open).
+
+        Args:
+            var_names: Ordered list of variable name strings.
+
+        Raises:
+            ValueError: If *var_names* is empty.
+        """
+        if not var_names:
+            raise ValueError(
+                "Write requires at least one variable name."
+            )
+        self.variables = var_names
+        self._fp = open(self.path, "w", encoding="utf-8", newline="\n")  # noqa: SIM115
+        self._write_file_header()
+        self._opened = True
+
+    def close(self) -> None:
+        """Flush and close the output file (safe to call more than once)."""
         if self._fp is not None:
+            self._fp.flush()
             self._fp.close()
             self._fp = None
-        # Propagate exceptions.
-        return False
+            self._opened = False
 
-    # ------------------------------------------------------------------
-    # Auxiliary data
-    # ------------------------------------------------------------------
+    def flush_aux(self) -> None:
+        """Write buffered dataset- and variable-level aux data to the file.
 
-    def write_dataset_auxdata(self, name: str, value: str) -> None:
-        r"""Write a dataset-level auxiliary data record.
+        Called automatically before the first zone is created.  Explicit
+        calls are only needed in unusual ordering scenarios.
 
-        Must be called *after* entering the context (i.e. after
-        ``__enter__``) and *before* or *between* zone records.  Tecplot
-        360 accepts ``DATASETAUXDATA`` records anywhere in the file but
-        conventionally they appear just after the file header.
-
-        Parameters
-        ----------
-        name:
-            Auxiliary data key (e.g. ``"Common.ReferencePressure"``).
-        value:
-            Auxiliary data value string.
-
-        Example output::
-
-            DATASETAUXDATA Common.ReferencePressure = "101325.0"
+        Raises:
+            IOError: If the file has not been opened yet.
+            IndexError: If an integer aux key is out of range.
+            KeyError: If a string aux key does not match any variable.
         """
-        self._ensure_open()
-        self._fp.write(f"DATASETAUXDATA {name} = {_quote(value)}\n")
+        if self._fp is None:
+            raise IOError("flush_aux() called before file was opened.")
 
-    def write_var_auxdata(
-        self, var_index: int, name: str, value: str
-    ) -> None:
-        r"""Write a variable-level auxiliary data record.
+        # Dataset-level
+        for name, value in self.auxdataset.items():
+            self._fp.write(f"DATASETAUXDATA {name}={_quote(value)}\n")
 
-        Parameters
-        ----------
-        var_index:
-            **0-based** variable index.  Converted to 1-based internally.
-        name:
-            Auxiliary data key.
-        value:
-            Auxiliary data value string.
+        # Variable-level
+        for key, subdict in self.auxvar.items():
+            if isinstance(key, int):
+                var_idx = key - 1  # convert 1-based → 0-based
+                if var_idx not in range(len(self.variables)):
+                    raise IndexError(
+                        f"Variable index {key} out of bounds "
+                        f"[1, {len(self.variables)}]"
+                    )
+            elif isinstance(key, str):
+                try:
+                    var_idx = self.variables.index(key)
+                except ValueError as exc:
+                    raise KeyError(
+                        f"Variable aux data key {key!r} not found in "
+                        f"variable list ({self.variables})"
+                    ) from exc
+            else:
+                raise TypeError(
+                    f"Aux data key must be a variable name (str) or "
+                    f"1-based index (int), got {key!r}"
+                )
 
-        Example output::
+            one_based = var_idx + 1
+            for name, value in subdict.items():
+                self._fp.write(
+                    f"VARAUXDATA {one_based} {name}={_quote(value)}\n"
+                )
 
-            VARAUXDATA 4 Common.PressureRef = "101325.0"
-        """
-        self._ensure_open()
-        one_based = var_index + 1
-        self._fp.write(f"VARAUXDATA {one_based} {name} = {_quote(value)}\n")
+        self.auxdataset.clear()
+        self.auxvar.clear()
 
     # ------------------------------------------------------------------
     # Zone writers
     # ------------------------------------------------------------------
 
-    def write_ordered_zone(
+    def write_ijk_zone(
         self,
-        title: str,
-        ijk: Tuple[int, int, int],
-        var_data: Sequence[ArrayLike],
-        *,
+        data: Sequence[npt.NDArray],
+        title: str | None = None,
+        variables: list[str] | None = None,
+        value_locations: Sequence[ValueLocation] | None = None,
+        passive_vars: Sequence[bool | int] | None = None,
+        var_sharing: Sequence[int] | None = None,
         solution_time: float = 0.0,
-        strand_id: int = -1,
-        var_location: Optional[Dict[int, str]] = None,
-        passive_vars: Optional[Sequence[int]] = None,
-        shared_vars: Optional[Dict[int, Union[int, str]]] = None,
-        zone_auxdata: Optional[Dict[str, str]] = None,
+        strand_id: int = 0,
+        aux: dict[str, Any] | None = None,
     ) -> None:
-        r"""Write an ordered (structured) zone.
+        """Write a complete IJK-ordered zone in BLOCK format.
 
-        Parameters
-        ----------
-        title:
-            Zone title.
-        ijk:
-            ``(I, J, K)`` dimensions.  Use ``K=1`` for 2-D, ``J=K=1``
-            for 1-D data.
-        var_data:
-            Sequence of array-like objects, one per variable.  Pass
-            ``None`` in the sequence for passive or shared variables.
-        solution_time:
-            Solution time associated with this zone.
-        strand_id:
-            Strand ID for transient data.  ``-1`` means no strand.
-        var_location:
-            Optional mapping of 0-based variable index → ``"NODAL"`` or
-            ``"CELLCENTERED"``.  Variables not listed default to
-            ``"NODAL"``.
-        passive_vars:
-            0-based indices of variables to mark as *passive* (the value
-            array may be ``None``).
-        shared_vars:
-            0-based index → 1-based source zone number.  When provided
-            the variable is not written; Tecplot reads it from the
-            referenced zone.
-        zone_auxdata:
-            Optional dict of zone-level auxiliary data to emit after the
-            ``ZONE`` header line.
+        Zone dimensions ``imax × jmax × kmax`` are inferred from the shape
+        of the first NODAL data array (or first CELL_CENTERED array when all
+        variables are cell-centred).  1-D arrays produce a ``(N, 1, 1)``
+        zone; 2-D arrays a ``(I, J, 1)`` zone; 3-D arrays a full
+        ``(I, J, K)`` zone.
+
+        Args:
+            data:            Sequence of NumPy arrays, one per *active*
+                             variable (i.e. not passive or shared).
+            title:           Zone title.  Defaults to
+                             ``"IJK_Zone_{current_zone + 1}"``.
+            variables:       Variable names — required when the file has not
+                             been opened yet (lazy-open path).  Ignored once
+                             the file is initialised.
+            value_locations: Per-variable :class:`ValueLocation`.  Defaults
+                             to all :attr:`~ValueLocation.NODAL`.
+            passive_vars:    Per-dataset-variable passive flags.  Length must
+                             equal the total number of dataset variables.
+            var_sharing:     Per-dataset-variable source-zone sharing index
+                             (``0`` = no sharing).
+            solution_time:   Solution time for transient data.
+            strand_id:       Strand ID (``0`` = steady-state).
+            aux:             Zone-level auxiliary data ``{name: value}``.
+
+        Raises:
+            ValueError: On variable-count or array-shape mismatch.
         """
-        self._ensure_open()
-        i, j, k = ijk
-        zone_type = ORDERED_ZONE_TYPE
-        header = self._build_zone_header(
+        # Default title
+        if title is None:
+            title = f"IJK_Zone_{self.current_zone + 1}"
+
+        # Auto-generate variable names for lazy open if not provided
+        if variables is None:
+            variables = [f"V{i}" for i in range(1, len(data) + 1)]
+
+        # Lazy open + flush buffered aux data on the first zone
+        if not self._opened:
+            self._open(variables)
+            self.flush_aux()
+
+        # Infer per-variable data types from array dtypes
+        variable_types = [_infer_data_type(np.asarray(arr)) for arr in data]
+
+        # Default value locations — all nodal
+        if value_locations is None:
+            value_locations = [ValueLocation.NODAL] * len(data)
+
+        # Default passive / sharing vectors (dataset-length)
+        if passive_vars is None:
+            passive_vars = [False] * len(self.variables)
+        if var_sharing is None:
+            var_sharing = [0] * len(self.variables)
+
+        # ---- Validate active variable count ----
+        if len(data) != len(self.variables):
+            expected_vars = sum(
+                1
+                for is_passive, share_zone in zip(
+                    passive_vars, var_sharing, strict=True
+                )
+                if not is_passive and not share_zone
+            )
+            if expected_vars == 0:
+                raise ValueError(
+                    "No active variables to write — all variables are either "
+                    "passive or shared."
+                )
+            if len(data) == 0:
+                raise ValueError(
+                    f"No data arrays provided. Expected {expected_vars} active "
+                    "variable arrays based on passive_vars and var_sharing."
+                )
+            if len(data) != expected_vars:
+                raise ValueError(
+                    f"Expected {expected_vars} data arrays for active variables, "
+                    f"got {len(data)}."
+                )
+
+        # ---- Infer zone dimensions ----
+        nodal_indices = [
+            i for i, loc in enumerate(value_locations)
+            if loc == ValueLocation.NODAL
+        ]
+        cell_indices = [
+            i for i, loc in enumerate(value_locations)
+            if loc == ValueLocation.CELL_CENTERED
+        ]
+
+        if nodal_indices:
+            ndims = np.asarray(data[nodal_indices[0]]).ndim
+            if ndims not in (1, 2, 3):
+                raise ValueError(
+                    f"Arrays must be 1D, 2D, or 3D; got {ndims}-D array.  "
+                    "Write each time step as a separate zone."
+                )
+            nodal_shape = (
+                np.asarray(data[nodal_indices[0]]).shape + (1,) * (3 - ndims)
+            )
+            cell_shape = tuple(max(d - 1, 1) for d in nodal_shape)
+            imax, jmax, kmax = nodal_shape
+        elif cell_indices:
+            ndims = np.asarray(data[cell_indices[0]]).ndim
+            if ndims not in (1, 2, 3):
+                raise ValueError(
+                    f"Arrays must be 1D, 2D, or 3D; got {ndims}-D array.  "
+                    "Write each time step as a separate zone."
+                )
+            cell_shape = (
+                np.asarray(data[cell_indices[0]]).shape + (1,) * (3 - ndims)
+            )
+            nodal_shape = tuple(max(d + 1, 1) for d in cell_shape)
+            imax, jmax, kmax = nodal_shape
+        else:
+            raise ValueError(
+                "Could not determine zone dimensions — no nodal or "
+                "cell-centred variables found."
+            )
+
+        # ---- Validate individual array shapes ----
+        for i, (arr, loc) in enumerate(zip(data, value_locations, strict=True)):
+            arr = np.asarray(arr)
+            if arr.ndim != ndims:
+                raise ValueError(
+                    f"Array {i} is {arr.ndim}D, expected {ndims}D."
+                )
+            shape = arr.shape + (1,) * (3 - arr.ndim)
+            if loc == ValueLocation.NODAL and shape != nodal_shape:
+                raise ValueError(
+                    f"Array {i} is NODAL but has shape {shape}, "
+                    f"expected {nodal_shape}."
+                )
+            if loc == ValueLocation.CELL_CENTERED and shape != cell_shape:
+                raise ValueError(
+                    f"Array {i} is CELL_CENTERED but has shape {shape}, "
+                    f"expected {cell_shape}."
+                )
+
+        # ---- Determine active variable indices (1-based, dataset order) ----
+        active_var_idx = [
+            var_idx
+            for var_idx, (is_passive, share_zone) in enumerate(
+                zip(passive_vars, var_sharing, strict=True), start=1
+            )
+            if not is_passive and not share_zone
+        ]
+
+        # Build dataset-length value-location list
+        value_locations_global = [ValueLocation.NODAL] * len(self.variables)
+        for local_idx, var_idx in enumerate(active_var_idx):
+            value_locations_global[var_idx - 1] = value_locations[local_idx]
+
+        # ---- Write zone header ----
+        self._write_zone_header(
             title=title,
-            zone_type=zone_type,
-            i=i,
-            j=j,
-            k=k,
+            zone_type=ZoneType.ORDERED,
+            imax=imax,
+            jmax=jmax,
+            kmax=kmax,
             solution_time=solution_time,
             strand_id=strand_id,
-            var_location=var_location,
             passive_vars=passive_vars,
-            shared_vars=shared_vars,
+            var_sharing=var_sharing,
+            value_locations_global=value_locations_global,
+            aux=aux,
         )
-        self._fp.write(header + "\n")
-        self._write_zone_auxdata(zone_auxdata)
-        self._write_var_blocks(
-            var_data=var_data,
-            passive_vars=passive_vars,
-            shared_vars=shared_vars,
-        )
+        self.current_zone += 1
+
+        # ---- Write active variable data blocks ----
+        for arr, dt in zip(data, variable_types):
+            cast = np.asarray(arr, dtype=_DT_TO_DTYPE[dt]).ravel(order="F")
+            _write_array(self._fp, cast, self._float_fmt)
 
     def write_fe_zone(
         self,
-        title: str,
-        zone_type: str,
-        num_points: int,
-        num_elements: int,
-        var_data: Sequence[ArrayLike],
-        connectivity: Optional[ArrayLike] = None,
-        *,
+        zone_type: ZoneType,
+        data: Sequence[npt.NDArray],
+        node_map: npt.ArrayLike | None = None,
+        title: str | None = None,
+        variables: list[str] | None = None,
+        value_locations: Sequence[ValueLocation] | None = None,
+        passive_vars: Sequence[bool | int] | None = None,
+        var_sharing: Sequence[int] | None = None,
+        con_sharing: int = 0,
+        face_neighbors: npt.ArrayLike | None = None,
+        face_nbr_mode: FaceNeighborMode = FaceNeighborMode.LOCAL_ONE_TO_ONE,
         solution_time: float = 0.0,
-        strand_id: int = -1,
-        var_location: Optional[Dict[int, str]] = None,
-        passive_vars: Optional[Sequence[int]] = None,
-        shared_vars: Optional[Dict[int, Union[int, str]]] = None,
-        shared_connectivity: Optional[int] = None,
-        zone_auxdata: Optional[Dict[str, str]] = None,
-        # Polygon / polyhedron face-connectivity arguments
-        face_node_counts: Optional[ArrayLike] = None,
-        face_nodes: Optional[ArrayLike] = None,
-        face_left_elems: Optional[ArrayLike] = None,
-        face_right_elems: Optional[ArrayLike] = None,
+        strand_id: int = 0,
+        aux: dict[str, Any] | None = None,
     ) -> None:
-        r"""Write a finite-element zone.
+        """Write a complete finite-element zone in BLOCK format.
 
-        Parameters
-        ----------
-        title:
-            Zone title.
-        zone_type:
-            One of ``"FELINESEG"``, ``"FETRIANGLE"``,
-            ``"FEQUADRILATERAL"``, ``"FETETRAHEDRON"``, ``"FEBRICK"``,
-            ``"FEPOLYGON"``, ``"FEPOLYHEDRON"``.
-        num_points:
-            Number of nodes (data points).
-        num_elements:
-            Number of elements (cells / faces).
-        var_data:
-            One array-like per variable; ``None`` entries for passive /
-            shared variables.
-        connectivity:
-            For classic element types (not poly*): integer array of shape
-            ``(num_elements, nodes_per_elem)`` using **1-based** node
-            numbers.  May be ``None`` when using *shared_connectivity*.
-        solution_time:
-            Solution time for transient data.
-        strand_id:
-            Strand ID; ``-1`` disables.
-        var_location:
-            0-based index → ``"NODAL"`` or ``"CELLCENTERED"``.
-        passive_vars:
-            0-based indices of passive variables.
-        shared_vars:
-            0-based index → 1-based source zone number for shared
-            variables.
-        shared_connectivity:
-            1-based zone number whose connectivity list is shared.
-        zone_auxdata:
-            Zone-level auxiliary data dict.
-        face_node_counts:
-            ``FEPOLYGON`` / ``FEPOLYHEDRON``: 1-D integer array of face
-            node counts.
-        face_nodes:
-            Flat 1-D integer array of 1-based node numbers for each face.
-        face_left_elems:
-            ``FEPOLYHEDRON``: 1-D integer array of 1-based element
-            numbers to the left of each face (0 for boundary).
-        face_right_elems:
-            ``FEPOLYHEDRON``: 1-D integer array of 1-based element
-            numbers to the right of each face (0 for boundary).
+        ``FEPOLYGON`` and ``FEPOLYHEDRON`` are not yet supported.
+
+        Args:
+            zone_type:       FE zone type.  Must be one of :data:`_FE_SIMPLE`.
+            data:            Sequence of NumPy arrays, one per active variable.
+                             NODAL arrays must have length ``num_nodes``;
+                             CELL_CENTERED arrays must have length
+                             ``num_cells``.  Both counts are inferred from
+                             *node_map*.
+            node_map:        Integer array of shape
+                             ``(num_cells, nodes_per_cell)`` with **1-based**
+                             node indices (same convention as the binary
+                             writers).
+            title:           Zone title.  Defaults to
+                             ``"FE_Zone_{current_zone + 1}"``.
+            variables:       Variable names — required on the lazy-open first
+                             zone call.
+            value_locations: Per-variable :class:`ValueLocation`.  Defaults
+                             to all NODAL.
+            passive_vars:    Per-dataset-variable passive flags.
+            var_sharing:     Per-dataset-variable sharing zone indices.
+            con_sharing:     Source zone index for connectivity sharing
+                             (``0`` = no sharing).  When non-zero the
+                             connectivity block is omitted.
+            face_neighbors:  Accepted for interface compatibility; ignored in
+                             the ASCII format (face-neighbour data is not
+                             representable in ASCII DAT files).
+            face_nbr_mode:   Accepted for interface compatibility; ignored.
+            solution_time:   Solution time for transient data.
+            strand_id:       Strand ID.
+            aux:             Zone-level auxiliary data ``{name: value}``.
+
+        Raises:
+            NotImplementedError: If *zone_type* is ``FEPOLYGON`` or
+                                 ``FEPOLYHEDRON``.
+            ValueError:          On variable-count or array-length mismatch.
         """
-        self._ensure_open()
-        zone_type_upper = zone_type.upper()
-        if zone_type_upper not in _NODES_PER_ELEM:
-            raise ValueError(
-                f"Unknown FE zone type: {zone_type!r}.  "
-                f"Expected one of {list(_NODES_PER_ELEM)}"
+        # Guard unsupported types first so error surfaces before lazy-open
+        if zone_type in _FE_POLY:
+            raise NotImplementedError(
+                f"Zone type {zone_type.name!r} is not supported by "
+                "write_fe_zone.  FEPOLYGON and FEPOLYHEDRON zones require "
+                "face-based connectivity which is not yet implemented for "
+                "the ASCII writer."
+            )
+        if zone_type not in _FE_SIMPLE:
+            raise NotImplementedError(
+                f"Zone type {zone_type!r} is not supported by write_fe_zone."
             )
 
-        is_face_based = zone_type_upper in _FACE_BASED_ZONE_TYPES
-        num_faces: Optional[int] = None
-        if is_face_based:
-            if face_node_counts is None or face_nodes is None:
-                raise ValueError(
-                    f"Zone type {zone_type!r} requires face_node_counts "
-                    "and face_nodes."
-                )
-            num_faces = int(np.asarray(face_node_counts).size)
+        # Default title
+        if title is None:
+            title = f"FE_Zone_{self.current_zone + 1}"
 
-        header = self._build_zone_header(
+        # Auto-generate variable names for lazy open if not provided
+        if variables is None:
+            variables = [f"V{i}" for i in range(1, len(data) + 1)]
+
+        # Lazy open + flush buffered aux data on the first zone
+        if not self._opened:
+            self._open(variables)
+            self.flush_aux()
+
+        # Infer per-variable data types
+        variable_types = [_infer_data_type(np.asarray(arr)) for arr in data]
+
+        # Default value locations — all nodal
+        if value_locations is None:
+            value_locations = [ValueLocation.NODAL] * len(data)
+
+        # Default passive / sharing vectors (dataset-length)
+        if passive_vars is None:
+            passive_vars = [False] * len(self.variables)
+        if var_sharing is None:
+            var_sharing = [0] * len(self.variables)
+
+        # ---- Validate active variable count ----
+        if len(data) != len(self.variables):
+            expected_vars = sum(
+                1
+                for is_passive, share_zone in zip(
+                    passive_vars, var_sharing, strict=True
+                )
+                if not is_passive and not share_zone
+            )
+            if expected_vars == 0:
+                raise ValueError(
+                    "No active variables to write — all variables are either "
+                    "passive or shared."
+                )
+            if len(data) == 0:
+                raise ValueError(
+                    f"No data arrays provided. Expected {expected_vars} active "
+                    "variable arrays based on passive_vars and var_sharing."
+                )
+            if len(data) != expected_vars:
+                raise ValueError(
+                    f"Expected {expected_vars} data arrays for active variables, "
+                    f"got {len(data)}."
+                )
+
+        # ---- Derive node/element counts from node_map ----
+        node_map_arr = np.asarray(node_map)
+        num_cells = int(node_map_arr.shape[0])
+        num_nodes = int(node_map_arr.max())
+
+        # ---- Validate per-variable array lengths ----
+        for i, (arr, loc) in enumerate(zip(data, value_locations, strict=True)):
+            arr_np = np.asarray(arr)
+            if loc == ValueLocation.NODAL and arr_np.size != num_nodes:
+                raise ValueError(
+                    f"Array {i} is NODAL but has {arr_np.size} values; "
+                    f"expected {num_nodes}."
+                )
+            if loc == ValueLocation.CELL_CENTERED and arr_np.size != num_cells:
+                raise ValueError(
+                    f"Array {i} is CELL_CENTERED but has {arr_np.size} values; "
+                    f"expected {num_cells}."
+                )
+
+        # ---- Determine active variable indices (1-based, dataset order) ----
+        active_var_idx = [
+            var_idx
+            for var_idx, (is_passive, share_zone) in enumerate(
+                zip(passive_vars, var_sharing, strict=True), start=1
+            )
+            if not is_passive and not share_zone
+        ]
+
+        # Build dataset-length value-location list
+        value_locations_global = [ValueLocation.NODAL] * len(self.variables)
+        for local_idx, var_idx in enumerate(active_var_idx):
+            value_locations_global[var_idx - 1] = value_locations[local_idx]
+
+        # ---- Write zone header ----
+        self._write_zone_header(
             title=title,
-            zone_type=zone_type_upper,
-            num_points=num_points,
-            num_elements=num_elements,
-            num_faces=num_faces,
+            zone_type=zone_type,
+            num_nodes=num_nodes,
+            num_elements=num_cells,
             solution_time=solution_time,
             strand_id=strand_id,
-            var_location=var_location,
             passive_vars=passive_vars,
-            shared_vars=shared_vars,
-            shared_connectivity=shared_connectivity,
+            var_sharing=var_sharing,
+            value_locations_global=value_locations_global,
+            con_sharing=con_sharing,
+            aux=aux,
         )
-        self._fp.write(header + "\n")
-        self._write_zone_auxdata(zone_auxdata)
+        self.current_zone += 1
 
-        # Variable data blocks
-        self._write_var_blocks(
-            var_data=var_data,
-            passive_vars=passive_vars,
-            shared_vars=shared_vars,
-        )
+        # ---- Write active variable data blocks ----
+        for arr, dt in zip(data, variable_types):
+            cast = np.asarray(arr, dtype=_DT_TO_DTYPE[dt]).ravel()
+            _write_array(self._fp, cast, self._float_fmt)
 
-        # Connectivity
-        if not is_face_based:
-            if shared_connectivity is None:
-                if connectivity is None:
-                    raise ValueError(
-                        "connectivity is required for non-face-based FE zones "
-                        "unless shared_connectivity is specified."
-                    )
-                self._write_connectivity(
-                    connectivity=connectivity,
-                    num_elements=num_elements,
-                    nodes_per_elem=_NODES_PER_ELEM[zone_type_upper],
+        # ---- Write connectivity (node map) ----
+        # node_map is already 1-based (same as binary writers).
+        if not con_sharing:
+            conn = np.asarray(node_map, dtype=np.intp)
+            conn = conn.reshape(num_cells, _NODES_PER_ELEM[zone_type])
+            for row in conn:
+                self._fp.write(
+                    " ".join(str(int(n)) for n in row) + "\n"
                 )
-        else:
-            # Polygon / polyhedron face data
-            self._write_face_based_connectivity(
-                zone_type=zone_type_upper,
-                face_node_counts=face_node_counts,
-                face_nodes=face_nodes,
-                face_left_elems=face_left_elems,
-                face_right_elems=face_right_elems,
-            )
 
     # ------------------------------------------------------------------
-    # Private helpers – header construction
+    # Private helpers
     # ------------------------------------------------------------------
 
     def _write_file_header(self) -> None:
-        """Emit TITLE, optional FILETYPE, and VARIABLES lines.
-
-        ``FILETYPE`` is written only for ``GRID`` and ``SOLUTION`` files.
-        ``FULL`` (the default) is deliberately omitted so that files remain
-        compatible with older Tecplot versions that do not recognise the
-        keyword.
-        """
+        """Write TITLE, optional FILETYPE, and VARIABLES lines."""
         fp = self._fp
-        fp.write(f'TITLE = {_quote(self._title)}\n')
-        # Emit FILETYPE only when it is not the default (FULL).
-        if self._file_type != "FULL":
-            fp.write(f"FILETYPE = {self._file_type}\n")
-        # Build VARIABLES line; quote names that contain spaces.
-        var_strs = " ".join(_quote(v) for v in self._variables)
-        fp.write(f"VARIABLES = {var_strs}\n")
-        self._header_written = True
+        fp.write(f'TITLE     = {_quote(self.title)}\n')
 
-    def _build_zone_header(
+        if self.file_type in _FILETYPE_STR:
+            fp.write(f"FILETYPE  = {_FILETYPE_STR[self.file_type]}\n")
+
+        var_strs = "\n".join(_quote(v) for v in self.variables)
+        fp.write(f"VARIABLES = {var_strs}\n")
+
+    def _write_zone_header(
         self,
         title: str,
-        zone_type: str,
-        i: int = 0,
-        j: int = 0,
-        k: int = 0,
-        num_points: int = 0,
+        zone_type: ZoneType,
+        imax: int = 0,
+        jmax: int = 0,
+        kmax: int = 0,
+        num_nodes: int = 0,
         num_elements: int = 0,
-        num_faces: Optional[int] = None,
         solution_time: float = 0.0,
-        strand_id: int = -1,
-        var_location: Optional[Dict[int, str]] = None,
-        passive_vars: Optional[Sequence[int]] = None,
-        shared_vars: Optional[Dict[int, Union[int, str]]] = None,
-        shared_connectivity: Optional[int] = None,
-    ) -> str:
-        """Build and return the ``ZONE`` header string (without trailing \\n)."""
-        parts: List[str] = [f"ZONE T={_quote(title)}"]
+        strand_id: int = 0,
+        passive_vars: Sequence[bool | int] | None = None,
+        var_sharing: Sequence[int] | None = None,
+        value_locations_global: list[ValueLocation] | None = None,
+        con_sharing: int = 0,
+        aux: dict[str, Any] | None = None,
+    ) -> None:
+        """Emit a ``ZONE`` header followed by any zone-level ``AUXDATA`` lines."""
+        fp = self._fp
+        zt_str = _ZONETYPE_STR[zone_type]
 
-        parts.append(f"ZONETYPE={zone_type}")
+        fp.write(f'ZONE T={_quote(title)}\n')
+        fp.write(f' STRANDID={strand_id}, SOLUTIONTIME={solution_time}\n')
 
-        if zone_type == ORDERED_ZONE_TYPE:
-            parts.append(f"I={i}")
-            parts.append(f"J={j}")
-            parts.append(f"K={k}")
+        if zone_type == ZoneType.ORDERED:
+            fp.write(f' I={imax}, J={jmax}, K={kmax}\n')
+            fp.write(f' ZONETYPE={zt_str},\n')
         else:
-            parts.append(f"N={num_points}")
-            parts.append(f"E={num_elements}")
-            if num_faces is not None:
-                parts.append(f"FACES={num_faces}")
-
-        parts.append("DATAPACKING=BLOCK")
-
-        if strand_id >= 0:
-            parts.append(f"STRANDID={strand_id}")
-            parts.append(f"SOLUTIONTIME={format(solution_time, self._float_fmt)}")
-        elif solution_time != 0.0:
-            parts.append(f"SOLUTIONTIME={format(solution_time, self._float_fmt)}")
-
-        # Variable locations
-        if var_location:
-            loc_parts = self._build_varloc_param(var_location)
-            if loc_parts:
-                parts.append(loc_parts)
-
-        # Passive variables (1-based list)
-        if passive_vars:
-            one_based = [str(v + 1) for v in passive_vars]
-            parts.append(f"PASSIVEVARLIST=[{','.join(one_based)}]")
-
-        # Shared variables
-        if shared_vars:
-            sv_parts = self._build_shared_var_param(shared_vars)
-            if sv_parts:
-                parts.append(sv_parts)
-
-        # Shared connectivity
-        if shared_connectivity is not None:
-            parts.append(f"CONNECTIVITYSHAREZONE={shared_connectivity}")
-
-        # Tecplot uses comma+space as separators on the ZONE header line.
-        return ", ".join(parts)
-
-    def _build_varloc_param(
-        self, var_location: Dict[int, str]
-    ) -> str:
-        """Build the ``VARLOCATION`` parameter string."""
-        # Only emit entries that differ from NODAL (the default).
-        cell_centered = sorted(
-            v for v, loc in var_location.items()
-            if loc.upper() == "CELLCENTERED"
-        )
-        if not cell_centered:
-            return ""
-        one_based = [str(v + 1) for v in cell_centered]
-        return f"VARLOCATION=([{','.join(one_based)}]=CELLCENTERED)"
-
-    def _build_shared_var_param(
-        self, shared_vars: Dict[int, Union[int, str]]
-    ) -> str:
-        """Build the ``VARSHARELIST`` parameter string."""
-        # Entries are: 1-based-index=source_zone (integer) or FECONNECT.
-        entries: List[str] = []
-        for var_idx, src in sorted(shared_vars.items()):
-            one_based = var_idx + 1
-            if isinstance(src, str):
-                entries.append(f"{one_based}={src}")
-            else:
-                entries.append(f"{one_based}={src}")
-        if not entries:
-            return ""
-        return f"VARSHARELIST=([{','.join(entries)}])"
-
-    # ------------------------------------------------------------------
-    # Private helpers – data writing
-    # ------------------------------------------------------------------
-
-    def _ensure_open(self) -> None:
-        if self._fp is None or self._fp.closed:
-            raise IOError(
-                "Write is not open.  Use it as a context manager: "
-                "with Write(...) as w: ..."
+            fp.write(
+                f' Nodes={num_nodes}, Elements={num_elements},'
+                f' ZONETYPE={zt_str}\n'
             )
 
-    def _write_zone_auxdata(
-        self, zone_auxdata: Optional[Dict[str, str]]
-    ) -> None:
-        """Write zero or more ``AUXDATA`` records inside a zone."""
-        if not zone_auxdata:
-            return
-        for name, value in zone_auxdata.items():
-            self._fp.write(f"AUXDATA {name} = {_quote(value)}\n")
+        fp.write(' DATAPACKING=BLOCK\n')
 
-    def _write_var_blocks(
-        self,
-        var_data: Sequence[Optional[ArrayLike]],
-        passive_vars: Optional[Sequence[int]],
-        shared_vars: Optional[Dict[int, Union[int, str]]],
-    ) -> None:
-        """Write one BLOCK-format data block per active variable."""
-        passive_set: frozenset = frozenset(passive_vars or [])
-        shared_set: frozenset = frozenset((shared_vars or {}).keys())
+        # VARLOCATION — emit only cell-centred entries
+        if value_locations_global:
+            cc_indices = [
+                i + 1
+                for i, loc in enumerate(value_locations_global)
+                if loc == ValueLocation.CELL_CENTERED
+            ]
+            if cc_indices:
+                idx_str = ",".join(str(i) for i in cc_indices)
+                fp.write(f' VARLOCATION=([{idx_str}]=CELLCENTERED)\n')
 
-        for var_idx, data in enumerate(var_data):
-            if var_idx in passive_set or var_idx in shared_set:
-                # Passive / shared variables produce no data in this zone.
-                continue
-            if data is None:
-                raise ValueError(
-                    f"var_data[{var_idx}] is None but variable {var_idx} is "
-                    "not in passive_vars or shared_vars."
+        # PASSIVEVARLIST
+        if passive_vars:
+            passive_indices = [
+                str(i + 1)
+                for i, flag in enumerate(passive_vars)
+                if flag
+            ]
+            if passive_indices:
+                fp.write(
+                    f' PASSIVEVARLIST=[{",".join(passive_indices)}]\n'
                 )
-            arr = np.asarray(data).ravel()
-            self._write_values(arr)
 
-    def _write_values(self, arr: NDArray) -> None:
-        r"""Write a flat 1-D array to the file, *values_per_line* per line."""
-        fp = self._fp
-        vpl = self._vpl
-        fmt = self._float_fmt
-        n = len(arr)
-        is_float = np.issubdtype(arr.dtype, np.floating)
-
-        for start in range(0, n, vpl):
-            chunk = arr[start: start + vpl]
-            if is_float:
-                line = " ".join(format(v, fmt) for v in chunk)
-            else:
-                # Integer-typed arrays (e.g. connectivity)
-                line = " ".join(str(int(v)) for v in chunk)
-            fp.write(line + "\n")
-
-    def _write_connectivity(
-        self,
-        connectivity: ArrayLike,
-        num_elements: int,
-        nodes_per_elem: int,
-    ) -> None:
-        r"""Write a classic (non-face-based) connectivity list.
-
-        Parameters
-        ----------
-        connectivity:
-            Shape ``(num_elements, nodes_per_elem)`` using 1-based node
-            indices.  May also be a flat array of length
-            ``num_elements * nodes_per_elem``.
-        num_elements:
-            Number of elements.
-        nodes_per_elem:
-            Nodes per element implied by the zone type.
-        """
-        conn = np.asarray(connectivity, dtype=np.intp)
-        conn = conn.reshape(num_elements, nodes_per_elem)
-        fp = self._fp
-        for row in conn:
-            fp.write(" ".join(str(int(n)) for n in row) + "\n")
-
-    def _write_face_based_connectivity(
-        self,
-        zone_type: str,
-        face_node_counts: ArrayLike,
-        face_nodes: ArrayLike,
-        face_left_elems: Optional[ArrayLike],
-        face_right_elems: Optional[ArrayLike],
-    ) -> None:
-        """Write FEPOLYGON / FEPOLYHEDRON face connectivity data."""
-        fnc = np.asarray(face_node_counts, dtype=np.intp).ravel()
-        fn = np.asarray(face_nodes, dtype=np.intp).ravel()
-
-        # Face node counts
-        self._write_values(fnc)
-        # Face nodes
-        self._write_values(fn)
-
-        if zone_type == "FEPOLYHEDRON":
-            if face_left_elems is None or face_right_elems is None:
-                raise ValueError(
-                    "FEPOLYHEDRON zones require face_left_elems and "
-                    "face_right_elems."
+        # VARSHARELIST
+        if var_sharing and any(var_sharing):
+            share_entries = [
+                f"[{i + 1}]={z}"
+                for i, z in enumerate(var_sharing)
+                if z
+            ]
+            if share_entries:
+                fp.write(
+                    f' VARSHARELIST=({",".join(share_entries)})\n'
                 )
-            fle = np.asarray(face_left_elems, dtype=np.intp).ravel()
-            fre = np.asarray(face_right_elems, dtype=np.intp).ravel()
-            self._write_values(fle)
-            self._write_values(fre)
+
+        # CONNECTIVITYSHAREZONE
+        if con_sharing:
+            fp.write(f' CONNECTIVITYSHAREZONE={con_sharing}\n')
+
+        # Zone-level aux data
+        if aux:
+            for name, value in aux.items():
+                fp.write(f' AUXDATA {name}={_quote(value)}\n')
