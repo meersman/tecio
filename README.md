@@ -53,8 +53,8 @@ with tecio.open("pres.szplt", "w") as szl_out:
 
 ## Structure
 
-- `dat.py`      - High level Tecplot ascii API (Not implemented yet)
-- `plt.py`      - High level PLT file API
+- `dat.py`      - High level Tecplot ascii API (dat.Read not implemented yet)
+- `plt.py`      - High level PLT file API (plt.Read not implemented yet)
 - `szl.py`      - High level SZL file API
 - `libtecio.py` - TecIO C bindings
 
