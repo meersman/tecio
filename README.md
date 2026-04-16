@@ -26,9 +26,14 @@ print(szl_in.variables)
 x = [szl_in.zone[i].x for i in range(len(szl_in.zone))]
 y = [szl_in.zone[i].y for i in range(len(szl_in.zone))]
 z = [szl_in.zone[i].z for i in range(len(szl_in.zone))]
-pressure = [szl_in.zone[i].pres for i in range(len(szl_in.zone))]
 
-# Write out just pressure variable
+# Create nondimensional pressure variable
+pressure = [
+    szl_in.zone[i].pres / szl_in.auxdata["Common.ReferencePressure"]
+    for i in range(len(szl_in.zone))
+]
+
+# Write out grid and nodimensional pressure variable
 with tecio.open("pres.szplt", "w") as szl_out:
     for i in range(len(x)):
         if szl_in.zone[i].zone_type == ZoneType.ORDERED:
@@ -43,7 +48,7 @@ with tecio.open("pres.szplt", "w") as szl_out:
                 variables=["x", "y", "z", "pressure"],
                 data=[x[i], y[i], z[i], pressure[i]],
                 node_map=szl_in.zone[i].node_map,
-            )    
+            )
 ```
 
 ## Structure
