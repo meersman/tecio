@@ -9,6 +9,17 @@ import numpy.typing as npt
 # Functions to create all supported Tecplot data formats
 #=======================================================================================
 
+def scalar_field(
+    x: np.ndarray,
+    y: np.ndarray,
+    z: np.ndarray | None = None,
+) -> np.ndarray:
+    """Return a simple sin-cos scalar field over the supplied coordinate arrays."""
+    if z is not None:
+        return np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y) * (1.0 + 0.1 * z)
+    return np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
+
+
 def create_ordered(
     ijk: tuple[int, ...],
 ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:

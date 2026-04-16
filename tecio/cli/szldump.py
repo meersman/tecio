@@ -4,6 +4,7 @@
 """
 
 import argparse
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -11,9 +12,7 @@ from ..libtecio import ZoneType
 from ..szl import Read
 
 
-def main():
-    """Print all available info for the given SZPLT file."""
-    # Get command line input
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Dump all contents of a SZPLT file.")
     parser.add_argument(
         "filename",
@@ -47,7 +46,13 @@ def main():
         default=100,
     )
 
-    args = parser.parse_args()
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Print all available info for the given SZPLT file."""
+    # Get command line input
+    args = _parse_args(argv)
 
     # Set numpy array print option
     np.set_printoptions(threshold=args.maxvals)
@@ -131,6 +136,8 @@ def main():
                     prefix="  Connectivity    : ", separator=", "
                 )
                 print(f"  Connectivity    : {value_str}")
+
+    return 0
 
 
 if __name__ == "__main__":

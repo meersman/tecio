@@ -1,49 +1,31 @@
 #!/usr/bin/env python3
-r"""Tests for the :class:`plt.Write` higher-level writing API.
-
-Data-generation helpers are shared with ``test_libtecio`` so both test suites always
-exercise identical geometric cases.
-"""
+r"""Tests for the :class:`plt.Write` higher-level writing API."""
 
 import numpy as np
-from create_test_data import *
 import tecio
 from tecio.libtecio import FaceNeighborMode, ValueLocation, ZoneType
 
-# ===========================================================================
-# Local helpers
-# ===========================================================================
+from create_test_data import *
 
 
-def _scalar_field(
-    x: np.ndarray,
-    y: np.ndarray,
-    z: np.ndarray | None = None,
-) -> np.ndarray:
-    """Return a simple sin-cos scalar field over the supplied coordinate arrays."""
-    if z is not None:
-        return np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y) * (1.0 + 0.1 * z)
-    return np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
-
-
-# ===========================================================================
+#=======================================================================================
 # IJK-ordered zone tests
-# ===========================================================================
-
+#=======================================================================================
 
 def test_write_ijk_3d() -> None:
-    """Write a 3-D ordered zone (I, J, K all > 1).
+    """Write a 3D ordered zone (I, J, K all > 1).
 
     Demonstrates:
-    - 3-D structured zone writing
+    - 3D Structured zone writing
     - Mixed nodal / cell-centred variables
+    - Variable sharing across zones
     """
     try:
         i, j, k = 3, 4, 5
         x, y, z = create_ordered((i, j, k))
-        c = _scalar_field(x, y, z)
+        c = scalar_field(x, y, z)
 
-        # Cell-centred array: shape (I-1) x (J-1) x (K-1)
+        # Cell-centered array: shape (I-1) x (J-1) x (K-1)
         cc = np.random.rand(i - 1, j - 1, k - 1)
 
         with tecio.open("test_plt_write_ijk_3d.plt", "w") as pltfile:
@@ -55,12 +37,12 @@ def test_write_ijk_3d() -> None:
             pltfile.write_ijk_zone(
                 data=[cc],
                 title="zone_cc",
-                var_sharing=[1, 1, 1, 0],
+                var_sharing=[1, 1, 1, 0],  # share x,y,z from first zone
                 value_locations=[ValueLocation.CELL_CENTERED],
             )
         print("PASS: test_write_ijk_3d")
-    except Exception as e:
-        print(f"FAIL: test_write_ijk_3d: {e}")
+    except Exception as exc:
+        print(f"FAIL: test_write_ijk_3d: {exc}")
 
 
 def test_write_ijk_unsteady() -> None:
@@ -70,13 +52,6 @@ def test_write_ijk_unsteady() -> None:
     - Strand ID and solution time for unsteady data
     - Zone-level auxiliary data
     - Variable sharing across zones
-
-    Note:
-        In the PLT classic API, variable sharing (``var_sharing``) is passed
-        as part of the zone header via ``teczne142``.  The first zone in a
-        strand must supply all variable data; subsequent zones may share
-        coordinate variables from zone 1 and supply only the changing field.
-
     """
     try:
         i, j, k = 100, 50, 20
@@ -87,9 +62,9 @@ def test_write_ijk_unsteady() -> None:
 
         with tecio.open("test_plt_write_ijk_unsteady.plt", "w") as pltfile:
             for n, t in enumerate(solution_times):
-                c = _scalar_field(x + t, y + t, z).astype(np.float32)
+                c = scalar_field(x + t, y + t, z).astype(np.float32)
                 if n == 0:
-                    # First write: supply all variable arrays
+                    # On first write: supply all variable arrays
                     pltfile.write_ijk_zone(
                         data=[x, y, z, c],
                         variables=["x", "y", "z", "c"],
@@ -98,7 +73,7 @@ def test_write_ijk_unsteady() -> None:
                         aux=aux,
                     )
                 else:
-                    # Subsequent writes: share x, y, z from zone 1; write only c
+                    # On subsequent writes, only write the changing variable (c)
                     pltfile.write_ijk_zone(
                         data=[c],
                         var_sharing=[1, 1, 1, 0],  # share x,y,z from zone 1
@@ -107,14 +82,13 @@ def test_write_ijk_unsteady() -> None:
                         aux=aux,
                     )
         print("PASS: test_write_ijk_unsteady")
-    except Exception as e:
-        print(f"FAIL: test_write_ijk_unsteady: {e}")
+    except Exception as exc:
+        print(f"FAIL: test_write_ijk_unsteady: {exc}")
 
 
-# ---------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------
 # Exception-raising tests for invalid input data
-# ---------------------------------------------------------------------------
-
+#---------------------------------------------------------------------------------------
 
 def test_write_ijk_var_count_mismatch() -> None:
     """write_ijk_zone must raise ValueError when data count != active variable count.
@@ -141,8 +115,8 @@ def test_write_ijk_var_count_mismatch() -> None:
             )
     except ValueError:
         print("PASS: test_write_ijk_var_count_mismatch")
-    except Exception as e:
-        print(f"FAIL: test_write_ijk_var_count_mismatch: unexpected exception: {e}")
+    except Exception as exc:
+        print(f"FAIL: test_write_ijk_var_count_mismatch: unexpected exception: {exc}")
 
 
 def test_write_ijk_shape_mismatch() -> None:
@@ -170,37 +144,33 @@ def test_write_ijk_shape_mismatch() -> None:
         print("FAIL: test_write_ijk_shape_mismatch: expected ValueError, got none")
     except ValueError:
         print("PASS: test_write_ijk_shape_mismatch")
-    except Exception as e:
-        print(f"FAIL: test_write_ijk_shape_mismatch: unexpected exception: {e}")
+    except Exception as exc:
+        print(f"FAIL: test_write_ijk_shape_mismatch: unexpected exception: {exc}")
 
 
-# ===========================================================================
+#=======================================================================================
 # FE zone tests — one per zone type
-# ===========================================================================
-
+#=======================================================================================
 
 def test_write_fe_cells() -> None:
     """Write all FE cell shapes.
 
     Demonstrates:
     - All FE cell shapes (line seg, tri, quad, tet, pyramid, prism, brick)
-    - Face-neighbour connectivity
-    - Mixed nodal / cell-centred variables
-
-    Note:
-        Unlike the SZL writer, the PLT classic API writes all zones to a
-        single file sequentially.  The ``with`` block therefore covers every
-        zone shape.
-
+    - Face neighbor connectivity for FE cells
+    - Passive variable support
+    - Mixed nodal / cell-centered variables
     """
+    # Shape offset to view all at once
     offset = 2
+
     try:
         with tecio.open("test_plt_write_fe_cells.plt", "w") as pltfile:
 
-            # FE line segment
+            # Write a FE line segment
             try:
                 x, y, nodes = create_FE_lineseg()
-                c = _scalar_field(x, y)
+                c = scalar_field(x, y)
                 pltfile.write_fe_zone(
                     zone_type=ZoneType.FELINESEG,
                     data=[x, y, c],
@@ -210,13 +180,13 @@ def test_write_fe_cells() -> None:
                     passive_vars=[False, False, True, False]
                 )
                 print("PASS: test_write_fe_lineseg")
-            except Exception as e:
-                print(f"FAIL: test_write_fe_lineseg: {e}")
+            except Exception as exc:
+                print(f"FAIL: test_write_fe_lineseg: {exc}")
 
-            # FE triangle
+            # Write a FE triangle
             try:
                 x, y, nodes = create_FE_tri()
-                c = _scalar_field(x, y)
+                c = scalar_field(x, y)
                 x = x + offset
                 pltfile.write_fe_zone(
                     zone_type=ZoneType.FETRIANGLE,
@@ -227,14 +197,14 @@ def test_write_fe_cells() -> None:
                     passive_vars=[False, False, True, False]
                 )
                 print("PASS: test_write_fe_tri")
-            except Exception as e:
-                print(f"FAIL: test_write_fe_tri: {e}")
+            except Exception as exc:
+                print(f"FAIL: test_write_fe_tri: {exc}")
 
-            # FE quadrilateral
+            # Write a FE quadrilateral
             try:
                 x, y, nodes = create_FE_quad()
-                c = _scalar_field(x, y)
-                x = x + 2 * offset
+                c = scalar_field(x, y)
+                x = x + 2*offset
                 pltfile.write_fe_zone(
                     zone_type=ZoneType.FEQUADRILATERAL,
                     data=[x, y, c],
@@ -244,14 +214,14 @@ def test_write_fe_cells() -> None:
                     passive_vars=[False, False, True, False]
                 )
                 print("PASS: test_write_fe_quad")
-            except Exception as e:
-                print(f"FAIL: test_write_fe_quad: {e}")
+            except Exception as exc:
+                print(f"FAIL: test_write_fe_quad: {exc}")
 
-            # FE tetrahedron
+            # Write a FE tetrahedron
             try:
                 x, y, z, nodes = create_FE_tet()
-                c = _scalar_field(x, y)
-                x = x + 3 * offset
+                c = scalar_field(x, y)
+                x = x + 3*offset
                 pltfile.write_fe_zone(
                     zone_type=ZoneType.FETETRAHEDRON,
                     data=[x, y, z, c],
@@ -260,14 +230,14 @@ def test_write_fe_cells() -> None:
                     variables=["x", "y", "z", "c"],
                 )
                 print("PASS: test_write_fe_tet")
-            except Exception as e:
-                print(f"FAIL: test_write_fe_tet: {e}")
+            except Exception as exc:
+                print(f"FAIL: test_write_fe_tet: {exc}")
 
-            # FE pyramid as degenerate FEBRICK
+            # Write a FE pyramid as degenerate FEBRICK
             try:
                 x, y, z, nodes = create_FE_pyramid()
-                c = _scalar_field(x, y)
-                x = x + 4 * offset
+                c = scalar_field(x, y)
+                x = x + 4*offset
                 pltfile.write_fe_zone(
                     zone_type=ZoneType.FEBRICK,
                     data=[x, y, z, c],
@@ -276,14 +246,14 @@ def test_write_fe_cells() -> None:
                     variables=["x", "y", "z", "c"],
                 )
                 print("PASS: test_write_fe_pyramid")
-            except Exception as e:
-                print(f"FAIL: test_write_fe_pyramid: {e}")
+            except Exception as exc:
+                print(f"FAIL: test_write_fe_pyramid: {exc}")
 
-            # FE triangular prism as degenerate FEBRICK
+            # Write a FE triangular prism as degenerate FEBRICK
             try:
                 x, y, z, nodes = create_FE_prism()
-                c = _scalar_field(x, y)
-                x = x + 5 * offset
+                c = scalar_field(x, y)
+                x = x + 5*offset
                 pltfile.write_fe_zone(
                     zone_type=ZoneType.FEBRICK,
                     data=[x, y, z, c],
@@ -292,14 +262,14 @@ def test_write_fe_cells() -> None:
                     variables=["x", "y", "z", "c"],
                 )
                 print("PASS: test_write_fe_prism")
-            except Exception as e:
-                print(f"FAIL: test_write_fe_prism: {e}")
+            except Exception as exc:
+                print(f"FAIL: test_write_fe_prism: {exc}")
 
-            # FEBRICK
+            # Write a FEBRICK
             try:
                 x, y, z, _faces, nodes = create_FE_brick()
-                c = _scalar_field(x, y)
-                x = x + 6 * offset
+                c = scalar_field(x, y)
+                x = x + 6*offset
                 pltfile.write_fe_zone(
                     zone_type=ZoneType.FEBRICK,
                     data=[x, y, z, c],
@@ -308,14 +278,14 @@ def test_write_fe_cells() -> None:
                     variables=["x", "y", "z", "c"],
                 )
                 print("PASS: test_write_fe_brick")
-            except Exception as e:
-                print(f"FAIL: test_write_fe_brick: {e}")
+            except Exception as exc:
+                print(f"FAIL: test_write_fe_brick: {exc}")
 
-            # Two adjacent FEBRICKs with explicit face-neighbour connections
+            # Write two adjacent FEBRICK cells with explicit face-neighbour connections
             try:
                 x, y, z, nodes, face_neighbors = create_FE_two_bricks()
                 c = np.array([1, 2])
-                x = x + 7 * offset
+                x = x + 7*offset
                 pltfile.write_fe_zone(
                     zone_type=ZoneType.FEBRICK,
                     data=[x, y, z, c],
@@ -332,19 +302,19 @@ def test_write_fe_cells() -> None:
                     face_nbr_mode=FaceNeighborMode.LOCAL_ONE_TO_ONE,
                 )
                 print("PASS: test_write_fe_face_neighbors")
-            except Exception as e:
-                print(f"FAIL: test_write_fe_face_neighbors: {e}")
+            except Exception as exc:
+                print(f"FAIL: test_write_fe_face_neighbors: {exc}")
 
-    except Exception as e:
-        print(f"FAIL: test_write_fe_cells: {e}")
+    except Exception as exc:
+        print(f"FAIL: test_write_fe_cells: {exc}")
 
 
 def test_write_fe_unsteady() -> None:
     """Write multiple FE zones with strand ID and solution time.
 
     Demonstrates:
-    - Strand ID and solution time for unsteady FE data
-    - Zone-level auxiliary data on every time step
+    - Strand ID and solution time for unsteady data
+    - Zone-level auxiliary data
     """
     try:
         x, y, z, nodes = create_FE_tet()
@@ -358,9 +328,9 @@ def test_write_fe_unsteady() -> None:
         ) as pltfile:
             for step, t in enumerate(solution_times):
                 c = np.sin(x + t) * np.cos(y + t)
-                x = x + np.random.rand() / 10
-                y = y + np.random.rand() / 10
-                z = z + np.random.rand() / 10
+                x = x + np.random.rand()/10
+                y = y + np.random.rand()/10
+                z = z + np.random.rand()/10
                 pltfile.write_fe_zone(
                     zone_type=ZoneType.FETETRAHEDRON,
                     data=[x, y, z, c],
@@ -371,14 +341,13 @@ def test_write_fe_unsteady() -> None:
                     aux={"MeshType": "unstructured", "Author": "test_plt_write"},
                 )
         print("PASS: test_write_fe_unsteady")
-    except Exception as e:
-        print(f"FAIL: test_write_fe_unsteady: {e}")
+    except Exception as exc:
+        print(f"FAIL: test_write_fe_unsteady: {exc}")
 
 
-# ---------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------
 # Exception-raising tests for invalid input data
-# ---------------------------------------------------------------------------
-
+#---------------------------------------------------------------------------------------
 
 def test_write_fe_var_count_mismatch() -> None:
     """write_fe_zone must raise ValueError when data count != active variable count."""
@@ -400,8 +369,8 @@ def test_write_fe_var_count_mismatch() -> None:
         print("FAIL: test_write_fe_var_count_mismatch: expected ValueError, got none")
     except ValueError:
         print("PASS: test_write_fe_var_count_mismatch")
-    except Exception as e:
-        print(f"FAIL: test_write_fe_var_count_mismatch: unexpected exception: {e}")
+    except Exception as exc:
+        print(f"FAIL: test_write_fe_var_count_mismatch: unexpected exception: {exc}")
 
 
 def test_write_fe_array_length_mismatch() -> None:
@@ -423,8 +392,8 @@ def test_write_fe_array_length_mismatch() -> None:
         )
     except ValueError:
         print("PASS: test_write_fe_array_length_mismatch")
-    except Exception as e:
-        print(f"FAIL: test_write_fe_array_length_mismatch: unexpected exception: {e}")
+    except Exception as exc:
+        print(f"FAIL: test_write_fe_array_length_mismatch: unexpected exception: {exc}")
 
 
 def test_write_fe_unsupported_zone_type() -> None:
@@ -446,21 +415,21 @@ def test_write_fe_unsupported_zone_type() -> None:
         )
     except NotImplementedError:
         print("PASS: test_write_fe_unsupported_zone_type")
-    except Exception as e:
-        print(f"FAIL: test_write_fe_unsupported_zone_type: unexpected exception: {e}")
+    except Exception as exc:
+        print(f"FAIL: test_write_fe_unsupported_zone_type: unexpected exception: {exc}")
 
 
-# ===========================================================================
+#=======================================================================================
 # Run all tests
-# ===========================================================================
+#=======================================================================================
 if __name__ == "__main__":
     # Ordered zone tests
     test_write_ijk_3d()
     test_write_ijk_unsteady()
-    # # FE zone tests
+    # FE zone tests
     test_write_fe_cells()
     test_write_fe_unsteady()
-    # # Validation tests (PASS = expected exception raised)
+    # Zone validation tests (pass = raise expected exception)
     test_write_ijk_var_count_mismatch()
     test_write_ijk_shape_mismatch()
     test_write_fe_var_count_mismatch()

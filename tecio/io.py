@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import plt, szl
+from . import dat, plt, szl
 
 _HANDLERS = {
     # New SZPLT API
@@ -37,12 +37,12 @@ _HANDLERS = {
     # Ascii format
     ".dat": {
         "r": None,
-        "w": None,
+        "w": dat.Write,
         "a": None,  # lambda path, **kw: _append_dat(path, **kw)
     },
     ".tec": {
         "r": None,
-        "w": None,
+        "w": dat.Write,
         "a": None,  # lambda path, **kw: _append_dat(path, **kw)
     },
 }

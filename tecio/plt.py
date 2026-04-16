@@ -1,26 +1,4 @@
-"""Higher level API for writing PLT binary files using the classic TecIO API.
-
-The PLT format is written through the *classic* TecIO API (``tec*142``
-functions), which differs from the SZL API in several important ways:
-
-* **Global state** — no file handle is returned.  The library maintains a
-  single implicit file context.  Only one file may be active at a time.
-* **Strict write order** — zone header (``teczne142``), then all variable
-  data (``tecdat142``), then connectivity (``tecnode142`` / ``tecface142``),
-  then the *next* zone header.  Data cannot be written out of order.
-* **Aux data ordering** — dataset- and variable-level aux data must be
-  written *after* ``tecini142`` but *before* the first ``teczne142`` call.
-  Zone-level aux data must be written immediately *after* its ``teczne142``
-  call and before any ``tecdat142`` call.
-* **Data type** — ``tecdat142`` only supports ``float32`` and ``float64``.
-  INT32 / INT16 / BYTE variables are upcast to ``float64`` on write; the
-  on-disk representation is therefore always floating-point in PLT files.
-* **One file at a time** — writing to multiple PLT files simultaneously is
-  not supported.  Use the SZL ``Write`` class for concurrent output.
-
-The public interface mirrors :class:`szl.Write` as closely as possible so
-that user code can switch between the two formats with minimal changes.
-"""
+"""Higher level API for writing PLT binary files using the classic TecIO API."""
 
 from __future__ import annotations
 

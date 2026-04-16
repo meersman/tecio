@@ -574,24 +574,19 @@ class ReadAuxData:
 #   write functions and infers/casts data type).
 #
 # Notes:
-# - add a call to open() in each zone writing function if self.handle==None
-# - add a call to flush_aux() in each zone writing funcion if self.handle==None
 # - flush_aux():
 #   - write dataset aux if self.aux_dataset is not empty
 #   - write variable aux if self.aux_var is not empty
 #   - after writing set both to empty with self.aux_dataset.clear() and
 #     self.aux_var.clear()
 # - Zone writers:
-#   - write_zone(): provide all parameters needed to fully write a zone. Will call the
-#     appropriate header writer and data writer
-#     - write_ijk_zone(): write zone header and optionally data for input ORDERED data
-#       - set default value location as NODAL
-#       - write default data as DOUBLE
-#       - if no data provided, just write header and set self.current_zone
-#       - support data provided as a list[npt.NDArrayLike, ...]
-#       - if var list already defined for whole dataset, do not require, but if not
-#         defined, throw error
-#     - write_fe_zone():
+#   - write_ijk_zone(): write zone header and optionally data for input ORDERED data
+#     - set default value location as NODAL
+#     - write default data as DOUBLE
+#     - support data provided as a list[npt.NDArrayLike, ...]
+#     - if var list already defined for whole dataset, do not require, but if not
+#       defined, throw error
+#   - write_fe_zone():
 # ======================================================================================
 
 # FE zone types that use tec_zone_create_fe

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-r"""Tests for the :class:`szl.Write` higher-level writing API."""
+r"""Tests for the :class:`dat.Write` higher-level writing API."""
 
 import numpy as np
 import tecio
@@ -28,13 +28,13 @@ def test_write_ijk_3d() -> None:
         # Cell-centered array: shape (I-1) x (J-1) x (K-1)
         cc = np.random.rand(i - 1, j - 1, k - 1)
 
-        with tecio.open("test_szl_write_ijk_3d.szplt", "w") as szlfile:
-            szlfile.write_ijk_zone(
+        with tecio.open("test_dat_write_ijk_3d.dat", "w") as datfile:
+            datfile.write_ijk_zone(
                 data=[x, y, z, c],
                 variables=["x", "y", "z", "c"],
                 title="zone_3d",
             )
-            szlfile.write_ijk_zone(
+            datfile.write_ijk_zone(
                 data=[cc],
                 title="zone_cc",
                 var_sharing=[1, 1, 1, 0],  # share x,y,z from first zone
@@ -58,14 +58,14 @@ def test_write_ijk_unsteady() -> None:
         x, y, z = create_ordered((i, j, k))
 
         solution_times = np.linspace(0.0, 2 * np.pi, 100)
-        aux = {"MeshType": "structured", "Author": "test_szl_write"}
+        aux = {"MeshType": "structured", "Author": "test_dat_write"}
 
-        with tecio.open("test_szl_write_ijk_unsteady.szplt", "w") as szlfile:
+        with tecio.open("test_dat_write_ijk_unsteady.dat", "w") as datfile:
             for n, t in enumerate(solution_times):
                 c = scalar_field(x + t, y + t, z).astype(np.float32)
                 if n == 0:
                     # On first write: supply all variable arrays
-                    szlfile.write_ijk_zone(
+                    datfile.write_ijk_zone(
                         data=[x, y, z, c],
                         variables=["x", "y", "z", "c"],
                         strand_id=1,
@@ -74,7 +74,7 @@ def test_write_ijk_unsteady() -> None:
                     )
                 else:
                     # On subsequent writes, only write the changing variable (c)
-                    szlfile.write_ijk_zone(
+                    datfile.write_ijk_zone(
                         data=[c],
                         var_sharing=[1, 1, 1, 0],  # share x,y,z from zone 1
                         strand_id=1,
@@ -101,12 +101,12 @@ def test_write_ijk_var_count_mismatch() -> None:
         x, y, _ = create_ordered((i, j, k))
 
         with tecio.open(
-            "test_szl_write_ijk_var_mismatch.szplt",
+            "test_dat_write_ijk_var_mismatch.dat",
             "w",
             title="mismatch_test",
             variables=["x", "y", "c"],  # 3 variables declared
-        ) as szlfile:
-            szlfile.write_ijk_zone(
+        ) as datfile:
+            datfile.write_ijk_zone(
                 data=[x, y],  # only 2 arrays supplied
                 title="zone_bad",
             )
@@ -132,11 +132,11 @@ def test_write_ijk_shape_mismatch() -> None:
         y_bad = y.squeeze(0)[:-1, :]  # shape (4, 4) — wrong
 
         with tecio.open(
-            "test_szl_write_ijk_shape_mismatch.szplt",
+            "test_dat_write_ijk_shape_mismatch.dat",
             "w",
             title="shape_test",
-        ) as szlfile:
-            szlfile.write_ijk_zone(
+        ) as datfile:
+            datfile.write_ijk_zone(
                 data=[x, y_bad],
                 title="zone_bad",
                 variables=["x", "y"],
@@ -165,13 +165,13 @@ def test_write_fe_cells() -> None:
     offset = 2
 
     try:
-        with tecio.open("test_szl_write_fe_cells.szplt", "w") as szlfile:
+        with tecio.open("test_dat_write_fe_cells.dat", "w") as datfile:
 
             # Write a FE line segment
             try:
                 x, y, nodes = create_FE_lineseg()
                 c = scalar_field(x, y)
-                szlfile.write_fe_zone(
+                datfile.write_fe_zone(
                     zone_type=ZoneType.FELINESEG,
                     data=[x, y, c],
                     node_map=nodes,
@@ -188,7 +188,7 @@ def test_write_fe_cells() -> None:
                 x, y, nodes = create_FE_tri()
                 c = scalar_field(x, y)
                 x = x + offset
-                szlfile.write_fe_zone(
+                datfile.write_fe_zone(
                     zone_type=ZoneType.FETRIANGLE,
                     data=[x, y, c],
                     node_map=nodes,
@@ -205,7 +205,7 @@ def test_write_fe_cells() -> None:
                 x, y, nodes = create_FE_quad()
                 c = scalar_field(x, y)
                 x = x + 2*offset
-                szlfile.write_fe_zone(
+                datfile.write_fe_zone(
                     zone_type=ZoneType.FEQUADRILATERAL,
                     data=[x, y, c],
                     node_map=nodes,
@@ -222,7 +222,7 @@ def test_write_fe_cells() -> None:
                 x, y, z, nodes = create_FE_tet()
                 c = scalar_field(x, y)
                 x = x + 3*offset
-                szlfile.write_fe_zone(
+                datfile.write_fe_zone(
                     zone_type=ZoneType.FETETRAHEDRON,
                     data=[x, y, z, c],
                     node_map=nodes,
@@ -238,7 +238,7 @@ def test_write_fe_cells() -> None:
                 x, y, z, nodes = create_FE_pyramid()
                 c = scalar_field(x, y)
                 x = x + 4*offset
-                szlfile.write_fe_zone(
+                datfile.write_fe_zone(
                     zone_type=ZoneType.FEBRICK,
                     data=[x, y, z, c],
                     node_map=nodes,
@@ -254,7 +254,7 @@ def test_write_fe_cells() -> None:
                 x, y, z, nodes = create_FE_prism()
                 c = scalar_field(x, y)
                 x = x + 5*offset
-                szlfile.write_fe_zone(
+                datfile.write_fe_zone(
                     zone_type=ZoneType.FEBRICK,
                     data=[x, y, z, c],
                     node_map=nodes,
@@ -270,7 +270,7 @@ def test_write_fe_cells() -> None:
                 x, y, z, _faces, nodes = create_FE_brick()
                 c = scalar_field(x, y)
                 x = x + 6*offset
-                szlfile.write_fe_zone(
+                datfile.write_fe_zone(
                     zone_type=ZoneType.FEBRICK,
                     data=[x, y, z, c],
                     node_map=nodes,
@@ -286,7 +286,7 @@ def test_write_fe_cells() -> None:
                 x, y, z, nodes, face_neighbors = create_FE_two_bricks()
                 c = np.array([1, 2])
                 x = x + 7*offset
-                szlfile.write_fe_zone(
+                datfile.write_fe_zone(
                     zone_type=ZoneType.FEBRICK,
                     data=[x, y, z, c],
                     node_map=nodes,
@@ -321,24 +321,24 @@ def test_write_fe_unsteady() -> None:
         solution_times = np.linspace(0.0, 2 * np.pi, 100)
 
         with tecio.open(
-            "test_szl_write_fe_unsteady.szplt",
+            "test_dat_write_fe_unsteady.dat",
             "w",
             title="fe_unsteady_test",
             variables=["x", "y", "z", "c"],
-        ) as szlfile:
+        ) as datfile:
             for step, t in enumerate(solution_times):
                 c = np.sin(x + t) * np.cos(y + t)
                 x = x + np.random.rand()/10
                 y = y + np.random.rand()/10
                 z = z + np.random.rand()/10
-                szlfile.write_fe_zone(
+                datfile.write_fe_zone(
                     zone_type=ZoneType.FETETRAHEDRON,
                     data=[x, y, z, c],
                     node_map=nodes,
                     title=f"zone_t{step + 1}",
                     strand_id=1,
                     solution_time=t,
-                    aux={"MeshType": "unstructured", "Author": "test_szl_write"},
+                    aux={"MeshType": "unstructured", "Author": "test_dat_write"},
                 )
         print("PASS: test_write_fe_unsteady")
     except Exception as exc:
@@ -355,12 +355,12 @@ def test_write_fe_var_count_mismatch() -> None:
         x, y, nodes = create_FE_tri()
 
         with tecio.open(
-            "test_szl_write_fe_var_mismatch.szplt",
+            "test_dat_write_fe_var_mismatch.dat",
             "w",
             title="fe_mismatch_test",
             variables=["x", "y", "c"],  # 3 variables declared
-        ) as szlfile:
-            szlfile.write_fe_zone(
+        ) as datfile:
+            datfile.write_fe_zone(
                 zone_type=ZoneType.FETRIANGLE,
                 data=[x, y],  # only 2 arrays
                 node_map=nodes,
@@ -379,8 +379,8 @@ def test_write_fe_array_length_mismatch() -> None:
         x, y, nodes = create_FE_tri()  # 4 nodes
         x_short = x[:-1]  # 3 values — one too few
 
-        with tecio.open("test_szl_write_fe_len_mismatch.szplt", "w") as szlfile:
-            szlfile.write_fe_zone(
+        with tecio.open("test_dat_write_fe_len_mismatch.dat", "w") as datfile:
+            datfile.write_fe_zone(
                 zone_type=ZoneType.FETRIANGLE,
                 data=[x_short, y],
                 node_map=nodes,
@@ -401,8 +401,8 @@ def test_write_fe_unsupported_zone_type() -> None:
     try:
         x, y, nodes = create_FE_tri()
 
-        with tecio.open("test_szl_write_fe_polygon.szplt", "w") as szlfile:
-            szlfile.write_fe_zone(
+        with tecio.open("test_dat_write_fe_polygon.dat", "w") as datfile:
+            datfile.write_fe_zone(
                 zone_type=ZoneType.FEPOLYGON,
                 data=[x, y],
                 node_map=nodes,
