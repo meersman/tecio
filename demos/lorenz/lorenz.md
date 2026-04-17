@@ -1,10 +1,10 @@
 # Create an animation of a Lorenz attractor
 
-This demo generates a Lorenz attractor using a numerical RK4 integrator, then writes both full and time-dependent trajectory data using the TecIO Python API for visualization and animation in Tecplot.
+This demo generates a Lorenz attractor using numerical RK4 integration, then writes both full and time-dependent trajectory data using the `tecio` Python API for visualization and animation in Tecplot.
 
 ---
 
-## 1. Lorenz system + RK4 integration
+## 1. Lorenz system
 
 We first define the Lorenz system:
 
@@ -49,7 +49,7 @@ This produces a full trajectory stored in `traj`.
 
 ## 2. Prepare data arrays
 
-```python id="prep"
+```python
 x = traj[:, 0]
 y = traj[:, 1]
 z = traj[:, 2]
