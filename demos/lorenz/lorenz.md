@@ -112,11 +112,7 @@ A second strand represents a single particle moving along the attractor:
         szl.write_ijk_zone(
             title="Particle",
             variables=["x", "y", "z", "t", "tau"],
-            data=[
-                x[i:i+1],
-                y[i:i+1],
-                z[i:i+1],
-            ],
+            data=[x[i:i+1], y[i:i+1], z[i:i+1]],
             passive_vars=[False, False, False, True, True],
             strand_id=2,
             solution_time=i * dt,
