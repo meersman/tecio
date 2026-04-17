@@ -140,6 +140,4 @@ $ tec360 -b lorenz.mcr
 ```
 
 Final result:
-<video controls width="600">
-  <source src="lorenz.mp4" type="video/mp4">
-</video>
+![lorenz-demo](lorenz.gif)
