@@ -140,4 +140,5 @@ $ tec360 -b lorenz.mcr
 ```
 
 Final result:
+
 ![lorenz-demo](lorenz.gif)
