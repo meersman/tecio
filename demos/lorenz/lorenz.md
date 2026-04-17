@@ -80,9 +80,7 @@ with tecio.open("lorenz.szplt", "w") as szl:
     )
 ```
 
----
-
-### 3.1 Growing trajectory (time-dependent animation)
+#### Growing trajectory (time-dependent animation)
 
 Each zone contains the trajectory up to time step *i*, with a solution time assigned:
 
@@ -105,9 +103,7 @@ Each zone contains the trajectory up to time step *i*, with a solution time assi
 
 This creates a time-stranded dataset that Tecplot can animate over.
 
----
-
-### 3.2 Moving particle representation
+#### Moving particle representation
 
 A second strand represents a single particle moving along the attractor:
 
