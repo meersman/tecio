@@ -7,7 +7,6 @@ help:
 	@echo ""
 	@echo "Setup:"
 	@echo "  make install          Install package dependencies"
-	@echo "  make install-cli      Install command line scripts"
 	@echo "  make install-dev      Install package + dev dependencies"
 	@echo ""
 	@echo "Code Quality:"
@@ -25,13 +24,6 @@ help:
 # Install package dependencies
 install:
 	pip install -e .
-	pipx install -e .
-	pipx ensurepath
-
-# Install only command line scripts
-install-cli:
-	pipx install -e .
-	pipx ensurepath
 
 # Install package + development dependencies
 install-dev:
@@ -40,11 +32,6 @@ install-dev:
 # Uninstall package
 uninstall:
 	pip uninstall tecio
-	pipx uninstall tecio
-
-# Uninstall command line scripts only
-uninstall-cli:
-	pipx uninstall tecio
 
 # Format code with black and isort
 format:

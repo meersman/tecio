@@ -36,12 +36,12 @@ _HANDLERS = {
     },
     # Ascii format
     ".dat": {
-        "r": None,
+        "r": dat.Read,
         "w": dat.Write,
         "a": None,  # lambda path, **kw: _append_dat(path, **kw)
     },
     ".tec": {
-        "r": None,
+        "r": dat.Read,
         "w": dat.Write,
         "a": None,  # lambda path, **kw: _append_dat(path, **kw)
     },
