@@ -67,8 +67,8 @@ make test    # Run pytest
 ```
 
 ## Demos
- * [Animate a Lorenz attactor](demos/lorenz/lorenz.md)
-
+ * [Lorenz attactor animation](demos/lorenz/lorenz.md)
+ * [Gravity wave animation around binary black holes](demos/gravity_waves/gravity_waves.md)
 ## References
 
 Tecplot data format specification: https://tecplot.azureedge.net/products/360/current/360-data-format.html
