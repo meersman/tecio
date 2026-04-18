@@ -1,6 +1,9 @@
 # Create an animation of a Lorenz attractor
 
-This demo generates a Lorenz attractor using numerical RK4 integration, then writes both full and time-dependent trajectory data using the `tecio` Python API for visualization and animation in Tecplot.
+This demo generates a Lorenz attractor using numerical RK4
+integration, then writes both full and time-dependent trajectory data
+using the `tecio` Python API for visualization and animation in
+Tecplot.
 
 ---
 
@@ -125,7 +128,7 @@ This allows Tecplot to animate a point following the trajectory.
 
 ## 4. Create animation with Tecplot
 
-To create the included animation run the included macro file in Tecplot batch mode from the command line
+To generate the included animation, run the included macro file in batch mode:
 
 ```bash
 $ tec360 -b lorenz.mcr

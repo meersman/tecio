@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ruff: noqa D100 D103
+# ruff: noqa: D100 D103
 
 import numpy as np
 from tqdm import tqdm
