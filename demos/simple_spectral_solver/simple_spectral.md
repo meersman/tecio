@@ -165,7 +165,7 @@ update is not yet divergence-free.  The pressure is recovered by taking the
 divergence of the momentum equation and invoking $\nabla \cdot \mathbf{u} = 0$:
 
 $$
-\nabla^2 p = \nabla \cdot \mathbf{u}^*\quad\Longrightarrow\quad\hat{p} = \frac{i\mathbf{k} \cdot \hat{\mathbf{u}}^*}{\lambda}= \frac{ik_x \hat{u}^* + ik_y \hat{v}^*}{(ik_x)^2 + (ik_y)^2}
+\nabla^2 p = \nabla \cdot \mathbf{u}^* \quad \Longrightarrow \quad \hat{p} = \frac{i\mathbf{k} \cdot \hat{\mathbf{u}}^*}{\lambda} = \frac{ik_x \hat{u}^* + ik_y \hat{v}^*}{(ik_x)^2 + (ik_y)^2}
 $$
 
 The mean pressure $\hat{p}_{00} = 0$ is enforced explicitly.  The velocity is
