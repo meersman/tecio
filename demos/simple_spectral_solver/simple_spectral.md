@@ -30,18 +30,11 @@ field.
 Writing out the two momentum equations explicitly:
 
 $$
-\frac{\partial u}{\partial t}
-= -\left(u \frac{\partial u}{\partial x} + v \frac{\partial u}{\partial y}\right)
-  - \frac{\partial p}{\partial x}
-  + \nu \left(\frac{\partial^2 u}{\partial x^2} + \frac{\partial^2 u}{\partial y^2}\right)
-  + f_x
+\frac{\partial u}{\partial t} = -\left(u \frac{\partial u}{\partial x} + v \frac{\partial u}{\partial y}\right) - \frac{\partial p}{\partial x} + \nu \left(\frac{\partial^2 u}{\partial x^2} + \frac{\partial^2 u}{\partial y^2}\right) + f_x
 $$
 
 $$
-\frac{\partial v}{\partial t}
-= -\left(u \frac{\partial v}{\partial x} + v \frac{\partial v}{\partial y}\right)
-  - \frac{\partial p}{\partial y}
-  + \nu \left(\frac{\partial^2 v}{\partial x^2} + \frac{\partial^2 v}{\partial y^2}\right)
+\frac{\partial v}{\partial t} = -\left(u \frac{\partial v}{\partial x} + v \frac{\partial v}{\partial y}\right) - \frac{\partial p}{\partial y} + \nu \left(\frac{\partial^2 v}{\partial x^2} + \frac{\partial^2 v}{\partial y^2}\right)
 $$
 
 ### External forcing
@@ -68,9 +61,7 @@ On a periodic domain of width $L_x$ and height $L_y$, any field $q(x,y)$ can
 be represented exactly by its 2-D discrete Fourier transform:
 
 $$
-\hat{q}_{mn} = \frac{1}{N_x N_y}
-\sum_{i=0}^{N_x-1} \sum_{j=0}^{N_y-1}
-q_{ij}\, e^{-2\pi i (mi/N_x + nj/N_y)}
+\hat{q}_{mn} = \frac{1}{N_x N_y} \sum_{i=0}^{N_x-1} \sum_{j=0}^{N_y-1} q_{ij}\, e^{-2\pi i (mi/N_x + nj/N_y)}
 $$
 
 with corresponding wavenumbers
@@ -82,8 +73,7 @@ $$
 In spectral space, spatial derivatives become simple multiplications:
 
 $$
-\widehat{\frac{\partial q}{\partial x}} = i k_x \hat{q}, \qquad
-\widehat{\frac{\partial^2 q}{\partial x^2}} = (i k_x)^2 \hat{q} = -k_x^2 \hat{q}
+\widehat{\frac{\partial q}{\partial x}} = i k_x \hat{q}, \qquad\widehat{\frac{\partial^2 q}{\partial x^2}} = (i k_x)^2 \hat{q} = -k_x^2 \hat{q}
 $$
 
 ### Spectral Laplacian
@@ -91,8 +81,7 @@ $$
 The scalar Laplacian in spectral space is therefore
 
 $$
-\widehat{\nabla^2 q} = \left[(ik_x)^2 + (ik_y)^2\right]\hat{q}
-= -\left(k_x^2 + k_y^2\right)\hat{q}
+\widehat{\nabla^2 q} = \left[(ik_x)^2 + (ik_y)^2\right]\hat{q} = -\left(k_x^2 + k_y^2\right)\hat{q}
 $$
 
 stored in the array `lap` in the code.  The zero-wavenumber mode is set to
