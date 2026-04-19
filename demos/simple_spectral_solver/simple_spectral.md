@@ -12,9 +12,7 @@ intervals using the `tecio` Python API for animation in Tecplot 360.
 The incompressible Navier–Stokes equations in 2-D are
 
 $$
-\frac{\partial \mathbf{u}}{\partial t}
-+ (\mathbf{u} \cdot \nabla)\mathbf{u}
-= -\nabla p + \nu \nabla^2 \mathbf{u} + \mathbf{f}
+\frac{\partial \mathbf{u}}{\partial t} + (\mathbf{u} \cdot \nabla)\mathbf{u} = -\nabla p + \nu \nabla^2 \mathbf{u} + \mathbf{f}
 $$
 
 $$
