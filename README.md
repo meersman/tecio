@@ -69,6 +69,8 @@ make test    # Run pytest
 ## Demos
  * [Lorenz attactor animation](demos/lorenz/lorenz.md)
  * [Gravity wave animation around binary black holes](demos/gravity_waves/gravity_waves.md)
+ * [Spectral incompressible Navier Stokes animation](demos/simple_spectral_solver/simple_spectral.md)
+ 
 ## References
 
 Tecplot data format specification: https://tecplot.azureedge.net/products/360/current/360-data-format.html

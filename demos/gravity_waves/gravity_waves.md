@@ -140,10 +140,12 @@ with tecio.open("gravity_waves.szplt", "w") as szl:
     ...
 ```
 
-### Save memory by writing coordinate arrays once
+### Save memory by writing coordinate arrays only once
 
-For the very first output frame (`szl.current_zone == 0`) the coordinate
-arrays `X` and `Y` are written alongside the solution field `phi`, but are shared from zone 1 for all subsequent arrays. This can be done cleanly from within the zone writing call as:
+For the very first output frame (`szl.current_zone == 0`) the
+coordinate arrays `X` and `Y` are written alongside the solution field
+`phi`, but are shared from zone 1 for all subsequent arrays. This can
+be done cleanly from within the zone writing call as:
 
 ```python
 szl.write_ijk_zone(
@@ -169,7 +171,7 @@ smooth animation of the evolving wave field.
 
 ---
 
-## 5. Create animation with Tecplot
+## 5. Animate results with Tecplot
 
 To generate the included animation, run the provided macro in batch mode:
 
