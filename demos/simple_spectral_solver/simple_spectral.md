@@ -167,9 +167,6 @@ divergence of the momentum equation and invoking $\nabla \cdot \mathbf{u} = 0$:
 $$
 \nabla^{2} p = \nabla \cdot \mathbf{u}^{*} \quad \Longrightarrow \quad \hat{p} = \frac{i\mathbf{k} \cdot \hat{\mathbf{u}}^{*}}{\lambda} = \frac{ik_x \hat{u}^{*} + ik_y \hat{v}^{*}}{(ik_x)^{2} + (ik_y)^{2}}
 $$
-$$
-\nabla^{2} p = \nabla \cdot \mathbf{u}^{*} \quad \Longrightarrow \quad \hat{p} = \frac{i\mathbf{k} \cdot \hat{\mathbf{u}}^{*}}{\lambda} = \frac{i k_x \hat{u}^{*} + i k_y \hat{v}^{*}}{(i k_x)^{2} + (i k_y)^{2}}
-$$
 
 The mean pressure $\hat{p}_{00} = 0$ is enforced explicitly.  The velocity is
 then corrected by subtracting the spectral pressure gradient:
