@@ -106,7 +106,7 @@ $!PrintSetup Palette = Color
 $!ExportSetup ExportFormat = MPEG4
 $!ExportSetup ImageWidth = 1080
 $!ExportSetup UseSuperSampleAntiAliasing = Yes
-$!ExportSetup AnimationSpeed = 30
+$!ExportSetup AnimationSpeed = 45
 $!ExportSetup ExportFName = 'lorenz.mp4'
 $!AnimateTime 
   StartTime = 0
