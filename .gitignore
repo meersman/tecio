@@ -138,6 +138,7 @@ dmypy.json
 *.dat
 *.lay
 tp?*
+*.mp4
 
 # Project-specific
 test_output/

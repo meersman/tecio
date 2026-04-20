@@ -2,6 +2,9 @@
 # ruff: noqa: D100 D103
 
 import os
+# Prevent oversubscription
+os.environ["OMP_NUM_THREADS"] = str(os.cpu_count())
+os.environ["MKL_NUM_THREADS"] = str(os.cpu_count())
 
 import numpy as np
 import pyfftw
@@ -11,12 +14,8 @@ from tqdm import tqdm
 import tecio
 
 # Setup fftw performance flags
+pyfftw.interfaces.cache.enable()
 pyfftw.config.NUM_THREADS = os.cpu_count()
-pyfftw.interfaces.cache.disable()
-
-# Prevent oversubscription
-os.environ["OMP_NUM_THREADS"] = str(os.cpu_count())
-os.environ["MKL_NUM_THREADS"] = str(os.cpu_count())
 
 # Domain
 width = 2.0
@@ -39,7 +38,7 @@ ky = 2 * np.pi / height * np.fft.fftshift(np.arange(-ny//2, ny//2))
 KX, KY = np.meshgrid(kx, ky, indexing="ij")
 
 # Combine spectral grid to solve x/y-momentum together
-kn = np.zeros((nx, ny, 2), dtype=complex)
+kn = np.zeros((nx, ny, 2))
 kn[:,:,0] = KX
 kn[:,:,1] = KY
 
