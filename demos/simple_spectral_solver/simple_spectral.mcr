@@ -13,20 +13,22 @@ $!FrameLayout Height = 4.6
 $!FrameLayout BackgroundColor = Black
 $!FieldLayers ShowShade = No
 $!FieldLayers ShowContour = Yes
+$!SetContourVar 
+  Var = 6
+  ContourGroup = 1
+  LevelInitMode = ResetToNice
 $!GlobalContour 1  ColorMapFilter{ColorMapDistribution = Continuous}
-$!GlobalContour 1  ColorMapFilter{ContinuousColor{CMin = -60}}
-$!GlobalContour 1  ColorMapFilter{ContinuousColor{CMax = 60}}
+$!GlobalContour 1  ColorMapFilter{ContinuousColor{CMin = -40}}
+$!GlobalContour 1  ColorMapFilter{ContinuousColor{CMax = 40}}
 $!ContourLevels New
   ContourGroup = 1
   RawData
-7
--60
+5
 -40
 -20
 0
 20
 40
-60
 $!TwoDAxis XDetail{Title{TextShape{FontFamily = 'Times'}}}
 $!TwoDAxis XDetail{Title{TextShape{IsBold = No}}}
 $!TwoDAxis XDetail{Title{TextShape{SizeUnits = Point}}}
@@ -74,7 +76,7 @@ $!GlobalContour 1  Legend{Header{TextShape{FontFamily = 'Times'}}}
 $!GlobalContour 1  Legend{Header{TextShape{SizeUnits = Point}}}
 $!GlobalContour 1  Legend{Header{TextShape{Height = 18}}}
 $!GlobalContour 1  Legend{Box{BoxType = None}}
-$!GlobalContour 1  Legend{RowSpacing = 2.18}
+$!GlobalContour 1  Legend{RowSpacing = 3.275}
 $!GlobalContour 1  Labels{AutoLevelSkip = 1}
 $!GlobalContour 1  Legend{Header{UseCustomText = Yes}}
 $!GlobalContour 1  Legend{Header{TextType = Regular}}
@@ -92,12 +94,12 @@ $!AttachText
     Height = 18
     }
   Color = White
-  Text = '<i>t</i> = &(SOLUTIONTIME%7.4f)'
+  Text = '<i>t</i> = &(SOLUTIONTIME%5.2f)'
 $!PrintSetup Palette = Color
 $!ExportSetup ExportFormat = MPEG4
 $!ExportSetup ImageWidth = 1080
 $!ExportSetup UseSuperSampleAntiAliasing = Yes
-$!ExportSetup AnimationSpeed = 50
+$!ExportSetup AnimationSpeed = 30
 $!ExportSetup ExportFName = 'simple_spectral.mp4'
 $!AnimateTime 
   StartTime = 1E-10

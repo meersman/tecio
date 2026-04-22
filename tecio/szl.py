@@ -1287,9 +1287,8 @@ def write_dataset_aux_data(handle: ctypes.c_void_p, aux: dict[str, Any]) -> None
 
     Aux data should be structured as {var_idx: {name, value}}
     """
-    for var_idx, subdict in aux.items():
-        for name, value in subdict.items():
-            libtecio.tec_zone_add_aux_data(handle, var_idx, str(name), str(value))
+    for name, value in aux.items():
+        libtecio.tec_data_set_add_aux_data(handle, str(name), str(value))
 
 
 def write_aux_data(handle: ctypes.c_void_p, aux: dict[str, dict[Any]]) -> None:
