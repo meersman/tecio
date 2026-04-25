@@ -34,7 +34,7 @@ $$
 $$
 
 $$
-\frac{\partial v}{\partial t} = -\left(u \frac{\partial v}{\partial x} + v \frac{\partial v}{\partial y}\right) - \frac{\partial p}{\partial y} + \nu \left(\frac{\partial^2 v}{\partial x^2} + \frac{\partial^2 v}{\partial y^2}\right)
+\frac{\partial v}{\partial t} = -\left(u \frac{\partial v}{\partial x} + v \frac{\partial v}{\partial y}\right) - \frac{\partial p}{\partial y} + \nu \left(\frac{\partial^2 v}{\partial x^2} + \frac{\partial^2 v}{\partial y^2}\right) + f_y
 $$
 
 ### External forcing
@@ -150,10 +150,10 @@ u_hat = (u_hat*(1/dt + nu*lap[:,:,None]) + f_hat*np.sign(np.sin(t))
 The advective time step is limited by the CFL condition
 
 $$
-\Delta t = C \frac{\min(\Delta x,\, \Delta y)}{u_{\max}}
+\Delta t = \text{CFL} \frac{\min(\Delta x,\, \Delta y)}{u_{\max}}
 $$
 
-with safety factor $C = 0.5$.  A small regularisation $\epsilon = 10^{-8}$ is
+with $\text{CFL} = 0.5$.  A small regularisation $\epsilon = 10^{-8}$ is
 added to $u_{\max}$ to handle the zero-velocity initial condition.
 
 ---
