@@ -63,24 +63,15 @@ def test_write_ijk_unsteady() -> None:
         with tecio.open("test_dat_write_ijk_unsteady.dat", "w") as datfile:
             for n, t in enumerate(solution_times):
                 c = scalar_field(x + t, y + t, z).astype(np.float32)
-                if n == 0:
-                    # On first write: supply all variable arrays
-                    datfile.write_ijk_zone(
-                        data=[x, y, z, c],
-                        variables=["x", "y", "z", "c"],
-                        strand_id=1,
-                        solution_time=t,
-                        aux=aux,
-                    )
-                else:
-                    # On subsequent writes, only write the changing variable (c)
-                    datfile.write_ijk_zone(
-                        data=[c],
-                        var_sharing=[1, 1, 1, 0],  # share x,y,z from zone 1
-                        strand_id=1,
-                        solution_time=t,
-                        aux=aux,
-                    )
+                # On first write: supply all variable arrays
+                datfile.write_ijk_zone(
+                    variables=["x", "y", "z", "c"],
+                    data=[x, y, z, c] if datfile.current_zone==0 else [c],
+                    var_sharing=None if datfile.current_zone==0 else [1, 1, 1, 0],
+                    strand_id=1,
+                    solution_time=t,
+                    aux=aux,
+                )
         print("PASS: test_write_ijk_unsteady")
     except Exception as exc:
         print(f"FAIL: test_write_ijk_unsteady: {exc}")

@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 
-from . import libtecio, szl
-from .libtecio import (
+from .. import libtecio
+from ..libtecio import (
     DataType,
     FaceNeighborMode,
     FileFormat,
@@ -19,41 +17,6 @@ from .libtecio import (
     ValueLocation,
     ZoneType,
 )
-from .tecutils import convert_to_szl
-
-# ======================================================================================
-# PLT Reader class:
-# - No C-library API to load in any arbitrary plt formated binary
-#   - Can convert to SZL using Tecplot executable (license free)
-#   - Then can read with szl.Read and pass to user
-#   - This is slow and a lot of the performance is lost.
-#   - Until proper PLT read class in implemented, strongly recommend users to first
-#     convert to szplt and continue with SZL functionality of this library.
-# TODO: Custom PLT binary read class (to improve speed of load)
-# ======================================================================================
-
-
-class Read:
-    """Read data from Tecplt plt fomatted binary files.
-
-    This cheats by using Tecplot command line mode to convert to szl format, then read
-    in with szl.Read.
-
-    Known issues:
-    - polygon/polyhedra cells are not supported for reading
-    - slow (due to time of conversion)
-    """
-
-    def __new__(
-        cls,
-        plt_path: str | os.PathLike,
-        szplt_path: str | os.PathLike | None = None,
-    ) -> szl.Read:
-        """Convert to szl and return szl.Read class."""
-        converted = convert_to_szl(Path(plt_path).resolve(), szplt_path)
-        # Return szl.Read.  __init__ is never called on plt.Read
-        return szl.Read(converted.as_posix())
-
 
 # ---------------------------------------------------------------------------
 # Zone-type sets (mirrors szl.py)
@@ -184,7 +147,7 @@ class Write:
         # Dataset-level: {name: value}
         self.auxdataset: dict[str, str] = {}
         # Variable-level: {var_name_or_1based_index: {name: value}}
-        self.auxvar: dict[int | str, dict[str, str]] = {}
+        self.auxvar: dict[int, dict[str, str]] = {}
 
         # Track whether the file has been opened so we know whether to call
         # tecini142 inside open().
@@ -247,6 +210,14 @@ class Write:
         if self._opened:
             libtecio.tecend142()
             self._opened = False
+
+    def add_auxdataset_dict(self, auxdict: dict[str, Any]) -> None:
+        """Create buffered auxdataset items from input dictionary."""
+        self.auxdataset.update(auxdict)
+
+    def add_auxvar_dict(self, auxdict: dict[int, dict[str, Any]]) -> None:
+        """Create buffered auxvar items from input dictionary."""
+        self.auxvar.update(auxdict)
 
     def flush_aux(self) -> None:
         """Write buffered dataset- and variable-level aux data to the file.
