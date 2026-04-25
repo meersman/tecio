@@ -150,7 +150,7 @@ u_hat = (u_hat*(1/dt + nu*lap[:,:,None]) + f_hat*np.sign(np.sin(t))
 The advective time step is limited by the CFL condition
 
 $$
-\Delta t = C \frac{\min(\Delta x,\, \Delta y)}{u_{\max}}
+\Delta t = \text{CFL} \frac{\min(\Delta x,\, \Delta y)}{u_{\max}}
 $$
 
 with safety factor $C = 0.5$.  A small regularisation $\epsilon = 10^{-8}$ is
