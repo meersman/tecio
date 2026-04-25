@@ -23,8 +23,8 @@ width = 1.0
 height = 1.0
 
 # Resolution
-nx = 1024
-ny = 1024
+nx = 256
+ny = 256
 
 # Mesh
 x = np.linspace(0, width, nx, endpoint=False)
@@ -35,9 +35,9 @@ X, Y = np.meshgrid(x, y, indexing="ij")
 # -----------
 t = 0.0
 time_array = np.arange(1e-10, 15.0, 0.01)
-# cfl = 0.1  # 256^2
+cfl = 0.1  # 256^2
 # cfl = 0.15  # 512^2
-cfl = 0.3  # 1024^2
+# cfl = 0.3  # 1024^2
 
 # Fluid properties
 # ----------------

@@ -15,7 +15,11 @@ dependencies = [
 [project.scripts]
 teconvert = "tecio.cli.teconvert:main"
 tecdump = "tecio.cli.tecdump:main"
+tecextract = "tecio.cli.tecextract:main"
 tecfix = "tecio.cli.tecfix:main"
+tecmerge = "tecio.cli.tecmerge:main"
+tecscale = "tecio.cli.tecscale:main"
+tecstat = "tecio.cli.tecstat:main"
 
 [project.optional-dependencies]
 dev = ["ruff", "mypy", "pytest"]

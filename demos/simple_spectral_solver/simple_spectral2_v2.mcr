@@ -1,4 +1,13 @@
 #!MC 1410
+$!ReadDataSet  '"STANDARDSYNTAX" "1.0" "FILENAME_FILE" "simple_spectral2_nx_512_ny_512.szplt"'
+  DataSetReader = 'Tecplot Subzone Data Loader'
+  ReadDataOption = New
+  ResetStyle = No
+  AssignStrandIDs = No
+  InitialPlotType = Automatic
+  InitialPlotFirstZoneOnly = No
+  AddZonesToExistingStrands = No
+  VarLoadMode = ByName
 ### Frame Number 1 ###
 $!FrameLayout 
   ShowBorder = No
@@ -156,7 +165,7 @@ $!AttachText
     }
   Color = White
   Anchor = HeadCenter
-  Text = 'Kelvin-Helmholtz Instability Test\n(<i>N<sub>x</sub></i> <math>4</math> <i>N<sub>y </sub></i>) = (&(AUXDATASET:Nx) <math>4</math> &(AUXDATASET:Nx))'
+  Text = 'Kelvin-Helmholtz Instability Test'
 ### Frame Number 2 ###
 $!CreateNewFrame 
 $!FrameLayout 
@@ -424,3 +433,59 @@ $!Linking
     {
     LinkSolutionTime = Yes
     }
+$!AttachText 
+  AnchorPos
+    {
+    X = 85
+    Y = 50
+    }
+  TextShape
+    {
+    FontFamily = 'Times'
+    IsBold = No
+    Height = 24
+    }
+  Color = White
+  LineSpacing = 1.5
+  Anchor = MidRight
+  Text = '(<i>N<sub>x</sub></i> <math>4</math> <i>N<sub>y </sub></i>) = \nCFL = \n<i>ν</i> = '
+$!AttachText 
+  AnchorPos
+    {
+    X = 85.5
+    Y = 50
+    }
+  TextShape
+    {
+    FontFamily = 'Times'
+    IsBold = No
+    Height = 24
+    }
+  Color = White
+  LineSpacing = 1.5
+  Anchor = MidLeft
+  Text = '(&(AUXDATASET:Nx) <math>4</math> &(AUXDATASET:Nx))\n&(AUXDATASET:CFL%3.2f)\n&(AUXDATASET:Viscosity%4.3e)'
+$!AttachGeom 
+  GeomType = Rectangle
+  PositionCoordSys = Frame
+  AnchorPos
+    {
+    X = 99
+    Y = 69
+    }
+  Color = White
+  LineThickness = 0.4
+  RawData
+-27.5 -38
+$!WorkspaceView FitAllFrames
+$!PrintSetup Palette = Color
+$!ExportSetup ExportFormat = MPEG4
+$!ExportSetup ImageWidth = 1080
+$!ExportSetup UseSuperSampleAntiAliasing = Yes
+$!ExportSetup AnimationSpeed = 30
+$!ExportSetup ExportFName = 'simple_spectral2_nx_512_ny_512.mp4'
+$!AnimateTime 
+  StartTime = 1E-10
+  EndTime = 14.9000000001
+  Skip = 1
+  CreateMovieFile = Yes
