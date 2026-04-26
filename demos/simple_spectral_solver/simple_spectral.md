@@ -15,11 +15,7 @@ animation in Tecplot 360.
 The incompressible Navier–Stokes equations in 2-D are
 
 $$
-\frac{\partial u_i}{\partial t}
-+ \frac{\partial (u_i u_j)}{\partial x_j}
-= -\frac{\partial p}{\partial x_i}
-  + \nu \frac{\partial^2 u_i}{\partial x_j \partial x_j}
-  + f_i
+\frac{\partial u_i}{\partial t} + \frac{\partial (u_i u_j)}{\partial x_j} = -\frac{\partial p}{\partial x_i} + \nu \frac{\partial^2 u_i}{\partial x_j \partial x_j} + f_i
 $$
 
 $$
@@ -28,8 +24,34 @@ $$
 
 where $u_i = (u, v)^T$ is the velocity vector, $p$ is kinematic pressure
 (pressure divided by density), $\nu$ is kinematic viscosity, and $f_i$ is an
-optional external body force.  The second equation is the
-**incompressibility constraint** that couples the pressure to the velocity.
+optional external body force.
+
+The convective term is written in **divergence form**
+$\partial(u_i u_j)/\partial x_j$ rather than advective form
+$u_j \partial u_i/\partial x_j$.  The two are equivalent under
+incompressibility:
+
+$$
+\frac{\partial (u_i u_j)}{\partial x_j} = u_j \frac{\partial u_i}{\partial x_j} + u_i \underbrace{\frac{\partial u_j}{\partial x_j}}_{=\,0} = u_j \frac{\partial u_i}{\partial x_j}
+$$
+
+The divergence form is preferred here because the products $u_i u_j$ can be
+computed directly in physical space and then transformed to spectral space
+(see Section 2).
+
+The incompressibility constraint couples the pressure to the velocity through
+a Poisson equation obtained by taking the divergence of the momentum equation:
+
+$$
+\frac{\partial^2 p}{\partial x_i \partial x_i} = -\frac{\partial^2 (u_i u_j)}{\partial x_i \partial x_j}
+$$
+
+After each momentum update the velocity is projected onto the divergence-free
+subspace by subtracting the pressure gradient:
+
+$$
+u_i \leftarrow u_i - \frac{\partial p}{\partial x_i}
+$$
 
 ### Component form
 
@@ -37,35 +59,12 @@ Writing out both momentum equations explicitly with the body force retained
 (used in the alternating-jet variant of this script):
 
 $$
-\frac{\partial u}{\partial t}
-= -\frac{\partial (uu)}{\partial x} - \frac{\partial (uv)}{\partial y}
-  - \frac{\partial p}{\partial x}
-  + \nu \left(\frac{\partial^2 u}{\partial x^2} + \frac{\partial^2 u}{\partial y^2}\right)
-  + f_x
+\frac{\partial u}{\partial t} = -\frac{\partial (uu)}{\partial x} - \frac{\partial (uv)}{\partial y} - \frac{\partial p}{\partial x} + \nu \left(\frac{\partial^2 u}{\partial x^2} + \frac{\partial^2 u}{\partial y^2}\right) + f_x
 $$
 
 $$
-\frac{\partial v}{\partial t}
-= -\frac{\partial (uv)}{\partial x} - \frac{\partial (vv)}{\partial y}
-  - \frac{\partial p}{\partial y}
-  + \nu \left(\frac{\partial^2 v}{\partial x^2} + \frac{\partial^2 v}{\partial y^2}\right)
-  + f_y
+\frac{\partial v}{\partial t} = -\frac{\partial (uv)}{\partial x} - \frac{\partial (vv)}{\partial y} - \frac{\partial p}{\partial y} + \nu \left(\frac{\partial^2 v}{\partial x^2} + \frac{\partial^2 v}{\partial y^2}\right) + f_y
 $$
-
-### External forcing (alternating-jet variant)
-
-A localised Gaussian jet is applied in the $x$-direction, centred at the
-midpoint of the domain:
-
-$$
-f_x(x, y) = A \exp\!\left(-\alpha\left[(x - x_0)^2 + (y - y_0)^2\right]\right)
-$$
-
-with amplitude $A = 40$, concentration $\alpha = 1000$, and centre
-$(x_0, y_0) = (1.0,\ 0.5)$.  The sign is reversed each half period,
-$\operatorname{sgn}(\sin t)$, so the jet alternates direction and
-continuously injects vorticity into the domain.  This forcing term is absent
-for the KHI initial condition described below.
 
 ---
 
@@ -100,10 +99,7 @@ $$
 The scalar Laplacian in spectral space is therefore
 
 $$
-\widehat{\nabla^2 q}
-= \left[(\mathrm{i}k_x)^2 + (\mathrm{i}k_y)^2\right]\hat{q}
-= -\left(k_x^2 + k_y^2\right)\hat{q}
-\equiv \lambda \hat{q}
+\widehat{\nabla^2 q} = \left[(\mathrm{i}k_x)^2 + (\mathrm{i}k_y)^2\right]\hat{q} = -\left(k_x^2 + k_y^2\right)\hat{q} \equiv \lambda \hat{q}
 $$
 
 stored in the array `lap` in the code ($\lambda \leq 0$).  The
@@ -143,17 +139,11 @@ keeping the nonlinear term cheap to evaluate.  The semi-discrete equations in
 spectral space are:
 
 $$
-\frac{\hat{u}^{\,n+1} - \hat{u}^{\,n}}{\Delta t}
-= -\Bigl(\mathrm{i}k_x\,\widehat{uu}^{\,n} + \mathrm{i}k_y\,\widehat{uv}^{\,n}\Bigr)
-  + \nu\lambda\bigl(\hat{u}^{\,n+1} + \hat{u}^{\,n}\bigr)
-  + \hat{f}_x^{\,n}
+\frac{\hat{u}^{\,n+1} - \hat{u}^{\,n}}{\Delta t} = -\Bigl(\mathrm{i}k_x\,\widehat{uu}^{\,n} + \mathrm{i}k_y\,\widehat{uv}^{\,n}\Bigr) + \nu\lambda\bigl(\hat{u}^{\,n+1} + \hat{u}^{\,n}\bigr) + \hat{f}_x^{\,n}
 $$
 
 $$
-\frac{\hat{v}^{\,n+1} - \hat{v}^{\,n}}{\Delta t}
-= -\Bigl(\mathrm{i}k_x\,\widehat{uv}^{\,n} + \mathrm{i}k_y\,\widehat{vv}^{\,n}\Bigr)
-  + \nu\lambda\bigl(\hat{v}^{\,n+1} + \hat{v}^{\,n}\bigr)
-  + \hat{f}_y^{\,n}
+\frac{\hat{v}^{\,n+1} - \hat{v}^{\,n}}{\Delta t} = -\Bigl(\mathrm{i}k_x\,\widehat{uv}^{\,n} + \mathrm{i}k_y\,\widehat{vv}^{\,n}\Bigr) + \nu\lambda\bigl(\hat{v}^{\,n+1} + \hat{v}^{\,n}\bigr) + \hat{f}_y^{\,n}
 $$
 
 where $\lambda = (\mathrm{i}k_x)^2 + (\mathrm{i}k_y)^2 \leq 0$ is the
@@ -388,8 +378,10 @@ with tecio.open("simple_spectral2.szplt", "w") as szl:
 ```
 
 The `Common.*` keys are recognised by Tecplot 360 and automatically configure
-the spatial axes and velocity vectors on load. The `Common.CVar` automatically
-uses the variable with the flow tracer for contours on load.
+the spatial axes and velocity vectors on load. `Common.CVar` sets the default
+contour variable on load, here setitng to the variable number containing the
+flow tracer. The remaining keys are available as scalars for use in dynamic
+text or equations
 
 ### Save memory by writing coordinate arrays only once
 
