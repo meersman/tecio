@@ -238,10 +238,10 @@ remaining periodic on the unit square $[0,1]^2$:
 
 $$
 u(y) = \begin{cases}
-U_1 - \dfrac{U_1 - U_2}{2}\exp\!\left(\dfrac{y - 1/4}{L}\right) & 0 \leq y < 1/4 \\[6pt]
-U_2 + \dfrac{U_1 - U_2}{2}\exp\!\left(\dfrac{1/4 - y}{L}\right) & 1/4 \leq y < 1/2 \\[6pt]
-U_2 + \dfrac{U_1 - U_2}{2}\exp\!\left(\dfrac{y - 3/4}{L}\right) & 1/2 \leq y < 3/4 \\[6pt]
-U_1 - \dfrac{U_1 - U_2}{2}\exp\!\left(\dfrac{3/4 - y}{L}\right) & 3/4 \leq y \leq 1
+U_1 - \dfrac{U_1 - U_2}{2}\exp\left(\dfrac{y - 1/4}{L}\right) & \text{if} \ \ 0 \leq y < 1/4 \\
+U_2 + \dfrac{U_1 - U_2}{2}\exp\left(\dfrac{1/4 - y}{L}\right) & \text{if} \ \ 1/4 \leq y < 1/2 \\
+U_2 + \dfrac{U_1 - U_2}{2}\exp\left(\dfrac{y - 3/4}{L}\right) & \text{if} \ \ 1/2 \leq y < 3/4 \\
+U_1 - \dfrac{U_1 - U_2}{2}\exp\left(\dfrac{3/4 - y}{L}\right) & \text{if} \ \ 3/4 \leq y \leq 1
 \end{cases}
 $$
 
