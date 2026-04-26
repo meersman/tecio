@@ -173,8 +173,8 @@ wavenumbers, giving unconditional stability for the diffusive modes.
 In code (with forcing absent for the KHI case):
 
 ```python
-u_hat = (u_hat * (1/dt + nu_lap) - conv_u + fx) / (1/dt - nu_lap)
-v_hat = (v_hat * (1/dt + nu_lap) - conv_v + fy) / (1/dt - nu_lap)
+u_hat = (u_hat*(1/dt + nu*lap) - conv_u + fx)/(1/dt - nu*lap)
+v_hat = (v_hat*(1/dt + nu*lap) - conv_v + fy)/(1/dt - nu*lap)
 ```
 
 ### Adaptive CFL time step
