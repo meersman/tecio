@@ -1,0 +1,55 @@
+#!KeyFrame 1
+
+%Settings
+ AnimateTime true
+ TimeAnimationOperation Forward
+ NumCycles 1
+ AnimateStreamtraces false
+ FadeIn true
+ FadeOut true
+%Settings
+
+%KeyFrameView
+ Name "View 1"
+ Position -414.867 415.572 296.712
+ Angle 65 135 0
+ Width 123.362
+ FrameCount 100
+ SolutionTime 0
+%KeyFrameView
+
+%KeyFrameView
+ Name "View 2"
+ Position -508.289 294.036 296.712
+ Angle 65 120 -0
+ Width 123.362
+ FrameCount 100
+ SolutionTime 12.5
+%KeyFrameView
+
+%KeyFrameView
+ Name "View 3"
+ Position -414.867 415.572 296.712
+ Angle 65 135 -0
+ Width 123.362
+ FrameCount 100
+ SolutionTime 25
+%KeyFrameView
+
+%KeyFrameView
+ Name "View 4"
+ Position -293.173 508.787 296.712
+ Angle 65 150 -0
+ Width 123.362
+ FrameCount 100
+ SolutionTime 37.6
+%KeyFrameView
+
+%KeyFrameView
+ Name "View 5"
+ Position -414.867 415.572 296.712
+ Angle 65 135 -0
+ Width 123.362
+ FrameCount 100
+ SolutionTime 49.9
+%KeyFrameView

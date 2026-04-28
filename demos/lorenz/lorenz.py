@@ -25,7 +25,10 @@ n_steps = 5000
 traj = np.zeros((n_steps, 3))
 state = np.array([1.0, 1.0, 1.0])
 
-for i in tqdm(range(n_steps), ncols=100, desc="RK4 Integration"):
+# Set consistent prog bar format
+bf = "{desc:15} {percentage:3.0f}% |{bar:50}| {n_fmt:>5} / {total_fmt:<5} [{elapsed}<{remaining} {rate_fmt}]"
+
+for i in tqdm(range(n_steps), desc="RK4 Integration", bar_format=bf):
     traj[i] = state
 
     k1 = lorenz(state)
@@ -53,7 +56,7 @@ with tecio.open("lorenz.szplt", "w") as szl:
     )
 
     # Zone 2+: trajectory animation (every 10th step)
-    for i in tqdm(range(0, n_steps, 10), ncols=100, desc="Writing zones"):
+    for i in tqdm(range(0, n_steps, 10), desc="Writing zones", bar_format=bf):
         szl.write_ijk_zone(
             title="Trajectory",
             variables=["x", "y", "z", "t",  "tau"],
@@ -67,7 +70,7 @@ with tecio.open("lorenz.szplt", "w") as szl:
             strand_id=1,
             solution_time=i*dt,
         )
-    for i in tqdm(range(0, n_steps, 10), ncols=100, desc="Writing zones"):
+    for i in tqdm(range(0, n_steps, 10), desc="Writing zones", bar_format=bf):
         szl.write_ijk_zone(
             title="Particle",
             variables=["x", "y", "z", "t", "tau"],

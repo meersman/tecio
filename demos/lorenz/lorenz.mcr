@@ -9,107 +9,116 @@ $!ReadDataSet  '"STANDARDSYNTAX" "1.0" "FILENAME_FILE" "lorenz.szplt"'
   AddZonesToExistingStrands = No
   VarLoadMode = ByName
 $!PlotType = Cartesian3D
+$!FrameLayout Height = 6.5
 $!FrameLayout ShowBorder = No
+$!FrameLayout IsTransparent = Yes
+$!FrameLayout IsTransparent = No
 $!FrameLayout BackgroundColor = Black
-$!FrameLayout Height = 5.5
+$!GlobalScatter Var = 4
 $!FieldLayers ShowShade = No
+$!FieldLayers ShowMesh = Yes
 $!FieldLayers ShowScatter = Yes
 $!ActiveFieldMaps -= [1]
 $!FieldMap [3]  Mesh{Show = No}
-$!FieldMap [2]  Mesh{LineThickness = 0.3}
-$!GlobalScatter Var = 4
 $!FieldMap [1]  Scatter{Show = No}
 $!FieldMap [2]  Scatter{Show = No}
 $!FieldMap [3]  Scatter{SymbolShape{GeomShape = Sphere}}
-$!FieldMap [3]  Scatter{Color = Yellow}
 $!FieldMap [3]  Scatter{FrameSize = 1}
-$!SetContourVar 
-  Var = 4
-  ContourGroup = 1
-  LevelInitMode = ResetToNice
+$!FieldMap [3]  Scatter{Color = Yellow}
 $!FieldMap [2]  Mesh{Color = Multi}
-$!FieldLayers ShowMesh = Yes
+$!FieldMap [2]  Mesh{LineThickness = 0.5}
 $!SetContourVar 
   Var = 5
   ContourGroup = 1
   LevelInitMode = ResetToNice
+$!GlobalContour 1  ColorMapFilter{ColorMapDistribution = Continuous}
+$!GlobalContour 1  ColorMapFilter{ContinuousColor{CMin = -10}}
+$!GlobalContour 1  ColorMapFilter{ContinuousColor{CMax = 0}}
 $!GlobalContour 1  ColorMapName = 'cmocean - thermal'
-$!ContourLevels New
-  ContourGroup = 1
-  RawData
-51
--10
--9.8
--9.6
--9.4
--9.2
--9
--8.8
--8.6
--8.4
--8.2
--8
--7.8
--7.6
--7.4
--7.2
--7
--6.8
--6.6
--6.4
--6.2
--6
--5.8
--5.6
--5.4
--5.2
--5
--4.8
--4.6
--4.4
--4.2
--4
--3.8
--3.6
--3.4
--3.2
--3
--2.8
--2.6
--2.4
--2.2
--2
--1.8
--1.6
--1.4
--1.2
--1
--0.8
--0.6
--0.4
--0.2
-0
 $!GlobalContour 1  Legend{Show = No}
+$!ThreeDAxis PreserveAxisScale = Yes
+$!ThreeDAxis XDetail{RangeMin = -30}
+$!ThreeDAxis XDetail{RangeMax = 30}
+$!ThreeDAxis XDetail{Gridlines{Color = Custom1}}
+$!ThreeDAxis XDetail{AutoGrid = No}
+$!ThreeDAxis XDetail{GRSpacing = 10}
+$!ThreeDAxis XDetail{Ticks{NumMinOrTicks = 0}}
+$!ThreeDAxis XDetail{Ticks{TickDirection = Out}}
+$!ThreeDAxis XDetail{TickLabel{TextShape{FontFamily = 'Times'}}}
+$!ThreeDAxis XDetail{TickLabel{TextShape{Height = 4}}}
+$!ThreeDAxis XDetail{TickLabel{Offset = 2}}
+$!ThreeDAxis XDetail{Title{TextShape{FontFamily = 'Times'}}}
+$!ThreeDAxis XDetail{Title{TextShape{Height = 5}}}
+$!ThreeDAxis XDetail{Title{TextShape{IsBold = No}}}
+$!ThreeDAxis XDetail{Title{Offset = 12}}
+$!ThreeDAxis XDetail{Title{TitleMode = UseText}}
+$!ThreeDAxis XDetail{Title{Text = '<i>x</i>'}}
+$!ThreeDAxis XDetail{AxisLine{ShowOppositeEdge = Yes}}
+$!ThreeDAxis XDetail{AxisLine{Color = White}}
+$!ThreeDAxis XDetail{ShowAxis = Yes}
+$!ThreeDAxis YDetail{RangeMin = -30}
+$!ThreeDAxis YDetail{RangeMax = 30}
+$!ThreeDAxis YDetail{Gridlines{Color = Custom1}}
+$!ThreeDAxis YDetail{AutoGrid = No}
+$!ThreeDAxis YDetail{Ticks{NumMinOrTicks = 0}}
+$!ThreeDAxis YDetail{Ticks{TickDirection = Out}}
+$!ThreeDAxis YDetail{TickLabel{TextShape{FontFamily = 'Times'}}}
+$!ThreeDAxis YDetail{TickLabel{TextShape{Height = 4}}}
+$!ThreeDAxis YDetail{TickLabel{Offset = 2}}
+$!ThreeDAxis YDetail{Title{Offset = 12}}
+$!ThreeDAxis YDetail{Title{TextShape{FontFamily = 'Times'}}}
+$!ThreeDAxis YDetail{Title{TextShape{Height = 5}}}
+$!ThreeDAxis YDetail{Title{TextShape{IsBold = No}}}
+$!ThreeDAxis YDetail{Title{TitleMode = UseText}}
+$!ThreeDAxis YDetail{Title{Text = '<i>y</i>'}}
+$!ThreeDAxis YDetail{AxisLine{ShowOppositeEdge = Yes}}
+$!ThreeDAxis YDetail{AxisLine{Color = White}}
+$!ThreeDAxis ZDetail{RangeMin = 0}
+$!ThreeDAxis ZDetail{RangeMax = 50}
+$!ThreeDAxis ZDetail{Gridlines{Color = Custom1}}
+$!ThreeDAxis ZDetail{Ticks{TickDirection = Out}}
+$!ThreeDAxis ZDetail{AutoGrid = No}
+$!ThreeDAxis ZDetail{Ticks{NumMinOrTicks = 0}}
+$!ThreeDAxis ZDetail{TickLabel{TextShape{Height = 4}}}
+$!ThreeDAxis ZDetail{TickLabel{Offset = 2}}
+$!ThreeDAxis ZDetail{Title{Offset = 12}}
+$!ThreeDAxis ZDetail{Title{TextShape{FontFamily = 'Times'}}}
+$!ThreeDAxis ZDetail{Title{TextShape{Height = 5}}}
+$!ThreeDAxis ZDetail{Title{TextShape{IsBold = No}}}
+$!ThreeDAxis ZDetail{Title{TitleMode = UseText}}
+$!ThreeDAxis ZDetail{Title{Text = '<i>z</i>'}}
+$!ThreeDAxis ZDetail{AxisLine{ShowOppositeEdge = Yes}}
+$!ThreeDAxis ZDetail{AxisLine{Color = White}}
+$!ThreeDAxis GridArea{FillColor = Black}
 $!ThreeDAxis FrameAxis{Show = No}
-$!ThreeDView 
-  PSIAngle = 146.2
-  ThetaAngle = -58.8823
-  AlphaAngle = 0.774591
-    ViewerPosition
-    {
-    X = 215.9691212281154
-    Y = -128.5208142457311
-    Z = -342.8116583671255
-    }
-  ViewWidth = 67.0335
-$!PrintSetup Palette = Color
-$!ExportSetup ExportFormat = MPEG4
-$!ExportSetup ImageWidth = 1080
-$!ExportSetup UseSuperSampleAntiAliasing = Yes
-$!ExportSetup AnimationSpeed = 45
-$!ExportSetup ExportFName = 'lorenz.mp4'
-$!AnimateTime 
-  StartTime = 0
-  EndTime = 49.9
-  Skip = 1
-  CreateMovieFile = Yes
+$!ThreeDView PSIAngle = 65
+$!ThreeDView ThetaAngle = 135
+$!GlobalThreeD RotateOrigin{X = 0}
+$!GlobalThreeD RotateOrigin{Y = 0}
+$!GlobalThreeD RotateOrigin{Z = 0}
+$!ThreeDAxis ZDetail{ShowAxis = Yes}
+$!ThreeDAxis YDetail{ShowAxis = Yes}
+$!ThreeDAxis XDetail{TickLabel{Color = White}}
+$!ThreeDAxis XDetail{Title{Color = White}}
+$!ThreeDAxis YDetail{TickLabel{Color = Custom2}}
+$!ThreeDAxis YDetail{Title{Color = White}}
+$!ThreeDAxis ZDetail{TickLabel{Color = White}}
+$!ThreeDAxis ZDetail{Title{Color = White}}
+$!ThreeDAxis EdgeAutoReset = No
+$!ThreeDView ViewerPosition{X = -414.86694994279901}
+$!ThreeDView ViewerPosition{Y = 415.571820603340598}
+$!ThreeDView ViewerPosition{Z = 296.711625708248221}
+$!ThreeDView ViewWidth = 123.361999999999995
+$!ExtendedCommand 
+  CommandProcessorID = 'Key Frame Animation'
+  Command = 'OpenSettingsFile FileName=animation.keyframe'
+$!EXPORTSETUP ExportFormat = MPEG4
+$!EXPORTSETUP ExportRegion = CURRENTFRAME
+$!EXPORTSETUP ImageWidth = 1080
+$!EXPORTSETUP AnimationSpeed = 60
+$!EXPORTSETUP UseSuperSampleAntiAliasing = true
+$!EXPORTSETUP SuperSampleFactor = 3
+$!EXPORTSETUP ExportFName = "lorenz.mp4"
+$!ExtendedCommand 
+  CommandProcessorID = 'Key Frame Animation'
+  Command = 'Animate AnimationDestination=ToFile'
