@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Command line interface to convert between Tecplot file formats.
 
 Supports conversions between:

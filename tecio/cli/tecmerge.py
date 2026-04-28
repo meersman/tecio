@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Command line interface to merge zones from multiple Tecplot files into one.
 
 Input files may be any mix of supported formats (.szplt, .plt, .dat).  The

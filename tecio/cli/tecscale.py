@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Command line interface to scale and/or offset variables in a Tecplot file.
 
 Variables can be identified by 1-based index or by name.  The transformation

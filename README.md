@@ -57,20 +57,26 @@ with tecio.open("pres.szplt", "w") as szl_out:
 tecio
 ├── __init__.py
 ├── _io.py
-├── cli
+├── cli                 # Console scripts
+│   ├── __init__.py
 │   ├── tecdump.py
+│   ├── tecextract.py
 │   ├── tecfix.py
-│   └── teconvert.py
-├── dat               # High level Tecplot ascii API
+│   ├── tecmerge.py
+│   ├── teconvert.py
+│   ├── tecscale.py
+│   ├── tecslice.py
+│   └── tecstat.py
+├── dat                 # Higher level Tecplot ascii API
 │   ├── __init__.py
 │   ├── read.py
 │   └── write.py
-├── libtecio.py       # TecIO C bindings
-├── plt               # High level PLT file API
+├── libtecio.py         # TecIO Python wrapper functions
+├── plt                 # Higher level PLT file API
 │   ├── __init__.py
 │   ├── read.py
 │   └── write.py
-├── szl               # High level SZL file API
+├── szl                 # Higher level SZL file API
 │   ├── __init__.py
 │   ├── read.py
 │   └── write.py

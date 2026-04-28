@@ -19,6 +19,7 @@ tecextract = "tecio.cli.tecextract:main"
 tecfix = "tecio.cli.tecfix:main"
 tecmerge = "tecio.cli.tecmerge:main"
 tecscale = "tecio.cli.tecscale:main"
+tecslice = "tecio.cli.tecslice:main"
 tecstat = "tecio.cli.tecstat:main"
 
 [project.optional-dependencies]

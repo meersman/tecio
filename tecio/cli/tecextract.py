@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Command line interface to extract a subset of zones and/or variables
 from a Tecplot file.
 

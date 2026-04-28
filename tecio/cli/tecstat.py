@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Command line interface to print per-variable statistics for a Tecplot file.
 
 For each zone and each variable, prints the minimum, maximum, mean, and

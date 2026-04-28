@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Command line interface to dump all contents of any Tecplot formatted data file.
 
 (like a super verbose szlpltview)

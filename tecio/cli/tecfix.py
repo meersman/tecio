@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Command line interface to fix Tecplot files that contain NaN or Inf values.
 
 For each zone, any variable whose array contains ``NaN`` or ``Inf`` is marked
