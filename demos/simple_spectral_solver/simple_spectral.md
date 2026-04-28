@@ -173,8 +173,8 @@ wavenumbers, giving unconditional stability for the diffusive modes.
 In code (with forcing absent for the KHI case):
 
 ```python
-u_hat = (u_hat * (1/dt + nu_lap) - conv_u) / (1/dt - nu_lap)
-v_hat = (v_hat * (1/dt + nu_lap) - conv_v) / (1/dt - nu_lap)
+u_hat = (u_hat*(1/dt + nu*lap) - conv_u + fx)/(1/dt - nu*lap)
+v_hat = (v_hat*(1/dt + nu*lap) - conv_v + fy)/(1/dt - nu*lap)
 ```
 
 ### Adaptive CFL time step
@@ -238,10 +238,10 @@ remaining periodic on the unit square $[0,1]^2$:
 
 $$
 u(y) = \begin{cases}
-U_1 - \dfrac{U_1 - U_2}{2}\exp\!\left(\dfrac{y - 1/4}{L}\right) & 0 \leq y < 1/4 \\[6pt]
-U_2 + \dfrac{U_1 - U_2}{2}\exp\!\left(\dfrac{1/4 - y}{L}\right) & 1/4 \leq y < 1/2 \\[6pt]
-U_2 + \dfrac{U_1 - U_2}{2}\exp\!\left(\dfrac{y - 3/4}{L}\right) & 1/2 \leq y < 3/4 \\[6pt]
-U_1 - \dfrac{U_1 - U_2}{2}\exp\!\left(\dfrac{3/4 - y}{L}\right) & 3/4 \leq y \leq 1
+U_1 - \dfrac{U_1 - U_2}{2}\exp\left(\dfrac{y - 1/4}{L}\right) & \text{if} \ \ 0 \leq y < 1/4 \\
+U_2 + \dfrac{U_1 - U_2}{2}\exp\left(\dfrac{1/4 - y}{L}\right) & \text{if} \ \ 1/4 \leq y < 1/2 \\
+U_2 + \dfrac{U_1 - U_2}{2}\exp\left(\dfrac{y - 3/4}{L}\right) & \text{if} \ \ 1/2 \leq y < 3/4 \\
+U_1 - \dfrac{U_1 - U_2}{2}\exp\left(\dfrac{3/4 - y}{L}\right) & \text{if} \ \ 3/4 \leq y \leq 1
 \end{cases}
 $$
 
