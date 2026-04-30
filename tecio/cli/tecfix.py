@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Command line interface to fix Tecplot files that contain NaN or Inf values.
 
 For each zone, any variable whose array contains ``NaN`` or ``Inf`` is marked
@@ -40,6 +39,7 @@ Notes
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -172,7 +172,10 @@ def _process_zone(
     """Inspect one zone and build the data/metadata needed by the writer.
 
     For each variable:
-    - If the variable is already passive or shared, it is forwarded unchanged.
+    - If the variable is already passive or shared, it is forwarded exactly
+      as-is.  Sharing references are 1-based zone indices that are identical
+      in the output file because tecfix writes every zone in order without
+      skipping any.
     - If the variable is a floating-point type and contains NaN or Inf it is
       marked passive and recorded in *fix_auxdata*.
     - Otherwise it is included in the active data list verbatim.
@@ -191,7 +194,7 @@ def _process_zone(
         ``active_locs``    – value locations aligned with *active_data*.
         ``passive_vars``   – bool list (len == num_vars), ``True`` = passive.
         ``var_sharing``    – int list (len == num_vars), 0 = no sharing,
-                             positive = 1-based source zone.
+                             positive = 1-based source zone (unchanged).
         ``existing_aux``   – dict copied from the zone's original aux data.
         ``fix_auxdata``    – dict describing variables set passive by this tool.
 
@@ -204,14 +207,17 @@ def _process_zone(
 
     for j, var in enumerate(zone.variable):
         already_passive = var.is_passive()
-        sv = var.shared_zone  # None or 0-based zone index
-        share_int = (sv + 1) if sv is not None else 0
+        sv = var.shared_zone  # None or 0-based source zone index
+
+        # Pass sharing through verbatim.  tecfix writes all zones in the
+        # same order as the source, so source zone N is always output zone N.
+        share_int = sv if sv is not None else 0
 
         passive_vars.append(already_passive)
         var_sharing.append(share_int)
 
-        if already_passive or sv is not None:
-            # Nothing to inspect or store — placeholder keeps indices aligned.
+        if already_passive or share_int != 0:
+            # Passive or shared -- nothing to inspect or store.
             active_data.append(np.array([], dtype=np.float32))
             active_locs.append(var.value_location)
             continue
@@ -258,7 +264,14 @@ def _process_zone(
     if len(zone.auxdata) > 0:
         existing_aux = dict(zone.auxdata.items())
 
-    return writer_data, writer_locs, passive_vars, var_sharing, existing_aux, fix_auxdata
+    return (
+        writer_data,
+        writer_locs,
+        passive_vars,
+        var_sharing,
+        existing_aux,
+        fix_auxdata,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -289,8 +302,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if not args.dry_run and dst.exists() and not args.force:
         print(
-            f"Error: output file already exists: {dst}\n"
-            "Use --force to overwrite.",
+            f"Error: output file already exists: {dst}\nUse --force to overwrite.",
             file=sys.stderr,
         )
         return 1
@@ -333,9 +345,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         )
                         for key, label in zone_bad.items():
                             idx = int(key.replace("Variable", "")) - 1
-                            print(
-                                f"    {key} ({var_names[idx]}): {label}"
-                            )
+                            print(f"    {key} ({var_names[idx]}): {label}")
 
                 if not any_bad:
                     print("\nNo NaN or Inf values found. File is clean.")
@@ -408,13 +418,31 @@ def main(argv: Sequence[str] | None = None) -> int:
                         **fix_auxdata,
                     } or None
 
+                    # Sanitize solution_time: if it is NaN the zone metadata
+                    # is corrupt.  Reset both solution_time and strand_id to 0
+                    # so Tecplot treats the zone as stationary and the writer
+                    # does not propagate the bad value downstream.
+                    sol_time = zone.solution_time
+                    strand = zone.strand_id
+                    if math.isnan(sol_time):
+                        sol_time = 0.0
+                        strand = 0
+                        fix_auxdata["SolutionTime"] = "NaN"
+                        total_fixed += 1
+                        print(
+                            f"  Zone {i + 1}: '{zone.title}' — "
+                            "solution_time is NaN, reset to 0.0 (strand_id -> 0)"
+                        )
+                        # Rebuild merged_aux to pick up the SolutionTime entry.
+                        merged_aux = {**existing_aux, **fix_auxdata} or None
+
                     common_kw: dict[str, Any] = dict(
                         title=zone.title,
                         value_locations=writer_locs,
                         passive_vars=passive_vars,
                         var_sharing=var_sharing,
-                        solution_time=zone.solution_time,
-                        strand_id=zone.strand_id,
+                        solution_time=sol_time,
+                        strand_id=strand,
                         aux=merged_aux,
                     )
 
@@ -446,4 +474,4 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

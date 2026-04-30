@@ -42,7 +42,6 @@ from ..libtecio import (
     ZoneType,
 )
 
-
 # FE zone types that use tec_zone_create_fe
 _FE_SIMPLE: frozenset[ZoneType] = frozenset({
     ZoneType.FELINESEG,

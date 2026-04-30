@@ -31,6 +31,7 @@ class TecioError(RuntimeError):
 #   class property, returning the corresponding int value.
 # ======================================================================================
 
+
 class FileFormat(Enum):
     """Class for binary data formats.
 
@@ -883,6 +884,7 @@ lib.tecusr142.argtypes = [
 #   - tec_var_* functions query variable-level metadata (name, aux data)
 #   - tec_zone_var_* functions read variable values for a given zone and variable index
 # --------------------------------------------------------------------------------------
+
 
 # Reading SZL files
 def tec_file_reader_open(file_name: str) -> ctypes.c_void_p:
@@ -1859,6 +1861,7 @@ def tec_zone_aux_data_get_item(
 # - tec_file_writer_close finalizes and flushes the file
 # --------------------------------------------------------------------------------------
 
+
 # Initialization and File Handling
 def tec_file_writer_open(
     filename: str,
@@ -2529,6 +2532,7 @@ def tec_zone_face_nbr_write_connections64(
 # - tecend142 finalizes and closes the active file
 # --------------------------------------------------------------------------------------
 
+
 # File initialization and finalization
 def tecini142(
     filename: str,
@@ -2795,7 +2799,6 @@ def tecpolyzne142(
     - num_connected_boundary_faces: Boundary faces (for poly zones)
     - total_num_boundary_connections: Boundary connections (for poly zones)
     """
-
     # Create C array for passive variable flags
     pas_vars_ptr = None
     if pas_vars is not None:

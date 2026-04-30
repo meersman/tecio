@@ -1,6 +1,9 @@
 """Higher level API for reading and writing SZPLT files."""
 
-from .read import Read
-from .write import Write
+from ._read import Read
+from ._write import Write
 
-__all__ = ["Read", "Write",]
+__all__ = [
+    "Read",
+    "Write",
+]

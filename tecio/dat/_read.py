@@ -16,7 +16,7 @@ in memory::
     dat = tecio.open("result.dat", "r")
 
     print(dat.title)
-    print(dat.variables)       # list of variable name strings
+    print(dat.variables)  # list of variable name strings
     print(dat.num_zones)
 
     zone = dat.zone[0]
@@ -26,7 +26,7 @@ in memory::
     print(var.name, var.data_type, var.values)
 
     if zone.zone_type != ZoneType.ORDERED:
-        print(zone.node_map)   # (num_elements, nodes_per_cell) int64 array
+        print(zone.node_map)  # (num_elements, nodes_per_cell) int64 array
 
 Supported read features
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -158,6 +158,7 @@ _VALUES_PER_LINE: int = 5
 # Shared internal helpers
 # ===========================================================================
 
+
 def _quote(s: str) -> str:
     """Wrap *s* in double-quotes, escaping embedded double-quotes.
 
@@ -218,6 +219,7 @@ def _infer_data_type(arr: npt.NDArray) -> DataType:
 # ===========================================================================
 # Parsing helpers (used only by Read)
 # ===========================================================================
+
 
 def _extract_quoted_strings(text: str) -> list[str]:
     """Return all double-quoted strings found in *text* (content unescaped).
@@ -283,7 +285,7 @@ def _kv_split(text: str) -> dict[str, str]:
             j = i + 1
             while j < n and not (text[j] == '"' and text[j - 1] != "\\"):
                 j += 1
-            value = text[i + 1: j].replace('\\"', '"')
+            value = text[i + 1 : j].replace('\\"', '"')
             i = j + 1
         elif text[i] == "(":
             depth, j = 0, i
@@ -300,7 +302,7 @@ def _kv_split(text: str) -> dict[str, str]:
             i = j
         elif text[i] == "[":
             j = text.find("]", i)
-            value = text[i: j + 1] if j >= 0 else text[i:]
+            value = text[i : j + 1] if j >= 0 else text[i:]
             i = j + 1 if j >= 0 else n
         else:
             j = i
@@ -328,7 +330,7 @@ def _parse_index_list(text: str) -> list[int]:
         tok = tok.strip()
         if tok:
             try:
-                result.append(int(tok) - 1)   # 1-based → 0-based
+                result.append(int(tok) - 1)  # 1-based → 0-based
             except ValueError:
                 pass
     return result
@@ -369,7 +371,7 @@ def _parse_varsharelist(text: str) -> dict[int, int]:
     """
     result: dict[int, int] = {}
     for m in re.finditer(r"\[(\d+)\]\s*=\s*(\d+)", text):
-        result[int(m.group(1)) - 1] = int(m.group(2))   # 0-based var, 1-based zone
+        result[int(m.group(1)) - 1] = int(m.group(2))  # 0-based var, 1-based zone
     return result
 
 
@@ -382,11 +384,11 @@ def _parse_auxdata_line(line: str) -> tuple[str, str]:
         * 2025-01-01 ``@user``: Version 1.0
     """
     m = re.match(r"(?i)DATASETAUXDATA\s+", line)
-    rest = line[m.end():] if m else line
+    rest = line[m.end() :] if m else line
     eq = rest.find("=")
     if eq < 0:
         return "", ""
-    return rest[:eq].strip(), _unquote(rest[eq + 1:].strip())
+    return rest[:eq].strip(), _unquote(rest[eq + 1 :].strip())
 
 
 def _apply_varauxdata(line: str, var_auxdata_list: list) -> None:
@@ -400,13 +402,13 @@ def _apply_varauxdata(line: str, var_auxdata_list: list) -> None:
     m = re.match(r"(?i)VARAUXDATA\s+(\d+)\s+", line)
     if not m:
         return
-    var_idx = int(m.group(1))   # 1-based
-    rest = line[m.end():]
+    var_idx = int(m.group(1))  # 1-based
+    rest = line[m.end() :]
     eq = rest.find("=")
     if eq < 0:
         return
     name = rest[:eq].strip()
-    value = _unquote(rest[eq + 1:].strip())
+    value = _unquote(rest[eq + 1 :].strip())
     if 1 <= var_idx < len(var_auxdata_list) and var_auxdata_list[var_idx] is not None:
         var_auxdata_list[var_idx]._data[name] = value
 
@@ -453,6 +455,7 @@ class _LineBuffer:
 # ===========================================================================
 # ReadAuxData
 # ===========================================================================
+
 
 class ReadAuxData:
     """Dictionary-like container for Tecplot auxiliary data strings.
@@ -553,6 +556,7 @@ class ReadAuxData:
 # ===========================================================================
 # ReadVariable
 # ===========================================================================
+
 
 class ReadVariable:
     """Variable metadata and data for one zone parsed from an ASCII DAT file.
@@ -659,7 +663,7 @@ class ReadVariable:
             return self._data
         if start is None or end is None:
             raise ValueError("Both start and end indices must be specified.")
-        return self._data[start - 1: end - 1]
+        return self._data[start - 1 : end - 1]
 
     def __repr__(self) -> str:
         return (
@@ -672,6 +676,7 @@ class ReadVariable:
 # ===========================================================================
 # ReadZone
 # ===========================================================================
+
 
 class ReadZone:
     """Zone data parsed from a Tecplot ASCII DAT file.
@@ -718,14 +723,14 @@ class ReadZone:
         """Return number of nodes/points."""
         if self.zone_type == ZoneType.ORDERED:
             return self.I * self.J * self.K
-        return self.I   # FE: I stores num_nodes
+        return self.I  # FE: I stores num_nodes
 
     @property
     def num_elements(self) -> int:
         """Return number of elements (equals num_points for ORDERED)."""
         if self.zone_type == ZoneType.ORDERED:
             return self.I * self.J * self.K
-        return self.J   # FE: J stores num_cells
+        return self.J  # FE: J stores num_cells
 
     def is_enabled(self) -> bool:
         """Always ``True`` for zones successfully parsed from a file."""
@@ -742,6 +747,7 @@ class ReadZone:
 # ===========================================================================
 # Read — top-level file reader
 # ===========================================================================
+
 
 class Read:
     """Read a Tecplot ASCII DAT file into memory.
@@ -900,7 +906,7 @@ class Read:
                 raw = tokens.next_stripped()
                 _apply_varauxdata(raw, self._var_auxdata)
             else:
-                tokens.next_stripped()   # skip unrecognised lines
+                tokens.next_stripped()  # skip unrecognised lines
 
     def _parse_file_header(self, tokens: _LineBuffer) -> None:
         """Parse TITLE, FILETYPE, VARIABLES, and dataset-level aux data.
@@ -914,12 +920,16 @@ class Read:
         """
         while tokens.has_more():
             line = tokens.peek_stripped()
-            upper_key = line.split("=")[0].strip().upper() if "=" in line else line.strip().upper()
+            upper_key = (
+                line.split("=")[0].strip().upper()
+                if "=" in line
+                else line.strip().upper()
+            )
 
             if upper_key.startswith("ZONE"):
                 break
 
-            tokens.next_stripped()   # consume
+            tokens.next_stripped()  # consume
 
             if upper_key == "TITLE":
                 rhs = line.split("=", 1)[1].strip() if "=" in line else ""
@@ -979,7 +989,7 @@ class Read:
         # ------------------------------------------------------------------ #
         # 1. Collect header lines                                             #
         # ------------------------------------------------------------------ #
-        header_lines: list[str] = [tokens.next_stripped()]   # ZONE T=...
+        header_lines: list[str] = [tokens.next_stripped()]  # ZONE T=...
 
         while tokens.has_more():
             nxt = tokens.peek_stripped()
@@ -990,7 +1000,9 @@ class Read:
             # Stop at a new zone, top-level keyword, or the first data line.
             if nxt_upper.startswith("ZONE"):
                 break
-            if nxt_upper.startswith("DATASETAUXDATA") or nxt_upper.startswith("VARAUXDATA"):
+            if nxt_upper.startswith("DATASETAUXDATA") or nxt_upper.startswith(
+                "VARAUXDATA"
+            ):
                 break
             first_ch = nxt.lstrip()[0] if nxt.lstrip() else ""
             if first_ch in "0123456789+-":
@@ -1002,7 +1014,7 @@ class Read:
         # Strip the leading ZONE keyword from the header text.
         m_zone = re.match(r"(?i)^ZONE\s*", header_text)
         if m_zone:
-            header_text = header_text[m_zone.end():]
+            header_text = header_text[m_zone.end() :]
 
         # ------------------------------------------------------------------ #
         # 2. Parse header key=value pairs                                     #
@@ -1072,7 +1084,7 @@ class Read:
 
         for var_idx in range(self.num_vars):
             if var_idx in passive_set or var_idx in share_map:
-                continue   # no data block for passive/shared variables
+                continue  # no data block for passive/shared variables
             loc = var_locs.get(var_idx, ValueLocation.NODAL)
             n_vals = num_cells if loc == ValueLocation.CELL_CENTERED else num_nodes
             var_arrays[var_idx] = self._read_float_block(tokens, n_vals)
@@ -1093,10 +1105,27 @@ class Read:
         # ------------------------------------------------------------------ #
         # 5. Build ReadVariable and ReadZone objects                          #
         # ------------------------------------------------------------------ #
+        # For ordered zones, reshape each variable array from flat 1-D to
+        # (I, J, K) for nodal variables or (I-1, J-1, K-1) for cell-centered
+        # so that zone dimensions can be inferred from array shape downstream.
+        def _shaped(arr, loc):
+            if arr is None or zone_type != ZoneType.ORDERED:
+                return arr
+            if loc == ValueLocation.CELL_CENTERED:
+                shape = (max(I - 1, 1), max(J - 1, 1), max(K - 1, 1))
+            else:
+                shape = (I, J, K)
+            if arr.size == shape[0] * shape[1] * shape[2]:
+                return arr.reshape(shape, order="F")
+            return arr
+
         read_vars = [
             ReadVariable(
                 name=name,
-                data=var_arrays[idx],
+                data=_shaped(
+                    var_arrays[idx],
+                    var_locs.get(idx, ValueLocation.NODAL),
+                ),
                 value_location=var_locs.get(idx, ValueLocation.NODAL),
                 is_passive=(idx in passive_set),
                 shared_zone=share_map.get(idx, None),
@@ -1108,7 +1137,9 @@ class Read:
             ReadZone(
                 title=zone_title,
                 zone_type=zone_type,
-                I=I, J=J, K=K,
+                I=I,
+                J=J,
+                K=K,
                 solution_time=solution_time,
                 strand_id=strand_id,
                 variables=read_vars,

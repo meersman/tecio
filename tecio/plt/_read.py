@@ -1,5 +1,4 @@
-r"""
-:mod:`read`: Native binary reader for Tecplot PLT (``.plt``) files
+r""":mod:`read`: Native binary reader for Tecplot PLT (``.plt``) files.
 ======================================================================
 
 This module provides a pure-Python / NumPy reader for Tecplot PLT binary
@@ -50,7 +49,6 @@ import numpy as np
 import numpy.typing as npt
 
 from ..libtecio import DataType, FileType, ValueLocation, ZoneType
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -461,7 +459,8 @@ class ReadVariable:
         file_offset, total_count, dtype_str = offset_info
 
         # Resolve value range
-        if value_range == (None, None):
+        full_read = value_range == (None, None)
+        if full_read:
             start_idx = 0  # zero-based
             count = total_count
         else:
@@ -488,6 +487,16 @@ class ReadVariable:
         # Byte-swap if needed so the result is always native-endian
         if data.dtype.byteorder not in ("=", "|", np.dtype(dt).str[0]):
             data = data.byteswap().newbyteorder()
+
+        # Reshape to (I, J, K) / (I-1, J-1, K-1) for full reads of ordered zones.
+        if full_read and self._meta.zone_type == ZoneType.ORDERED:
+            ni, nj, nk = self._meta.i_max, self._meta.j_max, self._meta.k_max
+            if self.value_location == ValueLocation.CELL_CENTERED:
+                shape = (max(ni - 1, 1), max(nj - 1, 1), max(nk - 1, 1))
+            else:
+                shape = (ni, nj, nk)
+            if data.size == shape[0] * shape[1] * shape[2]:
+                data = data.reshape(shape, order="F")
 
         return data
 
@@ -923,9 +932,7 @@ class _PltParser:
                 fp.read(num_pts * gtype_bytes * 2)
         elif geom_type == 1:  # Rectangle
             fp.read(gtype_bytes * 2)
-        elif geom_type == 2:  # Square
-            fp.read(gtype_bytes)
-        elif geom_type == 3:  # Circle
+        elif geom_type == 2 or geom_type == 3:  # Square
             fp.read(gtype_bytes)
         elif geom_type == 4:  # Ellipse
             fp.read(gtype_bytes * 2)
@@ -1036,8 +1043,6 @@ class _PltParser:
         all values for variable 1, …).  We seek rather than read so we do
         not load the data into memory.
         """
-        byte_order = self.byte_order
-
         for v in range(num_vars):
             if meta.is_passive[v] or meta.shared_zone[v] >= 0:
                 # No data on disk for this variable.
@@ -1088,7 +1093,6 @@ class _PltParser:
         meta: _ZoneMeta,
     ) -> None:
         """Record the file offset of the connectivity block (if present)."""
-        byte_order = self.byte_order
         zt = meta.zone_type
 
         if zt == ZoneType.ORDERED:
@@ -1133,7 +1137,6 @@ class _PltParser:
 
     def _skip_poly_face_map(self, fp: io.RawIOBase, meta: _ZoneMeta) -> None:
         """Skip the face-map block for FEPOLYGON / FEPOLYHEDRON zones."""
-        byte_order = self.byte_order
         zt = meta.zone_type
 
         if meta.connectivity_shared_zone >= 0:

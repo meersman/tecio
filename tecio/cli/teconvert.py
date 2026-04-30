@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Command line interface to convert between Tecplot file formats.
 
 Supports conversions between:
@@ -171,7 +170,7 @@ def _copy_zones(reader: Any, writer: Any) -> None:
             passive_vars.append(var.is_passive())
             sv = var.shared_zone  # None or 0-based zone index
             # Write API expects 0 = no sharing, positive = 1-based zone source.
-            var_sharing.append((sv + 1) if sv is not None else 0)
+            var_sharing.append(sv if sv is not None else 0)
             value_locations.append(var.value_location)
 
             if var.is_passive() or sv is not None:
@@ -187,7 +186,9 @@ def _copy_zones(reader: Any, writer: Any) -> None:
         ]
         active_locs = [
             loc
-            for loc, is_p, sv in zip(value_locations, passive_vars, var_sharing, strict=False)
+            for loc, is_p, sv in zip(
+                value_locations, passive_vars, var_sharing, strict=False
+            )
             if not is_p and sv == 0
         ]
 
@@ -252,8 +253,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if dst.exists() and not args.force:
         print(
-            f"Error: output file already exists: {dst}\n"
-            "Use --force to overwrite.",
+            f"Error: output file already exists: {dst}\nUse --force to overwrite.",
             file=sys.stderr,
         )
         return 1
@@ -304,4 +304,4 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

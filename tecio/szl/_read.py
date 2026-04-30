@@ -159,7 +159,9 @@ class ReadZone:
             if var.name.lower() == name.lower():  # case-insensitive match
                 return var.values
         # If no match, raise normal AttributeError
-        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{name}'"
+        )
 
     @property
     def title(self) -> str:
@@ -176,7 +178,7 @@ class ReadZone:
         return libtecio.tec_zone_is_enabled(self._handle, self.zone_index)
 
     @property
-    def num_nodes (self) -> int:
+    def num_nodes(self) -> int:
         """Return number of nodes for the current zone."""
         if self.zone_type == ZoneType.ORDERED:
             return self.I * self.J * self.K
@@ -339,6 +341,11 @@ class ReadVariable:
     ):
         """Get variable values with optional range specification.
 
+        For ordered zones a full read returns the array shaped ``(I, J, K)``
+        for nodal variables, or ``(I-1, J-1, K-1)`` for cell-centered, so
+        that zone dimensions can be inferred directly from the array shape.
+        Partial reads always return a flat 1-D array.
+
         Args:
             value_range: Tuple of (start_index, end_index). If (None, None),
                          retrieves all values.
@@ -352,8 +359,9 @@ class ReadVariable:
             return None
 
         data_type = self.data_type
+        full_read = value_range == (None, None)
 
-        if value_range == (None, None):
+        if full_read:
             start_index = 1
             num_values = self.num_values
         else:
@@ -373,31 +381,41 @@ class ReadVariable:
                 raise ValueError(f"Invalid value range: ({start_index}, {end_index})")
 
         if data_type == DataType.FLOAT:
-            return libtecio.tec_zone_var_get_float_values(
+            arr = libtecio.tec_zone_var_get_float_values(
                 self._handle, self.zone_index, self.var_index, start_index, num_values
             )
-
         elif data_type == DataType.DOUBLE:
-            return libtecio.tec_zone_var_get_double_values(
+            arr = libtecio.tec_zone_var_get_double_values(
                 self._handle, self.zone_index, self.var_index, start_index, num_values
             )
-
         elif data_type == DataType.INT32:
-            return libtecio.tec_zone_var_get_int32_values(
+            arr = libtecio.tec_zone_var_get_int32_values(
                 self._handle, self.zone_index, self.var_index, start_index, num_values
             )
-
         elif data_type == DataType.INT16:
-            return libtecio.tec_zone_var_get_int16_values(
+            arr = libtecio.tec_zone_var_get_int16_values(
                 self._handle, self.zone_index, self.var_index, start_index, num_values
             )
-
         elif data_type == DataType.BYTE:
-            return libtecio.tec_zone_var_get_uint8_values(
+            arr = libtecio.tec_zone_var_get_uint8_values(
                 self._handle, self.zone_index, self.var_index, start_index, num_values
             )
+        else:
+            raise ValueError(f"Unknown data type: {data_type}")
 
-        raise ValueError(f"Unknown data type: {data_type}")
+        # Reshape to (I, J, K) / (I-1, J-1, K-1) for full reads of ordered zones.
+        if full_read and arr is not None:
+            ni, nj, nk = libtecio.tec_zone_get_ijk(self._handle, self.zone_index)
+            zt = libtecio.tec_zone_get_type(self._handle, self.zone_index)
+            if zt == ZoneType.ORDERED:
+                if self.value_location == ValueLocation.CELL_CENTERED:
+                    shape = (max(ni - 1, 1), max(nj - 1, 1), max(nk - 1, 1))
+                else:
+                    shape = (ni, nj, nk)
+                if arr.size == shape[0] * shape[1] * shape[2]:
+                    arr = arr.reshape(shape, order="F")
+
+        return arr
 
 
 class ReadAuxData:

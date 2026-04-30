@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command line interface to merge zones from multiple Tecplot files into one.
+r"""Command line interface to merge zones from multiple Tecplot files into one.
 
 Input files may be any mix of supported formats (.szplt, .plt, .dat).  The
 output format is controlled by the ``-o`` extension.
@@ -75,10 +75,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "  Merge explicit files\n"
             "    $ tecmerge -o combined.szplt part1.szplt part2.szplt\n"
             "  Merge via glob\n"
-            "    $ tecmerge -o combined.szplt \"results_*.szplt\"\n"
+            '    $ tecmerge -o combined.szplt "results_*.szplt"\n'
             "  Assign time/strand metadata\n"
             "    $ tecmerge --assign-time-strands -start 0.0 -delta 0.1 \\\n"
-            "               -o transient.szplt \"step_*.szplt\"\n"
+            '               -o transient.szplt "step_*.szplt"\n'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -126,9 +126,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
 
     # Time strand assignment
-    ts = parser.add_argument_group(
-        "time/strand assignment (--assign-time-strands)"
-    )
+    ts = parser.add_argument_group("time/strand assignment (--assign-time-strands)")
     ts.add_argument(
         "--assign-time-strands",
         action="store_true",
@@ -253,9 +251,7 @@ def _build_var_union(
     for reader in readers:
         local_names = reader.variables
         local_map: dict[str, int] = {n: i for i, n in enumerate(local_names)}
-        row: list[int | None] = [
-            local_map.get(uname) for uname in union_vars
-        ]
+        row: list[int | None] = [local_map.get(uname) for uname in union_vars]
         index_maps.append(row)
 
     return union_vars, index_maps
@@ -321,14 +317,14 @@ def _write_zone(
     # Filter to active, non-shared variables for the writer.
     writer_data = [
         arr
-        for arr, is_p, sv in zip(active_data, passive_vars, var_sharing)
+        for arr, is_p, sv in zip(active_data, passive_vars, var_sharing, strict=False)
         if not is_p and sv == 0
     ]
     # Replace None locations (from passive-by-absence) with a sentinel;
     # they will never reach the writer but the filter must align.
     writer_locs = [
         loc if loc is not None else active_locs[0]
-        for loc, is_p, sv in zip(active_locs, passive_vars, var_sharing)
+        for loc, is_p, sv in zip(active_locs, passive_vars, var_sharing, strict=False)
         if not is_p and sv == 0
     ]
 
@@ -377,9 +373,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Validate time/strand options
     if args.assign_ts:
         if args.start is None:
-            print(
-                "Error: --assign-time-strands requires -start.", file=sys.stderr
-            )
+            print("Error: --assign-time-strands requires -start.", file=sys.stderr)
             return 1
         if args.delta is None and args.end is None:
             print(
@@ -396,8 +390,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     dst = Path(args.output)
     if dst.exists() and not args.force:
         print(
-            f"Error: output file already exists: {dst}\n"
-            "Use --force to overwrite.",
+            f"Error: output file already exists: {dst}\nUse --force to overwrite.",
             file=sys.stderr,
         )
         return 1
@@ -425,9 +418,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         # Open all readers
-        readers: list[Any] = [
-            tecio_open(str(p), "r") for p in input_paths
-        ]
+        readers: list[Any] = [tecio_open(str(p), "r") for p in input_paths]
 
         # Build union variable list
         union_vars, index_maps = _build_var_union(readers)
@@ -436,12 +427,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"\nUnion variable list ({n_union}): {union_vars}")
 
         # Report any variables that will be passive in some files.
-        for fi, (reader, imap) in enumerate(zip(readers, index_maps)):
-            missing = [
-                union_vars[ui]
-                for ui, li in enumerate(imap)
-                if li is None
-            ]
+        for fi, (reader, imap) in enumerate(zip(readers, index_maps, strict=False)):
+            missing = [union_vars[ui] for ui, li in enumerate(imap) if li is None]
             if missing:
                 print(
                     f"  {input_paths[fi].name}: variables set passive "
@@ -475,7 +462,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 writer.add_auxvar_dict(auxvar)
 
             total_zones = 0
-            for fi, (reader, imap) in enumerate(zip(readers, index_maps)):
+            for fi, (reader, imap) in enumerate(zip(readers, index_maps, strict=False)):
                 sol_time = times[fi] if times is not None else None
                 s_id = args.strand if times is not None else None
 

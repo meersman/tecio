@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Command line interface to slice Tecplot data along IJK indices and/or
 solution time.
 
@@ -59,7 +58,6 @@ import numpy as np
 
 from .. import open as tecio_open
 from ..libtecio import ZoneType
-
 
 # ---------------------------------------------------------------------------
 # Slice spec types
@@ -140,8 +138,7 @@ def _parse_ijk_slice(value: str) -> IjkSliceSpec:
         )
     except ValueError as exc:
         raise argparse.ArgumentTypeError(
-            f"Invalid IJK slice {value!r}: {exc}.  "
-            "All components must be integers."
+            f"Invalid IJK slice {value!r}: {exc}.  All components must be integers."
         ) from exc
 
 
@@ -326,30 +323,21 @@ def _ijk_spec_to_slice(spec: IjkSliceSpec | None) -> slice:
     if spec is None:
         return slice(None)
 
-    # 1-based inclusive start -> 0-based: subtract 1.
-    # Handle negative start for reversed slices.
-    if spec.start is not None:
-        if spec.skip is not None and spec.skip < 0:
-            # Negative step: start > end in 1-based terms.
-            # No adjustment needed; numpy handles negative-step indexing
-            # from the end naturally when start is also negative-indexed.
-            # We keep 1-based -> 0-based conversion.
-            py_start = spec.start - 1
-        else:
-            py_start = spec.start - 1
-    else:
-        py_start = None
+    # 1-based inclusive start -> 0-based: always subtract 1.
+    py_start = (spec.start - 1) if spec.start is not None else None
 
-    # 1-based inclusive end -> Python exclusive end.
-    # For a normal (positive) step: end index N (1-based) -> stop N (0-based
-    # exclusive), because slice [:N] includes elements 0..N-1 = 1-based 1..N.
-    # For a negative step: end index N (1-based) -> stop N-2 (we want to
-    # include element N-1 in 0-based, so exclusive stop is N-2).
+    # 1-based inclusive end -> Python exclusive stop.
+    #
+    # Positive step: 1-based end N -> py_stop N.
+    #   arr[:N] (0-based) gives elements 0..N-1 = 1-based 1..N.  Correct.
+    #
+    # Negative step: 1-based end N -> py_stop N-1.
+    #   arr[s:N-1:-1] includes 0-based index N-1 = 1-based N.  Correct.
+    #   Special case: 1-based end=1 -> 0-based index 0 -> py_stop=None
+    #   (arr[s:0:-1] would miss index 0; arr[s:None:-1] includes it).
     if spec.end is not None:
-        if spec.skip is not None and spec.skip < 0:
-            py_end = spec.end - 2 if spec.end > 1 else None
-        else:
-            py_end = spec.end
+        is_neg = spec.skip is not None and spec.skip < 0
+        py_end = (None if spec.end == 1 else spec.end - 1) if is_neg else spec.end
     else:
         py_end = None
 
@@ -423,8 +411,7 @@ def _build_time_filter(
             entries_sorted = [
                 (t, zi)
                 for t, zi in entries_sorted
-                if (t_start is None or t >= t_start)
-                and (t_end is None or t <= t_end)
+                if (t_start is None or t >= t_start) and (t_end is None or t <= t_end)
             ]
 
         if t_skip is not None and t_skip > 1:
@@ -440,11 +427,47 @@ def _build_time_filter(
 # ---------------------------------------------------------------------------
 
 
+def _build_protected_set(
+    zones: list[Any],
+    keep_indices: set[int],
+) -> set[int]:
+    """Return 0-based zone indices that must be written as protected zones.
+
+    A zone is "protected" if it is excluded by the time filter but is
+    referenced as a variable-sharing source by at least one zone that will
+    be written.  Protected zones are written with all non-shared variables
+    set passive and their strand ID forced to 0 so they act as inert grid
+    anchors without contributing to the time series.
+
+    Args:
+        zones:        All source ``ReadZone`` objects.
+        keep_indices: 0-based zone indices selected by the time filter.
+
+    Returns:
+        Set of 0-based zone indices to write as protected zones.
+
+    """
+    # Collect every sharing source referenced by a kept zone.
+    required_sources: set[int] = set()
+    for zi in keep_indices:
+        for var in zones[zi].variable:
+            sv = var.shared_zone  # 0-based, or None
+            if sv is not None:
+                required_sources.add(sv)
+
+    # A zone needs protection only if it is required but not already kept.
+    return required_sources - keep_indices
+
+
 def _collect_zone_arrays(
     zone: Any,
     num_vars: int,
 ) -> tuple[list[np.ndarray], list[Any], list[bool], list[int]]:
     """Read all variable arrays and metadata from *zone*.
+
+    Sharing references are passed through verbatim as 1-based zone indices.
+    Zone numbering is preserved in the output (every zone is written in source
+    order — either full, protected, or skipped), so no remapping is needed.
 
     Args:
         zone:     Source ``ReadZone``.
@@ -463,11 +486,13 @@ def _collect_zone_arrays(
     for j in range(num_vars):
         var = zone.variable[j]
         passive_vars.append(var.is_passive())
-        sv = var.shared_zone
-        var_sharing.append((sv + 1) if sv is not None else 0)
+        sv = var.shared_zone  # 0-based source zone index, or None
+        share_int = sv if sv is not None else 0
+
+        var_sharing.append(share_int)
         locs.append(var.value_location)
 
-        if var.is_passive() or sv is not None:
+        if var.is_passive() or share_int != 0:
             data.append(np.array([], dtype=np.float32))
             continue
 
@@ -494,25 +519,25 @@ def _filter_for_writer(
     """
     writer_data = [
         arr
-        for arr, is_p, sv in zip(data, passive_vars, var_sharing)
+        for arr, is_p, sv in zip(data, passive_vars, var_sharing, strict=False)
         if not is_p and sv == 0
     ]
     writer_locs = [
         loc
-        for loc, is_p, sv in zip(locs, passive_vars, var_sharing)
+        for loc, is_p, sv in zip(locs, passive_vars, var_sharing, strict=False)
         if not is_p and sv == 0
     ]
     return writer_data, writer_locs
 
 
-def _write_zone_verbatim(writer: Any, zone: Any, num_vars: int) -> None:
+def _write_zone_verbatim(
+    writer: Any,
+    zone: Any,
+    num_vars: int,
+) -> None:
     """Copy a zone to *writer* without modification."""
-    data, locs, passive_vars, var_sharing = _collect_zone_arrays(
-        zone, num_vars
-    )
-    writer_data, writer_locs = _filter_for_writer(
-        data, locs, passive_vars, var_sharing
-    )
+    data, locs, passive_vars, var_sharing = _collect_zone_arrays(zone, num_vars)
+    writer_data, writer_locs = _filter_for_writer(data, locs, passive_vars, var_sharing)
 
     zone_aux: dict[str, str] | None = (
         dict(zone.auxdata.items()) if len(zone.auxdata) > 0 else None
@@ -539,6 +564,62 @@ def _write_zone_verbatim(writer: Any, zone: Any, num_vars: int) -> None:
         )
 
 
+def _write_zone_protected(
+    writer: Any,
+    zone: Any,
+    num_vars: int,
+) -> None:
+    """Write a zone as a protected grid anchor.
+
+    All variables that are not already passive or shared are set passive so
+    that no solution data is carried into the output.  The strand ID is
+    forced to 0 so the zone is treated as stationary and does not appear in
+    any time-series animation.  Sharing references are preserved verbatim so
+    that zones which share coordinates from this zone continue to work.
+
+    Args:
+        writer:   Open ``Write`` instance.
+        zone:     Source ``ReadZone``.
+        num_vars: Number of variables in the dataset.
+
+    """
+    data, locs, passive_vars, var_sharing = _collect_zone_arrays(zone, num_vars)
+
+    # Force every non-shared variable to passive.
+    passive_vars = [
+        True if sv == 0 else is_p
+        for is_p, sv in zip(passive_vars, var_sharing, strict=False)
+    ]
+
+    # No active non-shared data to pass to the writer.
+    writer_data: list[np.ndarray] = []
+    writer_locs: list[Any] = []
+
+    zone_aux: dict[str, str] | None = (
+        dict(zone.auxdata.items()) if len(zone.auxdata) > 0 else None
+    )
+
+    kw: dict[str, Any] = dict(
+        title=zone.title,
+        value_locations=writer_locs,
+        passive_vars=passive_vars,
+        var_sharing=var_sharing,
+        solution_time=zone.solution_time,
+        strand_id=0,  # force stationary so it is invisible in time animation
+        aux=zone_aux,
+    )
+
+    if zone.zone_type == ZoneType.ORDERED:
+        writer.write_ijk_zone(data=writer_data, **kw)
+    else:
+        writer.write_fe_zone(
+            zone_type=zone.zone_type,
+            data=writer_data,
+            node_map=zone.node_map,
+            **kw,
+        )
+
+
 def _slice_and_write_ordered(
     writer: Any,
     zone: Any,
@@ -548,6 +629,9 @@ def _slice_and_write_ordered(
     sl_k: slice,
 ) -> bool:
     """Apply IJK slices to an ordered zone and write it.
+
+    Sharing references are passed through verbatim (zone numbering is
+    preserved because every zone is written in source order).
 
     Args:
         writer:   Open ``Write`` instance.
@@ -573,15 +657,11 @@ def _slice_and_write_ordered(
     if ni_out == 0 or nj_out == 0 or nk_out == 0:
         return False
 
-    new_dims = (ni_out, nj_out, nk_out)
-
-    data, locs, passive_vars, var_sharing = _collect_zone_arrays(
-        zone, num_vars
-    )
+    data, locs, passive_vars, var_sharing = _collect_zone_arrays(zone, num_vars)
 
     sliced_data: list[np.ndarray] = []
     for j, (arr, is_p, sv) in enumerate(
-        zip(data, passive_vars, var_sharing)
+        zip(data, passive_vars, var_sharing, strict=False)
     ):
         if is_p or sv != 0 or arr.size == 0:
             sliced_data.append(arr)
@@ -590,21 +670,26 @@ def _slice_and_write_ordered(
         var = zone.variable[j]
 
         if var.value_location == ValueLocation.CELL_CENTERED:
-            # Build cell-index slices from nodal slices.
-            # A nodal slice [a:b:s] over N points covers cells [a:b-1:s]
-            # over N-1 cells (exclusive stop shifts inward by one).
+            # Cell array has shape (I-1, J-1, K-1).
+            # Cell c sits between nodes c and c+1.  For a nodal selection
+            # with stride s, the fully-bounded cells are exactly the
+            # lower-node indices of each consecutive selected-node pair:
+            #   positive step -> selected_nodes[:-1]  (each is the lower node)
+            #   negative step -> selected_nodes[1:]   (each is the lower node)
+            # In slice terms:
+            #   positive: cell slice = slice(node_start, node_stop - step, step)
+            #   negative: cell slice = slice(node_start + step,
+            #                               node_stop + step or None, step)
             cc_slices: list[slice] = []
-            for sl, n_nodal in zip((sl_i, sl_j, sl_k), (ni, nj, nk)):
-                n_cell = max(n_nodal - 1, 1)
-                indices = range(*sl.indices(n_nodal))
-                if len(indices) < 2:
-                    # Degenerate: only one nodal point selected -> 0 cells.
-                    cc_slices.append(slice(0, 0))
-                    continue
-                c_start = indices[0]
-                # Last cell index = second-to-last nodal index.
-                c_stop = indices[-2] + 1  # exclusive
-                cc_slices.append(slice(c_start, c_stop, sl.step))
+            for sl, n_nodal in zip((sl_i, sl_j, sl_k), (ni, nj, nk), strict=False):
+                start, stop, step = sl.indices(n_nodal)
+                if step > 0:
+                    cc_slices.append(slice(start, stop - step, step))
+                else:
+                    raw_stop = stop + step
+                    cc_slices.append(
+                        slice(start + step, None if raw_stop < 0 else raw_stop, step)
+                    )
 
             grid = arr.reshape(
                 max(ni - 1, 1), max(nj - 1, 1), max(nk - 1, 1), order="F"
@@ -614,7 +699,7 @@ def _slice_and_write_ordered(
             grid = arr.reshape(ni, nj, nk, order="F")
             sliced = grid[sl_i, sl_j, sl_k]
 
-        sliced_data.append(np.ascontiguousarray(sliced).ravel(order="F"))
+        sliced_data.append(np.ascontiguousarray(sliced))
 
     writer_data, writer_locs = _filter_for_writer(
         sliced_data, locs, passive_vars, var_sharing
@@ -633,7 +718,6 @@ def _slice_and_write_ordered(
         solution_time=zone.solution_time,
         strand_id=zone.strand_id,
         aux=zone_aux,
-        dimensions=new_dims,
     )
     return True
 
@@ -660,8 +744,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     dst = Path(args.output)
     if dst.exists() and not args.force:
         print(
-            f"Error: output file already exists: {dst}\n"
-            "Use --force to overwrite.",
+            f"Error: output file already exists: {dst}\nUse --force to overwrite.",
             file=sys.stderr,
         )
         return 1
@@ -671,8 +754,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if not do_ijk and not do_time:
         print(
-            "Warning: no slice flags provided.  "
-            "Output will be a verbatim copy.",
+            "Warning: no slice flags provided.  Output will be a verbatim copy.",
             file=sys.stderr,
         )
 
@@ -714,6 +796,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Output : {dst}")
 
             if do_ijk:
+
                 def _fmt(spec: IjkSliceSpec | None, ax: str) -> str:
                     if spec is None:
                         return f"{ax}[:]"
@@ -737,11 +820,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             if do_time:
                 t = args.t
                 t_desc = (
-                    f"[{t.start if t is not None and t.start is not None else '-inf'}"
-                    f":"
-                    f"{t.end if t is not None and t.end is not None else '+inf'}"
-                    f":{t.skip if t is not None and t.skip is not None else '1'}]"
-                ) if t is not None else "[::]"
+                    (
+                        f"[{t.start if t is not None and t.start is not None else '-inf'}"
+                        f":"
+                        f"{t.end if t is not None and t.end is not None else '+inf'}"
+                        f":{t.skip if t is not None and t.skip is not None else '1'}]"
+                    )
+                    if t is not None
+                    else "[::]"
+                )
                 print(
                     f"Time   : {t_desc}  "
                     f"(keeping {len(keep_indices)} of {len(all_zones)} zone(s))"
@@ -769,13 +856,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if auxvar:
                     writer.add_auxvar_dict(auxvar)
 
+                # Zones excluded by the time filter that are sharing sources
+                # for kept zones are written as "protected" anchors: all
+                # non-shared variables passive, strand ID forced to 0.
+                # Because every zone is written in source order (full, protected,
+                # or skipped), zone numbering is identical between source and
+                # output and sharing references need no remapping.
+                protected_indices: set[int] = (
+                    _build_protected_set(all_zones, keep_indices) if do_time else set()
+                )
+                if protected_indices:
+                    print(
+                        f"Protected (sharing sources): "
+                        f"{sorted(zi + 1 for zi in protected_indices)} "
+                        f"zone(s) written as passive grid anchors."
+                    )
+
                 zones_written = 0
+                zones_protected = 0
 
                 for zi, zone in enumerate(all_zones):
-                    # Time filter.
-                    if zi not in keep_indices:
-                        continue
-
                     zt = zone.zone_type
 
                     if zt in (ZoneType.FEPOLYGON, ZoneType.FEPOLYHEDRON):
@@ -786,9 +886,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                         )
                         continue
 
+                    if zi in protected_indices:
+                        # Write as a passive grid anchor to preserve sharing.
+                        _write_zone_protected(writer, zone, num_vars)
+                        zones_written += 1
+                        zones_protected += 1
+                        continue
+
+                    if zi not in keep_indices:
+                        continue
+
                     if do_ijk and zt == ZoneType.ORDERED:
                         written = _slice_and_write_ordered(
-                            writer, zone, num_vars, sl_i, sl_j, sl_k
+                            writer,
+                            zone,
+                            num_vars,
+                            sl_i,
+                            sl_j,
+                            sl_k,
                         )
                         if not written:
                             print(
@@ -818,7 +933,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         dst.unlink(missing_ok=True)
         return 1
 
-    print(f"Done. {zones_written} zone(s) written to: {dst}")
+    msg = f"Done. {zones_written} zone(s) written to: {dst}"
+    if zones_protected:
+        msg += f" ({zones_protected} protected grid anchor(s))"
+    print(msg)
     return 0
 
 

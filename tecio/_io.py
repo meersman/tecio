@@ -34,13 +34,13 @@ Notes
   because the ``Write`` API does not yet expose a poly-zone writer.  A
   :exc:`NotImplementedError` is raised if such zones are encountered in the
   source file.
+
 """
 
 from __future__ import annotations
 
 import os
 import tempfile
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +48,7 @@ import numpy as np
 import numpy.typing as npt
 
 from . import dat, plt, szl
-from .libtecio import DataType, FaceNeighborMode, FileType, ValueLocation, ZoneType
+from .libtecio import FileType, ValueLocation, ZoneType
 
 # ---------------------------------------------------------------------------
 # Dispatch table
@@ -58,7 +58,7 @@ _HANDLERS: dict[str, dict[str, Any]] = {
     ".szplt": {
         "r": szl.Read,
         "w": szl.Write,
-        "x": None,   # filled below after class definitions
+        "x": None,  # filled below after class definitions
         "a": None,
         "a+": None,
     },
@@ -149,7 +149,7 @@ def _copy_zones(reader: szl.Read | plt.Read, writer: szl.Write | plt.Write) -> N
 
         for var in zone.variable:
             passive_vars.append(var.is_passive())
-            sv = var.shared_zone        # None or 0-based zone number (szl convention)
+            sv = var.shared_zone  # None or 0-based zone number (szl convention)
             # Write API expects 0 = no sharing, positive = 1-based zone source.
             var_sharing.append((sv + 1) if sv is not None else 0)
             value_locations.append(var.value_location)
@@ -164,12 +164,14 @@ def _copy_zones(reader: szl.Read | plt.Read, writer: szl.Write | plt.Write) -> N
         # passive_vars / var_sharing.
         active_data = [
             arr
-            for arr, is_p, sv in zip(data, passive_vars, var_sharing)
+            for arr, is_p, sv in zip(data, passive_vars, var_sharing, strict=False)
             if not is_p and sv == 0
         ]
         active_locs = [
             loc
-            for loc, is_p, sv in zip(value_locations, passive_vars, var_sharing)
+            for loc, is_p, sv in zip(
+                value_locations, passive_vars, var_sharing, strict=False
+            )
             if not is_p and sv == 0
         ]
 
@@ -436,7 +438,7 @@ def _open_append(
         prefix=f".{src.stem}_append_",
         suffix=src.suffix,
     )
-    os.close(tmp_fd)   # WriteCls will open it independently
+    os.close(tmp_fd)  # WriteCls will open it independently
     tmp_path = Path(tmp_path_str)
 
     try:
@@ -569,7 +571,7 @@ def open(
 
         # Append and read
         with tecio.open("out.szplt", "a+") as rw:
-            print(rw.zone[0].title)          # read from original
+            print(rw.zone[0].title)  # read from original
             rw.write_ijk_zone(data=[x2, y2, p2], title="Zone 2")  # append
 
     """
@@ -577,8 +579,7 @@ def open(
 
     if ext not in _HANDLERS:
         raise ValueError(
-            f"Unsupported file extension: '{ext}'.  "
-            f"Supported: {sorted(_HANDLERS)}"
+            f"Unsupported file extension: '{ext}'.  Supported: {sorted(_HANDLERS)}"
         )
 
     if mode == "r":
@@ -600,6 +601,5 @@ def open(
 
     else:
         raise ValueError(
-            f"Unrecognised mode '{mode}'.  "
-            "Supported modes: 'r', 'w', 'x', 'a', 'a+'"
+            f"Unrecognised mode '{mode}'.  Supported modes: 'r', 'w', 'x', 'a', 'a+'"
         )

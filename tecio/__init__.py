@@ -10,7 +10,7 @@ try:
 except metadata.PackageNotFoundError:
     __version__ = "0.0.0"
 
-from . import dat, libtecio, plt, szl, tecutils
+from . import cli, dat, libtecio, plt, szl, tecutils
 from ._io import open
 
 __all__ = [
@@ -21,5 +21,6 @@ __all__ = [
     "pltread",
     "szl",
     "tecutils",
+    "cli",
     "__version__",
 ]

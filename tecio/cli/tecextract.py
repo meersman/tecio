@@ -35,7 +35,6 @@ import numpy as np
 from .. import open as tecio_open
 from ..libtecio import ZoneType
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -157,8 +156,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if dst.exists() and not args.force:
         print(
-            f"Error: output file already exists: {dst}\n"
-            "Use --force to overwrite.",
+            f"Error: output file already exists: {dst}\nUse --force to overwrite.",
             file=sys.stderr,
         )
         return 1
@@ -187,8 +185,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 for v in args.variables:
                     if v < 1 or v > num_vars:
                         print(
-                            f"Error: variable index {v} out of range "
-                            f"[1, {num_vars}].",
+                            f"Error: variable index {v} out of range [1, {num_vars}].",
                             file=sys.stderr,
                         )
                         return 1
@@ -203,13 +200,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             out_var_names: list[str] = [all_var_names[v - 1] for v in out_var_indices]
 
             print(f"Extracting: {src}  ->  {dst}")
-            print(
-                f"  Zones     : {sorted(zone_set)} of {reader.num_zones}"
-            )
-            print(
-                f"  Variables : {out_var_indices} of {num_vars} "
-                f"({out_var_names})"
-            )
+            print(f"  Zones     : {sorted(zone_set)} of {reader.num_zones}")
+            print(f"  Variables : {out_var_indices} of {num_vars} ({out_var_names})")
 
             with tecio_open(
                 str(dst),
@@ -268,20 +260,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                             arr = var.values
                             if arr is None or arr.size == 0:
                                 passive_vars[-1] = True
-                                active_data.append(
-                                    np.array([], dtype=np.float32)
-                                )
+                                active_data.append(np.array([], dtype=np.float32))
                             else:
                                 active_data.append(arr)
 
                     writer_data = [
                         arr
-                        for arr, is_p in zip(active_data, passive_vars)
+                        for arr, is_p in zip(active_data, passive_vars, strict=False)
                         if not is_p
                     ]
                     writer_locs = [
                         loc
-                        for loc, is_p in zip(active_locs, passive_vars)
+                        for loc, is_p in zip(active_locs, passive_vars, strict=False)
                         if not is_p
                     ]
 

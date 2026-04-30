@@ -13,7 +13,6 @@ from .. import open as tecio_open
 from ..libtecio import ZoneType
 
 
-
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Dump all contents of a Tecplot file.",
@@ -36,7 +35,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Print only file header and exit. No zone or variable records printed.",
         action="store_false",
         default=True,
-        dest="print_zones"
+        dest="print_zones",
     )
     parser.add_argument(
         "--ignore-vars",
@@ -46,7 +45,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
         action="store_false",
         default=True,
-        dest="print_vars"
+        dest="print_vars",
     )
     parser.add_argument(
         "-zone",
@@ -86,9 +85,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # Create tec reader object
     with tecio_open(args.filename, "r") as tec:
-
         print("\nFile Record")
-        print("="*70)
+        print("=" * 70)
         print(f"File Type         : {tec.file_type}")
         print(f"Dataset Title     : {tec.title}")
         print(f"Num Vars          : {tec.num_vars}")
@@ -98,29 +96,29 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         # Print dataset-level auxiliary data if available
         print("\n\nDataset Auxiliary Data")
-        print("-"*70)
+        print("-" * 70)
         if len(tec.auxdata) > 0:
             for name, value in tec.auxdata.items():
                 print(f"  {name:>15} : {value}")
 
         # Print variable-level auxiliary data if available
         print("\n\nVariable Auxiliary Data")
-        print("-"*70)
+        print("-" * 70)
         for i in range(tec.num_vars):
-            var_aux = tec.get_var_auxdata(i+1)
+            var_aux = tec.get_var_auxdata(i + 1)
             if len(var_aux) > 0:
-                print(f"Var {i+1:3} Aux Data  : {dict(var_aux)}")
+                print(f"Var {i + 1:3} Aux Data  : {dict(var_aux)}")
                 for name, value in var_aux.items():
                     print(f"  {name:>15} : {value}")
 
         # Print zone record
         if args.print_zones:
             print("\n\nZone Record")
-            print("-"*70)
+            print("-" * 70)
             for i in range(tec.num_zones):
-                if (args.zone is None) or (i+1 == args.zone):
+                if (args.zone is None) or (i + 1 == args.zone):
                     zone = tec.zone[i]
-                    print(f"\nZone {i+1:3}")
+                    print(f"\nZone {i + 1:3}")
                     print(f"  Title           : {zone.title}")
                     print(f"  Zone Type       : {zone.zone_type}")
                     if zone.zone_type == ZoneType.ORDERED:
@@ -143,17 +141,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                         print(f"  Nodes Per Cell  : {zone.nodes_per_cell}")
                         print(f"  Node Map Shape  : {zone.node_map.shape}")
                         value_str = np.array2string(
-                            zone.node_map,
-                            prefix="  Connectivity    : ", separator=", "
+                            zone.node_map, prefix="  Connectivity    : ", separator=", "
                         )
                         print(f"  Connectivity    : {value_str}")
 
                     # Print variable record
                     if args.print_vars:
                         for j in range(tec.num_vars):
-                            if (args.variable is None) or (j+1 == args.variable):
+                            if (args.variable is None) or (j + 1 == args.variable):
                                 var = zone.variable[j]
-                                print(f"  Variable {j+1:3}")
+                                print(f"  Variable {j + 1:3}")
                                 print(f"    Name          : {var.name}")
                                 print(f"    Data Type     : {var.data_type}")
                                 print(f"    Location      : {var.value_location}")
@@ -168,7 +165,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                                     # Get first 100 values or all if fewer than 100
                                     value_str = np.array2string(
                                         var.values,
-                                        prefix="    Values        : ", separator=", "
+                                        prefix="    Values        : ",
+                                        separator=", ",
                                     )
                                     print(f"    Values        : {value_str}")
 

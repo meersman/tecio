@@ -29,7 +29,6 @@ from collections.abc import Sequence
 import numpy as np
 
 from .. import open as tecio_open
-from ..libtecio import ZoneType
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -105,7 +104,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                         continue
 
                     var = zone.variable[j]
-                    loc = var.value_location.name if var.value_location is not None else "?"
+                    loc = (
+                        var.value_location.name
+                        if var.value_location is not None
+                        else "?"
+                    )
                     name = var.name[:20]
 
                     if var.is_passive():

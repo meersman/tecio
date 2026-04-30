@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Command line interface to scale and/or offset variables in a Tecplot file.
 
 Variables can be identified by 1-based index or by name.  The transformation
@@ -40,8 +39,7 @@ from typing import Any
 import numpy as np
 
 from .. import open as tecio_open
-from ..libtecio import DataType, ZoneType
-
+from ..libtecio import ZoneType
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -56,7 +54,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "Transformation: new = old * scale + offset."
         ),
         epilog=(
-            "Examples:\n"
+            "Example usage:\n"
             "  Scale variable 4 by 1e-3 (Pa -> kPa)\n"
             "    $ tecscale -variable 4 -scale 1e-3 <file>\n"
             "  Same using variable name\n"
@@ -101,13 +99,12 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="INDEX",
         help=(
-            "1-based zone index to apply the transformation to.  "
-            "Default is all zones."
+            "1-based zone index to apply the transformation to.  Default is all zones."
         ),
     )
     parser.add_argument(
-        "-o",
         "--output",
+        "-o",
         type=str,
         default=None,
         metavar="PATH",
@@ -117,7 +114,6 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "-f",
         "--force",
         action="store_true",
         default=False,
@@ -165,8 +161,7 @@ def _resolve_variable(spec: str, var_names: list[str]) -> int:
             return i
 
     print(
-        f"Error: variable '{spec}' not found.  "
-        f"Available: {var_names}",
+        f"Error: variable '{spec}' not found.  Available: {var_names}",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -198,8 +193,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if dst.exists() and not args.force:
         print(
-            f"Error: output file already exists: {dst}\n"
-            "Use --force to overwrite.",
+            f"Error: output file already exists: {dst}\nUse --force to overwrite.",
             file=sys.stderr,
         )
         return 1
@@ -263,9 +257,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         )
                         continue
 
-                    apply_scale = (
-                        args.zone is None or zone_num == args.zone
-                    )
+                    apply_scale = args.zone is None or zone_num == args.zone
 
                     active_data: list[np.ndarray] = []
                     active_locs: list[Any] = []
@@ -275,21 +267,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                     for j, var in enumerate(zone.variable):
                         passive_vars.append(var.is_passive())
                         sv = var.shared_zone
-                        var_sharing.append((sv + 1) if sv is not None else 0)
+                        var_sharing.append(sv if sv is not None else 0)
                         active_locs.append(var.value_location)
 
                         if var.is_passive() or sv is not None:
-                            active_data.append(
-                                np.array([], dtype=np.float32)
-                            )
+                            active_data.append(np.array([], dtype=np.float32))
                             continue
 
                         arr = var.values
                         if arr is None or arr.size == 0:
                             passive_vars[-1] = True
-                            active_data.append(
-                                np.array([], dtype=np.float32)
-                            )
+                            active_data.append(np.array([], dtype=np.float32))
                             continue
 
                         if apply_scale and j == var_idx0:
@@ -303,14 +291,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     writer_data = [
                         arr
                         for arr, is_p, sv in zip(
-                            active_data, passive_vars, var_sharing
+                            active_data, passive_vars, var_sharing, strict=False
                         )
                         if not is_p and sv == 0
                     ]
                     writer_locs = [
                         loc
                         for loc, is_p, sv in zip(
-                            active_locs, passive_vars, var_sharing
+                            active_locs, passive_vars, var_sharing, strict=False
                         )
                         if not is_p and sv == 0
                     ]
@@ -349,4 +337,4 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

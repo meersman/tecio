@@ -16,7 +16,7 @@ in memory::
     dat = tecio.open("result.dat", "r")
 
     print(dat.title)
-    print(dat.variables)       # list of variable name strings
+    print(dat.variables)  # list of variable name strings
     print(dat.num_zones)
 
     zone = dat.zone[0]
@@ -26,7 +26,7 @@ in memory::
     print(var.name, var.data_type, var.values)
 
     if zone.zone_type != ZoneType.ORDERED:
-        print(zone.node_map)   # (num_elements, nodes_per_cell) int64 array
+        print(zone.node_map)  # (num_elements, nodes_per_cell) int64 array
 
 Supported read features
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -160,6 +160,7 @@ _VALUES_PER_LINE: int = 5
 # Shared internal helpers
 # ===========================================================================
 
+
 def _quote(s: str) -> str:
     """Wrap *s* in double-quotes, escaping embedded double-quotes.
 
@@ -221,6 +222,7 @@ def _infer_data_type(arr: npt.NDArray) -> DataType:
 # Write helpers
 # ===========================================================================
 
+
 def _make_float_fmt(sig_digits: int) -> str:
     """Return a ``format()``-compatible scientific-notation format string.
 
@@ -243,7 +245,7 @@ def _stage_float_array(buf: io.StringIO, arr: npt.NDArray, fmt: str) -> None:
     flat = np.asarray(arr).ravel()
     vpl = _VALUES_PER_LINE
     for start in range(0, flat.size, vpl):
-        chunk = flat[start: start + vpl]
+        chunk = flat[start : start + vpl]
         buf.write("\t".join(format(float(v), fmt) for v in chunk) + "\n")
 
 
@@ -261,6 +263,7 @@ def _stage_connectivity_row(buf: io.StringIO, row: npt.NDArray) -> None:
 # ===========================================================================
 # Write class
 # ===========================================================================
+
 
 class Write:
     r"""Context-manager writer for Tecplot 360 ASCII (``.dat``) files.
@@ -321,7 +324,9 @@ class Write:
 
         self._fp: io.TextIOWrapper | None = None
         self._opened: bool = False
-        self._sig_digits: int = sig_digits if sig_digits is not None else self.SIG_DIGITS
+        self._sig_digits: int = (
+            sig_digits if sig_digits is not None else self.SIG_DIGITS
+        )
         self._float_fmt: str = _make_float_fmt(self._sig_digits)
 
         if self.variables is not None:
@@ -397,8 +402,7 @@ class Write:
                 var_idx = key - 1
                 if var_idx not in range(len(self.variables)):
                     raise IndexError(
-                        f"Variable index {key} out of bounds "
-                        f"[1, {len(self.variables)}]"
+                        f"Variable index {key} out of bounds [1, {len(self.variables)}]"
                     )
             elif isinstance(key, str):
                 try:
@@ -409,9 +413,7 @@ class Write:
                         f"variable list ({self.variables})"
                     ) from exc
             else:
-                raise TypeError(
-                    f"Aux data key must be str or 1-based int, got {key!r}"
-                )
+                raise TypeError(f"Aux data key must be str or 1-based int, got {key!r}")
 
             one_based = var_idx + 1
             for name, value in subdict.items():
@@ -467,7 +469,8 @@ class Write:
         if len(data) != len(self.variables):
             self._handle_zone_error()
             expected = sum(
-                1 for p, s in zip(passive_vars, var_sharing, strict=True)
+                1
+                for p, s in zip(passive_vars, var_sharing, strict=True)
                 if not p and not s
             )
             if len(data) != expected:
@@ -477,8 +480,14 @@ class Write:
                 )
 
         # Infer dimensions
-        nodal = [i for i, loc in enumerate(value_locations) if loc == ValueLocation.NODAL]
-        cell = [i for i, loc in enumerate(value_locations) if loc == ValueLocation.CELL_CENTERED]
+        nodal = [
+            i for i, loc in enumerate(value_locations) if loc == ValueLocation.NODAL
+        ]
+        cell = [
+            i
+            for i, loc in enumerate(value_locations)
+            if loc == ValueLocation.CELL_CENTERED
+        ]
 
         if nodal:
             ref = np.asarray(data[nodal[0]])
@@ -522,7 +531,8 @@ class Write:
                 )
 
         active_var_idx = [
-            vi for vi, (p, s) in enumerate(
+            vi
+            for vi, (p, s) in enumerate(
                 zip(passive_vars, var_sharing, strict=True), start=1
             )
             if not p and not s
@@ -533,11 +543,18 @@ class Write:
 
         buf = io.StringIO()
         self._stage_zone_header(
-            buf, title, ZoneType.ORDERED,
-            imax=imax, jmax=jmax, kmax=kmax,
-            solution_time=solution_time, strand_id=strand_id,
-            passive_vars=passive_vars, var_sharing=var_sharing,
-            value_locations_global=vl_global, aux=aux,
+            buf,
+            title,
+            ZoneType.ORDERED,
+            imax=imax,
+            jmax=jmax,
+            kmax=kmax,
+            solution_time=solution_time,
+            strand_id=strand_id,
+            passive_vars=passive_vars,
+            var_sharing=var_sharing,
+            value_locations_global=vl_global,
+            aux=aux,
         )
         for arr, dt in zip(data, variable_types, strict=False):
             cast = np.asarray(arr, dtype=_DT_TO_DTYPE[dt]).ravel(order="F")
@@ -605,7 +622,8 @@ class Write:
         # Validate count
         if len(data) != len(self.variables):
             expected = sum(
-                1 for p, s in zip(passive_vars, var_sharing, strict=True)
+                1
+                for p, s in zip(passive_vars, var_sharing, strict=True)
                 if not p and not s
             )
             if expected == 0:
@@ -638,7 +656,8 @@ class Write:
                 )
 
         active_var_idx = [
-            vi for vi, (p, s) in enumerate(
+            vi
+            for vi, (p, s) in enumerate(
                 zip(passive_vars, var_sharing, strict=True), start=1
             )
             if not p and not s
@@ -649,11 +668,18 @@ class Write:
 
         buf = io.StringIO()
         self._stage_zone_header(
-            buf, title, zone_type,
-            num_nodes=num_nodes, num_elements=num_cells,
-            solution_time=solution_time, strand_id=strand_id,
-            passive_vars=passive_vars, var_sharing=var_sharing,
-            value_locations_global=vl_global, con_sharing=con_sharing, aux=aux,
+            buf,
+            title,
+            zone_type,
+            num_nodes=num_nodes,
+            num_elements=num_cells,
+            solution_time=solution_time,
+            strand_id=strand_id,
+            passive_vars=passive_vars,
+            var_sharing=var_sharing,
+            value_locations_global=vl_global,
+            con_sharing=con_sharing,
+            aux=aux,
         )
         for arr, dt in zip(data, variable_types, strict=False):
             cast = np.asarray(arr, dtype=_DT_TO_DTYPE[dt]).ravel()
@@ -696,7 +722,7 @@ class Write:
             * 2025-01-01 ``@user``: Version 1.0
         """
         fp = self._fp
-        fp.write(f'TITLE     = {_quote(self.title)}\n')
+        fp.write(f"TITLE     = {_quote(self.title)}\n")
         if self.file_type in _FILETYPE_STR:
             fp.write(f"FILETYPE  = {_FILETYPE_STR[self.file_type]}\n")
         var_lines = "\n".join(_quote(v) for v in self.variables)
@@ -729,39 +755,43 @@ class Write:
         """
         zt_str = _ZONETYPE_STR[zone_type]
 
-        buf.write(f'ZONE T={_quote(title)}\n')
-        buf.write(f' STRANDID={strand_id}, SOLUTIONTIME={float(solution_time)}\n')
+        buf.write(f"ZONE T={_quote(title)}\n")
+        buf.write(f" STRANDID={strand_id}, SOLUTIONTIME={float(solution_time)}\n")
 
         if zone_type == ZoneType.ORDERED:
-            buf.write(f' I={imax}, J={jmax}, K={kmax}\n')
-            buf.write(f' ZONETYPE={zt_str},\n')
+            buf.write(f" I={imax}, J={jmax}, K={kmax}\n")
+            buf.write(f" ZONETYPE={zt_str},\n")
         else:
             buf.write(
-                f' Nodes={num_nodes}, Elements={num_elements},'
-                f' ZONETYPE={zt_str}\n'
+                f" Nodes={num_nodes}, Elements={num_elements}, ZONETYPE={zt_str}\n"
             )
 
-        buf.write(' DATAPACKING=BLOCK\n')
+        buf.write(" DATAPACKING=BLOCK\n")
 
         if value_locations_global:
-            cc = [i + 1 for i, loc in enumerate(value_locations_global)
-                  if loc == ValueLocation.CELL_CENTERED]
+            cc = [
+                i + 1
+                for i, loc in enumerate(value_locations_global)
+                if loc == ValueLocation.CELL_CENTERED
+            ]
             if cc:
-                buf.write(f' VARLOCATION=([{",".join(str(i) for i in cc)}]=CELLCENTERED)\n')
+                buf.write(
+                    f" VARLOCATION=([{','.join(str(i) for i in cc)}]=CELLCENTERED)\n"
+                )
 
         if passive_vars:
             pidx = [str(i + 1) for i, f in enumerate(passive_vars) if f]
             if pidx:
-                buf.write(f' PASSIVEVARLIST=[{",".join(pidx)}]\n')
+                buf.write(f" PASSIVEVARLIST=[{','.join(pidx)}]\n")
 
         if var_sharing and any(var_sharing):
             entries = [f"[{i + 1}]={z}" for i, z in enumerate(var_sharing) if z]
             if entries:
-                buf.write(f' VARSHARELIST=({",".join(entries)})\n')
+                buf.write(f" VARSHARELIST=({','.join(entries)})\n")
 
         if con_sharing:
-            buf.write(f' CONNECTIVITYSHAREZONE={con_sharing}\n')
+            buf.write(f" CONNECTIVITYSHAREZONE={con_sharing}\n")
 
         if aux:
             for name, value in aux.items():
-                buf.write(f' AUXDATA {name}={_quote(value)}\n')
+                buf.write(f" AUXDATA {name}={_quote(value)}\n")
