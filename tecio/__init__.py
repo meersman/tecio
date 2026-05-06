@@ -1,6 +1,7 @@
-"""Top-level package for tecio.
+"""Python interface for reading and writing Tecplot data files.
 
-Exports common submodules and provides package version.
+Wraps the TecIO C library for ``.szplt``, ``.plt``, and ``.dat`` formats.
+Requires Python 3.10+, NumPy, and a Tecplot 360 installation.
 """
 
 from importlib import metadata

@@ -23,17 +23,16 @@ Supported modes mirror Python's built-in :func:`open`:
     ======  ================================================================
 
 Notes
------
-- ``"a"`` and ``"a+"`` work by reading the source file in full and re-writing
-  it zone-by-zone into a temporary sibling file, then leaving the ``Write``
-  handle open for the caller to add further zones.  On close the temporary
-  file is atomically renamed over the original path (POSIX) or replaced
-  (Windows).  This is the only safe approach because PLT and SZL are
-  sequential binary formats with no in-place editing capability.
-- FEPOLYGON and FEPOLYHEDRON zones are not copied during append operations
-  because the ``Write`` API does not yet expose a poly-zone writer.  A
-  :exc:`NotImplementedError` is raised if such zones are encountered in the
-  source file.
+    - ``"a"`` and ``"a+"`` work by reading the source file in full and re-writing
+      it zone-by-zone into a temporary sibling file, then leaving the ``Write``
+      handle open for the caller to add further zones.  On close the temporary
+      file is atomically renamed over the original path (POSIX) or replaced
+      (Windows).  This is the only safe approach because PLT and SZL are
+      sequential binary formats with no in-place editing capability.
+    - FEPOLYGON and FEPOLYHEDRON zones are not copied during append operations
+      because the ``Write`` API does not yet expose a poly-zone writer.  A
+      :exc:`NotImplementedError` is raised if such zones are encountered in the
+      source file.
 
 """
 
