@@ -43,6 +43,7 @@ class FileFormat(Enum):
     Attributes:
         PLT: Classic PLT format (0).
         SZPLT: SZL subzone format (1).
+
     """
 
     PLT = 0
@@ -56,6 +57,7 @@ class FileType(Enum):
         FULL: Grid and solution data (0).
         GRID: Grid coordinates only (1).
         SOLUTION: Solution variables only (2).
+
     """
 
     FULL = 0
@@ -76,6 +78,7 @@ class ZoneType(Enum):
         FEPOLYGON: Finite-element polygons (6).
         FEPOLYHEDRON: Finite-element polyhedra (7).
         FEMIXED: Mixed finite-element types (8).
+
     """
 
     ORDERED = 0
@@ -100,6 +103,7 @@ class FeCellShape(Enum):
         HEXAHEDRON: 3D eight-node elements (4).
         PYRAMID: 3D five-node elements (5).
         PRISM: 3D six-node elements (6).
+
     """
 
     BAR = 0
@@ -119,6 +123,7 @@ class FaceNeighborMode(Enum):
         LOCAL_ONE_TO_MANY: Hanging node intra-zone face sharing (1).
         GLOBAL_ONE_TO_ONE: Conventional inter-zone face sharing (2).
         GLOBAL_ONE_TO_MANY: Hanging node inter-zone face sharing (3).
+
     """
 
     LOCAL_ONE_TO_ONE = 0
@@ -133,6 +138,7 @@ class ValueLocation(Enum):
     Attributes:
         CELL_CENTERED: Values at cell centers (0).
         NODAL: Values at grid nodes (1).
+
     """
 
     CELL_CENTERED = 0
@@ -142,9 +148,10 @@ class ValueLocation(Enum):
 class DataFormat(Enum):
     """Class for specifiying format of zone data for ascii file formats.
 
-    Attributes:    
+    Attributes:
         POINT: Variables appear as columns in each row(0)
         BLOCK: All values for each variable appear in a block (1)
+
     """
 
     POINT = 0
@@ -160,6 +167,7 @@ class DataType(Enum):
         INT32: 32-bit signed integer (3).
         INT16: 16-bit signed integer (4).
         BYTE: 8-bit unsigned integer (5).
+
     """
 
     FLOAT = 1
@@ -175,6 +183,7 @@ class VarStatus(Enum):
     Attributes:
         ACTIVE: Active variable (0).
         PASSIVE: Passive variable (1).
+
     """
 
     ACTIVE = 0
@@ -187,6 +196,7 @@ class Boolean(Enum):
     Attributes:
         FALSE: False value (0).
         TRUE: True value (1).
+
     """
 
     FALSE = 0
@@ -913,6 +923,7 @@ def tec_file_reader_open(file_name: str) -> ctypes.c_void_p:
 
     Raises:
         TecioError: If the file cannot be opened.
+
     """
     handle = ctypes.c_void_p(0)
 
@@ -939,6 +950,7 @@ def tec_file_get_type(handle: ctypes.c_void_p) -> FileType:
 
     Raises:
         TecioError: On C library error.
+
     """
     file_type = ctypes.c_int32(0)
 
@@ -960,6 +972,7 @@ def tec_data_set_get_title(handle: ctypes.c_void_p) -> str:
 
     Raises:
         TecioError: On C library error.
+
     """
     title = ctypes.c_char_p(0)
 
@@ -983,6 +996,7 @@ def tec_data_set_get_num_vars(handle: ctypes.c_void_p) -> int:
 
     Raises:
         TecioError: On C library error.
+
     """
     num_vars = ctypes.c_int32(0)
 
@@ -1006,6 +1020,7 @@ def tec_data_set_get_num_zones(handle: ctypes.c_void_p) -> int:
 
     Raises:
         TecioError: On C library error.
+
     """
     num_zones = ctypes.c_int32(0)
 
@@ -1032,6 +1047,7 @@ def tec_zone_get_ijk(handle: ctypes.c_void_p, zone_index: int) -> tuple[int, int
 
     Raises:
         TecioError: On C library error.
+
     """
     imax = ctypes.c_int64(0)
     jmax = ctypes.c_int64(0)
@@ -1065,6 +1081,7 @@ def tec_zone_get_title(handle: ctypes.c_void_p, zone_index: int) -> str:
 
     Raises:
         TecioError: On C library error.
+
     """
     zone_title = ctypes.c_char_p(0)
 
@@ -1092,6 +1109,7 @@ def tec_zone_get_type(handle: ctypes.c_void_p, zone_index: int) -> ZoneType:
 
     Raises:
         TecioError: On C library error.
+
     """
     zone_type = ctypes.c_int32(0)
 
@@ -1119,6 +1137,7 @@ def tec_zone_is_enabled(handle: ctypes.c_void_p, zone_index: int) -> bool:
 
     Raises:
         TecioError: On C library error.
+
     """
     is_enabled = ctypes.c_int32(0)
 
@@ -1146,6 +1165,7 @@ def tec_zone_get_solution_time(handle: ctypes.c_void_p, zone_index: int) -> floa
 
     Raises:
         TecioError: On C library error.
+
     """
     solution_time = ctypes.c_double(0)
 
@@ -1175,6 +1195,7 @@ def tec_zone_get_strand_id(handle: ctypes.c_void_p, zone_index: int) -> int:
 
     Raises:
         TecioError: On C library error.
+
     """
     strand_id = ctypes.c_int32(0)
 
@@ -1202,6 +1223,7 @@ def is_64bit(handle: ctypes.c_void_p, zone_index: int) -> bool:
 
     Raises:
         TecioError: On C library error.
+
     """
     is64bit = ctypes.c_int32(0)
     ret = lib.tecZoneNodeMapIs64Bit(
@@ -1235,6 +1257,7 @@ def tec_zone_node_map_get_64(
 
     Raises:
         TecioError: On C library error.
+
     """
     size_of_array = num_elements * nodes_per_cell
     nodemap = (ctypes.c_int64 * size_of_array)()
@@ -1278,6 +1301,7 @@ def tec_zone_node_map_get(
 
     Raises:
         TecioError: On C library error.
+
     """
     size_of_array = num_elements * nodes_per_cell
     nodemap = (ctypes.c_int32 * size_of_array)()
@@ -1315,6 +1339,7 @@ def tec_var_get_name(handle: ctypes.c_void_p, var_index: int) -> str:
 
     Raises:
         TecioError: On C library error.
+
     """
     var_name = ctypes.c_char_p(0)
 
@@ -1340,6 +1365,7 @@ def tec_var_is_enabled(handle: ctypes.c_void_p, var_index: int) -> bool:
 
     Raises:
         TecioError: On C library error.
+
     """
     is_enabled = ctypes.c_int32(0)
 
@@ -1370,6 +1396,7 @@ def tec_zone_var_get_type(
 
     Raises:
         TecioError: On C library error.
+
     """
     var_type = ctypes.c_int32(0)
 
@@ -1403,6 +1430,7 @@ def tec_zone_var_get_value_location(
 
     Raises:
         TecioError: On C library error.
+
     """
     value_location = ctypes.c_int32(0)
 
@@ -1436,6 +1464,7 @@ def tec_zone_var_is_passive(
 
     Raises:
         TecioError: On C library error.
+
     """
     is_passive = ctypes.c_int32(0)
 
@@ -1469,6 +1498,7 @@ def tec_zone_var_get_shared_zone(
 
     Raises:
         TecioError: On C library error.
+
     """
     shared_zone = ctypes.c_int32(0)
 
@@ -1502,6 +1532,7 @@ def tec_zone_var_get_num_values(
 
     Raises:
         TecioError: On C library error.
+
     """
     num_values = ctypes.c_int32(0)
 
@@ -1541,6 +1572,7 @@ def tec_zone_var_get_float_values(
 
     Raises:
         TecioError: On C library error.
+
     """
     values = (ctypes.c_float * num_values)()
 
@@ -1586,6 +1618,7 @@ def tec_zone_var_get_double_values(
 
     Raises:
         TecioError: On C library error.
+
     """
     values = (ctypes.c_double * num_values)()
 
@@ -1631,6 +1664,7 @@ def tec_zone_var_get_int32_values(
 
     Raises:
         TecioError: On C library error.
+
     """
     values = (ctypes.c_int32 * num_values)()
 
@@ -1676,6 +1710,7 @@ def tec_zone_var_get_int16_values(
 
     Raises:
         TecioError: On C library error.
+
     """
     values = (ctypes.c_int16 * num_values)()
 
@@ -1721,6 +1756,7 @@ def tec_zone_var_get_uint8_values(
 
     Raises:
         TecioError: On C library error.
+
     """
     values = (ctypes.c_uint8 * num_values)()
 
@@ -1757,6 +1793,7 @@ def tec_data_set_aux_data_get_num_items(handle: ctypes.c_void_p) -> int:
 
     Raises:
         TecioError: On C library error.
+
     """
     num_auxdata_items = ctypes.c_int32(0)
 
@@ -1783,6 +1820,7 @@ def tec_data_set_aux_data_get_item(
 
     Raises:
         TecioError: On C library error.
+
     """
     name = ctypes.c_char_p(0)
     value = ctypes.c_char_p(0)
@@ -1814,6 +1852,7 @@ def tec_var_aux_data_get_num_items(handle: ctypes.c_void_p, var_index: int) -> i
 
     Raises:
         TecioError: On C library error.
+
     """
     num_items = ctypes.c_int32(0)
 
@@ -1844,6 +1883,7 @@ def tec_var_aux_data_get_item(
 
     Raises:
         TecioError: On C library error.
+
     """
     name = ctypes.c_char_p(0)
     value = ctypes.c_char_p(0)
@@ -1876,6 +1916,7 @@ def tec_zone_aux_data_get_num_items(handle: ctypes.c_void_p, zone_index: int) ->
 
     Raises:
         TecioError: On C library error.
+
     """
     num_items = ctypes.c_int32(0)
 
@@ -1906,6 +1947,7 @@ def tec_zone_aux_data_get_item(
 
     Raises:
         TecioError: On C library error.
+
     """
     name = ctypes.c_char_p(0)
     value = ctypes.c_char_p(0)
@@ -1965,6 +2007,7 @@ def tec_file_writer_open(
 
     Raises:
         TecioError: On C library error.
+
     """
     if not isinstance(file_type, FileType):
         raise TypeError("file_type must be a libtecio.FileType enum")
@@ -2000,6 +2043,7 @@ def tec_file_writer_close(handle: ctypes.c_void_p) -> None:
 
     Raises:
         TecioError: On C library error.
+
     """
     ret = lib.tecFileWriterClose(ctypes.byref(handle))
     if ret != 0:
@@ -2032,11 +2076,14 @@ def tec_zone_create_ijk(
         jmax (int): J dimension.
         kmax (int): K dimension.
         var_types (Sequence[DataType | int]): Per-variable data types.
-        var_sharing (Sequence[int] | None): Optional per-variable sharing source zones. Must be same length as var_types if provided. None/null means all no variable sharing.
+        var_sharing (Sequence[int] | None): Optional per-variable sharing source
+            zones. Must be same length as var_types if provided. None/null means all no
+            variable sharing.
         value_locations (Sequence[int | ValueLocation] | None): Optional per-variable
             data locations.
-        pas_vars (Sequence[bool | int] | None): Optional per-variable passive flags or 1/True if passive else
-            0/False. Must be same length as var_types if provided. None/null means all variables are active.
+        pas_vars (Sequence[bool | int] | None): Optional per-variable passive flags or
+            1/True if passive else 0/False. Must be same length as var_types if
+            provided. None/null means all variables are active.
         face_nbr_sharing (int): Optional face-neighbor sharing source zone.
         num_face_cons (int): Optional number of face connections.
         face_nbr_mode (FaceNeighborMode | int): Optional face-neighbor mode.
@@ -2046,6 +2093,7 @@ def tec_zone_create_ijk(
 
     Raises:
         TecioError: On C library error.
+
     """
     zone_out = ctypes.c_int32()
 
@@ -2123,14 +2171,18 @@ def tec_zone_create_fe(
         num_nodes (int): Number of nodes.
         num_cells (int): Number of cells/elements.
         var_types (Sequence[DataType | int]): Optional per-variable data types.
-        var_sharing (Sequence[int] | None): Optional per-variable sharing source zones. Must be same length as var_types if provided. None/null means all no variable sharing.
+        var_sharing (Sequence[int] | None): Optional per-variable sharing source
+            zones. Must be same length as var_types if provided. None/null means all no
+            variable sharing.
         value_locations (Sequence[int | ValueLocation] | None): Optional per-variable
             data locations.
-        pas_vars (Sequence[bool | int] | None): Optional per-variable passive flags or 1/True if passive else
-            0/False. Must be same length as var_types if provided. None/null means all variables are active.
-        con_sharing (int): Optional connectivity sharing source zone (0 = none). Connectivity and/or face neighbors cannot be shared when
-            the face neighbor mode is set to Global. Connectivity cannot be
-            shared between cell-based and face-based finite element zones.
+        pas_vars (Sequence[bool | int] | None): Optional per-variable passive flags or
+            1/True if passive else 0/False. Must be same length as var_types if
+            provided. None/null means all variables are active.
+        con_sharing (int): Optional connectivity sharing source zone (0 =
+            none). Connectivity and/or face neighbors cannot be shared when the face
+            neighbor mode is set to Global. Connectivity cannot be shared between
+            cell-based and face-based finite element zones.
         num_face_cons (int): Optional number of face connections.
         face_nbr_mode (FaceNeighborMode | int): Optional face-neighbor mode.
 
@@ -2139,6 +2191,7 @@ def tec_zone_create_fe(
 
     Raises:
         TecioError: On C library error.
+
     """
     zone_out = ctypes.c_int32()
 
@@ -2207,6 +2260,7 @@ def tec_zone_set_unsteady_options(
 
     Raises:
         TecioError: On C library error.
+
     """
     ret = lib.tecZoneSetUnsteadyOptions(
         handle,
@@ -2235,6 +2289,7 @@ def tec_data_set_add_aux_data(
 
     Raises:
         TecioError: On C library error.
+
     """
     ret = lib.tecDataSetAddAuxData(
         handle,
@@ -2264,6 +2319,7 @@ def tec_var_add_aux_data(
 
     Raises:
         TecioError: On C library error.
+
     """
     ret = lib.tecVarAddAuxData(
         handle,
@@ -2294,6 +2350,7 @@ def tec_zone_add_aux_data(
 
     Raises:
         TecioError: On C library error.
+
     """
     ret = lib.tecZoneAddAuxData(
         handle,
@@ -2322,6 +2379,7 @@ def tec_zone_var_write_double_values(
 
     Raises:
         TecioError: On C library error.
+
     """
     ptr, count, _backing = _prepare_array_for_ctypes(
         values, np.float64, ctypes.c_double
@@ -2355,6 +2413,7 @@ def tec_zone_var_write_float_values(
 
     Raises:
         TecioError: On C library error.
+
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.float32, ctypes.c_float)
 
@@ -2386,6 +2445,7 @@ def tec_zone_var_write_int32_values(
 
     Raises:
         TecioError: On C library error.
+
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.int32, ctypes.c_int32)
 
@@ -2417,6 +2477,7 @@ def tec_zone_var_write_int16_values(
 
     Raises:
         TecioError: On C library error.
+
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.int16, ctypes.c_int16)
 
@@ -2448,6 +2509,7 @@ def tec_zone_var_write_uint8_values(
 
     Raises:
         TecioError: On C library error.
+
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.uint8, ctypes.c_uint8)
 
@@ -2488,8 +2550,10 @@ def tec_zone_node_map_write32(
 
     Notes:
         - Use for zones with fewer than ~2 billion node map entries.
-        - Can be called multiple times per zone; total entries must match zone definition.
+        - Can be called multiple times per zone; total entries must match zone
+          definition.
         - Node indices are 1-based by convention in Tecplot.
+
     """
     ptr, count, _backing = _prepare_array_for_ctypes(nodes, np.int32, ctypes.c_int32)
 
@@ -2529,8 +2593,10 @@ def tec_zone_node_map_write64(
 
     Notes:
         - Use for zones with more than ~2 billion node map entries.
-        - Can be called multiple times per zone; total entries must match zone definition.
+        - Can be called multiple times per zone; total entries must match zone
+          definition.
         - Node indices are 1-based by convention in Tecplot.
+
     """
     ptr, count, _backing = _prepare_array_for_ctypes(nodes, np.int64, ctypes.c_int64)
 
@@ -2570,8 +2636,10 @@ def tec_zone_face_nbr_write_connections32(
         - Use for zones with fewer than ~2 billion face neighbor entries.
         - Can be called multiple times; total entries must match num_face_cons
           declared at zone creation.
-        - Face neighbors have expensive performance implications. Use face neighbors only to
-          manually specify connections that are not defined via the connectivity list.
+        - Face neighbors have expensive performance implications. Use face neighbors
+          only to manually specify connections that are not defined via the connectivity
+          list.
+
     """
     ptr, count, _backing = _prepare_array_for_ctypes(
         face_neighbors, np.int32, ctypes.c_int32
@@ -2602,15 +2670,17 @@ def tec_zone_face_nbr_write_connections64(
 
     Raises:
         TecioError: On C library error.
-    
+
     Notes:
         - num_face_cons and face_nbr_mode must be set when creating the zone via
           tec_zone_create_ijk or tec_zone_create_fe.
         - Use for zones with more than ~2 billion face neighbor entries.
         - Can be called multiple times; total entries must match num_face_cons
           declared at zone creation.
-        - Face neighbors have expensive performance implications. Use face neighbors only to
-          manually specify connections that are not defined via the connectivity list.
+        - Face neighbors have expensive performance implications. Use face neighbors
+          only to manually specify connections that are not defined via the connectivity
+          list.
+
     """
     ptr, count, _backing = _prepare_array_for_ctypes(
         face_neighbors, np.int64, ctypes.c_int64
@@ -2662,7 +2732,9 @@ def tecini142(
         file_format (int | FileFormat): FileFormat.PLT (0) or FileFormat.SZPLT (1)
         file_type (int | FileType): FileType.FULL (0), GRID (1), or SOLUTION (2)
         debug (int | Debug): Debug.FALSE (0) or Debug.TRUE (1)
-        vis_double (int | DataType): DataType.DOUBLE (1) or DataType.FLOAT (0). PLT files do not suport integer zone variables. Use the new API functions to create integer zone variables for SZPLT files.
+        vis_double (int | DataType): DataType.DOUBLE (1) or DataType.FLOAT (0). PLT
+            files do not suport integer zone variables. Use the new API functions to
+            create integer zone variables for SZPLT files.
 
     Raises:
         TecioError: On C library error.
@@ -2670,6 +2742,7 @@ def tecini142(
     Notes:
         - Must be called before any zone or data operations
         - Call tecend142() to finalize the file
+
     """
     if not isinstance(file_type, FileType):
         raise TypeError("file_type must be a libtecio.FileType enum")
@@ -2703,6 +2776,7 @@ def tecend142() -> None:
     Notes:
         - Must be called after all data has been written
         - Flushes all pending data and closes the file
+
     """
     ret = lib.tecend142()
     if ret != 0:
@@ -2726,6 +2800,7 @@ def tecflush142(
         - SZL ONLY!
         - Used to reduce memory usage for large files
         - Retained zones can still be modified
+
     """
     num_zones_c = ctypes.c_int32(num_zones_to_retain)
 
@@ -2755,6 +2830,7 @@ def tecfil142() -> int:
 
     Notes:
         - Used for advanced file operations
+
     """
     output_file_handle = ctypes.c_int32(0)
 
@@ -2773,6 +2849,7 @@ def tecforeign142(output_foreign_byte_order: int) -> None:
 
     Raises:
         TecioError: On C library error.
+
     """
     foreign_c = ctypes.c_int32(output_foreign_byte_order)
 
@@ -2804,24 +2881,28 @@ def teczne142(
 
     Args:
         zone_title (str): Zone title.
-        zone_type (int | ZoneType): Zone type enum or integer (0=ORDERED, 1=FELINESEG, etc.).
+        zone_type (int | ZoneType): Zone type enum or integer (0=ORDERED, 1=FELINESEG,
+            etc.).
         imax (int): I dimension (or num nodes for FE).
         jmax (int): J dimension (or num elements for FE).
-        kmax (int): K dimension or NumFaces for FEPOLYGON and FEPOLYHEDRON. Not used for all
-            other finite element zone types.
-        var_sharing (Sequence[int] | None): List of zone indices to share variables from (0: No sharing, Null: no
-            variables are shared from other zones)
+        kmax (int): K dimension or NumFaces for FEPOLYGON and FEPOLYHEDRON. Not used for
+            all other finite element zone types.
+        var_sharing (Sequence[int] | None): List of zone indices to share variables from
+            (0: No sharing, Null: no variables are shared from other zones)
         value_locations (Sequence[int | ValueLocation] | None): Per-variable
             data locations.
-        pas_vars (Sequence[int | VarStatus] | None): List of VarStatus enums or 0/1 for passive variables. Must be same length as var_sharing if provided. None/null means all variables are active.
+        pas_vars (Sequence[int | VarStatus] | None): List of VarStatus enums or 0/1 for
+            passive variables. Must be same length as var_sharing if provided. None/null
+            means all variables are active.
         con_sharing (int): Connectivity sharing source zone number.
-        strand (int): Strand ID for transient data (0 for static data, positive integer for
-            transient data).
+        strand (int): Strand ID for transient data (0 for static data, positive integer
+            for transient data).
         solution_time (float): Solution time.
         num_face_connections (int): Number of face connections (for cell-based FE zones
             only. The number of face connections that will be passed to ``tecface142``).
-        face_nbr_mode (int | FaceNeighborMode): FaceNeighborMode enum. Used for cell-based FE and ordered zones
-            only. Type of face connection that will be passed in routine ``tecface142``.
+        face_nbr_mode (int | FaceNeighborMode): FaceNeighborMode enum. Used for
+            cell-based FE and ordered zones only. Type of face connection that will be
+            passed in routine ``tecface142``.
         total_num_face_nodes (int): Total face nodes (poly zones).
         num_connected_boundary_faces (int): Boundary faces (poly zones).
         total_num_boundary_connections (int): Boundary connections (poly zones).
@@ -2831,7 +2912,9 @@ def teczne142(
 
     Notes:
         - For ORDERED zones: imx, jmx, kmx are dimensions
-        - For FE zones: imax=NumNodes, jmax=NumElements, kmax=0 (unless higher order element)
+        - For FE zones: imax=NumNodes, jmax=NumElements, kmax=0 (unless higher order
+          element)
+
     """
     # Create C array for passive variable flags
     pas_vars_ptr = None
@@ -2905,14 +2988,17 @@ def tecpolyzne142(
         num_nodes (int): Number of nodes.
         num_faces (int): Number of faces.
         num_elements (int): Number of elements.
-        var_sharing (Sequence[int] | None): List of zone indices to share variables from (0: No sharing, Null: no
-            variables are shared from other zones). Must be same length as value_locations and pas_vars if provided.
+        var_sharing (Sequence[int] | None): List of zone indices to share variables from
+            (0: No sharing, Null: no variables are shared from other zones). Must be
+            same length as value_locations and pas_vars if provided.
         value_locations (Sequence[int | ValueLocation] | None): Per-variable
             data locations.
-        pas_vars (Sequence[int | VarStatus] | None): ist of VarStatus enums or 0/1 for passive variables. Must be same length as value_locations and var_sharing if provided. None/null means all variables are active.
+        pas_vars (Sequence[int | VarStatus] | None): ist of VarStatus enums or 0/1 for
+            passive variables. Must be same length as value_locations and var_sharing if
+            provided. None/null means all variables are active.
         con_sharing (int): Connectivity sharing source zone.
-        strand (int): Strand ID for transient data (0 for static data, positive integer for
-            transient data).
+        strand (int): Strand ID for transient data (0 for static data, positive integer
+            for transient data).
         solution_time (float): Solution time for transient data.
         total_num_face_nodes (int): Total face nodes.
         num_connected_boundary_faces (int): Boundary faces.
@@ -2920,6 +3006,7 @@ def tecpolyzne142(
 
     Raises:
         TecioError: On C library error.
+
     """
     # Create C array for passive variable flags
     pas_vars_ptr = None
@@ -2987,18 +3074,25 @@ def tecznefemixed142(
         num_elements (int): Number of elements.
         num_nodes_per_element (int): Nodes per element.
         solution_time (float): Solution time.
-        strand_id (int): Strand ID for transient data (0 for static data, positive integer for transient data).
+        strand_id (int): Strand ID for transient data (0 for static data, positive
+            integer for transient data).
         parent_zone (int): Parent zone index (0 = none).
         data_format (int | DataFormat): DataFormat.BLOCK (1) or DataFormat.POINT (0)
         num_face_connections (int): Number of face connections.
         face_neighbor_mode (int | FaceNeighborMode): Face-neighbor mode.
-        passive_var_list (Sequence[int | VarStatus] | None): PList of VarStatus enums or 0/1 for passive variables. None/null means all variables are active. Must be same length as value_location if provided.
-        value_location (Sequence[int | ValueLocation] | None): List of ValueLocation enums or 0/1 for nodal/cell-centered. Must be same length as passive_var_list if provided.
-        share_var_from_zone (Sequence[int] | None): List of zone indices to share variables from.
+        passive_var_list (Sequence[int | VarStatus] | None): PList of VarStatus enums or
+            0/1 for passive variables. None/null means all variables are active. Must be
+            same length as value_location if provided.
+        value_location (Sequence[int | ValueLocation] | None): List of ValueLocation
+            enums or 0/1 for nodal/cell-centered. Must be same length as
+            passive_var_list if provided.
+        share_var_from_zone (Sequence[int] | None): List of zone indices to share
+            variables from.
         share_connectivity_from_zone (int): Zone index to share connectivity from.
 
     Raises:
         TecioError: On C library error.
+
     """
     num_nodes_c = ctypes.c_int32(num_nodes)
     num_elements_c = ctypes.c_int32(num_elements)
@@ -3073,10 +3167,11 @@ def tecdat142(
         - Data must be written in the order specified by dataset variables and zone
           definition
         - If variable is shared or passive, skip writing data for that variable
-        - For ORDERED zones: data should be ordered with the I dimension varying fastest,
-          then J, then K
+        - For ORDERED zones: data should be ordered with the I dimension varying
+          fastest, then J, then K
         - For FE zones: data should be ordered by node index for nodal variables, and by
         element index for cell-centered variables
+
     """
     # Convert to appropriate numpy array
     if is_double:
@@ -3114,6 +3209,7 @@ def tecnode142(nodes: npt.ArrayLike) -> None:
         - For FEBRICK elements: 8 nodes per element
         - For FETETRAHEDRON elements: 4 nodes per element
         - etc.
+
     """
     nodes_array = np.ascontiguousarray(nodes, dtype=np.int32)
     n = ctypes.c_int32(nodes_array.size)
@@ -3137,9 +3233,10 @@ def tecface142(face_connections: npt.ArrayLike) -> None:
 
     Raises:
         TecioError: On C library error.
-    
+
     Notes:
         - Used to specify face-to-face connectivity between zones
+
     """
     face_conn_array = np.ascontiguousarray(face_connections, dtype=np.int32)
     face_conn_ptr = face_conn_array.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
@@ -3170,6 +3267,7 @@ def tecpolyface142(
         - face_node_counts has one entry per face
         - face_nodes is concatenated list of all face node indices
         - Element indices are 1-based; 0 indicates boundary
+
     """
     face_node_counts_array = np.ascontiguousarray(face_node_counts, dtype=np.int32)
     face_nodes_array = np.ascontiguousarray(face_nodes, dtype=np.int32)
@@ -3220,6 +3318,7 @@ def tecpolybconn142(
 
     Notes:
         - Used to specify connectivity to neighboring zones at boundaries
+
     """
     bconn_counts_array = np.ascontiguousarray(
         boundary_connection_counts, dtype=np.int32
@@ -3266,6 +3365,7 @@ def tecauxstr142(name: str, value: str) -> None:
 
     Notes:
         - Must be called after ``tecini142`` but before first ``teczne142``.
+
     """
     ret = lib.tecauxstr142(
         ctypes.c_char_p(name.encode("utf-8")),
@@ -3290,6 +3390,7 @@ def tecvauxstr142(var: int, name: str, value: str) -> None:
 
     Notes:
         - Must be called after ``tecini142`` but before first ``teczne142``.
+
     """
     var_c = ctypes.c_int32(var)
 
@@ -3317,6 +3418,7 @@ def teczauxstr142(name: str, value: str) -> None:
 
     Notes:
         - Must be called after ``teczne142`` for the current zone
+
     """
     ret = lib.teczauxstr142(
         ctypes.c_char_p(name.encode("utf-8")),
@@ -3341,6 +3443,7 @@ def tecusr142(user_rec: str) -> None:
     Notes:
         - Used to write custom data records into the file
         - Data is preserved but not interpreted by Tecplot
+
     """
     ret = lib.tecusr142(ctypes.c_char_p(user_rec.encode("utf-8")))
     if ret != 0:

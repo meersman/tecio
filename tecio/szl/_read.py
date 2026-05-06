@@ -1,10 +1,10 @@
-"""Higher level API for reading SZPLT files.
+"""Read Tecplot SZL (``.szplt``) files via the TecIO C library.
 
-SZL Reader class:
-- Leave as many fields as possible load-on demand such that the methods will call and
-  format data from the file, but not store in memory.
-- Aux data is stored in dictionaries since query functions require indices
-TODO: Fix ReadAuxData to separate out dataset, variable, and zone aux data functions
+Zone metadata is queried on demand from the C library; variable data is
+read lazily when :attr:`ReadVariable.values` is accessed.
+
+Todo:
+    Fix ReadAuxData to separate out dataset, variable, and zone aux data functions
 
 """
 
@@ -23,7 +23,15 @@ from ..libtecio import DataType, FileType, ValueLocation, ZoneType
 
 
 class Read:
-    """Read data from Tecplot szplt formatted binary files."""
+    """Reader for Tecplot ``.szplt`` files.
+
+    Metadata is queried lazily from the C library. Variable data arrays
+    are read on first access via :attr:`ReadVariable.values`.
+
+    Args:
+        file_name: Path to the ``.szplt`` file.
+
+    """
 
     def __init__(self, file_name):
         """Initialize with a C-pointer file handle, metadata, and a list of zones."""
@@ -49,50 +57,45 @@ class Read:
 
     @property
     def file_type(self) -> FileType:
-        """Return file type (Full: 0, Grid: 1, Solution: 2)."""
+        """File type enum (FULL, GRID, or SOLUTION)."""
         return libtecio.tec_file_get_type(self.handle)
 
     @property
     def title(self) -> str:
-        """Return whole dataset title string."""
+        """Dataset title string."""
         return libtecio.tec_data_set_get_title(self.handle)
 
     @property
     def num_vars(self) -> int:
-        """Return length of variable list."""
+        """Number of variables in the dataset."""
         return libtecio.tec_data_set_get_num_vars(self.handle)
 
     @property
     def variables(self) -> list[str]:
-        """Return list of variable names."""
+        """Ordered list of variable name strings."""
         # Read list of var
         return [self.zone[0].variable[i].name for i in range(self.num_vars)]
 
     @property
     def num_zones(self) -> int:
-        """Return number of zones in file."""
+        """Number of zones in the file."""
         return libtecio.tec_data_set_get_num_zones(self.handle)
 
     @property
     def num_auxdata_items(self) -> int:
-        """Return the number of aux data items at the dataset level."""
+        """Number of dataset-level auxiliary data items."""
         return libtecio.tec_data_set_aux_data_get_num_items(self.handle)
 
     @property
     def auxdata(self) -> ReadAuxData:
-        """Return dictionary of dataset-level auxiliary data."""
+        """Per-variable auxiliary data (1-indexed to match Tecplot)."""
         if self._auxdata is None:
             self._auxdata = ReadAuxData(self.handle, "dataset")
         return self._auxdata
 
     @property
     def var_auxdata(self) -> list[ReadAuxData]:
-        """Get list of variable-level auxiliary data.
-
-        Returns:
-            List of AuxData objects, one per variable (1-indexed to match Tecplot)
-
-        """
+        """Per-variable auxiliary data (1-indexed to match Tecplot)."""
         if self._var_auxdata is None:
             # Create list with None at index 0 for 1-based indexing
             self._var_auxdata = [None]
@@ -101,7 +104,15 @@ class Read:
         return self._var_auxdata
 
     def get_var_auxdata(self, var_index: int) -> ReadAuxData:
-        """Get auxiliary data for a specific variable."""
+        """Get list of variable-level auxiliary data.
+
+        Returns:
+            List of AuxData objects, one per variable (1-indexed to match Tecplot)
+
+        Raises:
+            IndexError: If *var_index* is out of range.
+
+        """
         if var_index < 1 or var_index > self.num_vars:
             raise IndexError(
                 f"Variable index {var_index} out of range [1, {self.num_vars}]"
@@ -109,7 +120,12 @@ class Read:
         return self.var_auxdata[var_index]
 
     def get_zone_auxdata(self, zone_index: int) -> ReadAuxData:
-        """Get auxiliary data for a specific zone."""
+        """Return auxiliary data for zone *zone_index* (1-based).
+
+        Raises:
+            IndexError: If *zone_index* is out of range.
+
+        """
         if zone_index < 1 or zone_index > self.num_zones:
             raise IndexError(
                 f"Variable index {zone_index} out of range [1, {self.num_zones}]"
@@ -119,7 +135,16 @@ class Read:
 
 @dataclass
 class ReadZone:
-    """High level API with tecio functions to read szplt binary formatted zone data."""
+    """Zone reader for SZL files.
+
+    Provides access to zone metadata and per-variable data arrays.
+
+    Args:
+        _handle (ctypes.c_void_p): C library file handle.
+        zone_index (int): 1-based zone index.
+        num_vars (int): Number of variables in the dataset.
+
+    """
 
     _handle: ctypes.c_void_p
     zone_index: int
@@ -137,7 +162,7 @@ class ReadZone:
 
     @property
     def variable(self) -> list[ReadVariable]:
-        """Create list of variable-reader objects."""
+        """List of :class:`ReadVariable` objects (0-indexed)."""
         # Check cached private variables -> don't run C functions each time this is
         # called if already defined
         if self._variable is None:
@@ -148,7 +173,7 @@ class ReadZone:
         return self._variable
 
     def __getattr__(self, name: str) -> Any:
-        """Dynamic attribute access for variable names.
+        """Access variable data by name (case-insensitive).
 
         Example:
             zone.pressure -> returns the NumPy array for variable "Pressure"
@@ -165,21 +190,21 @@ class ReadZone:
 
     @property
     def title(self) -> str:
-        """Return the tile of the current zone."""
+        """Zone title string."""
         return libtecio.tec_zone_get_title(self._handle, self.zone_index)
 
     @property
     def zone_type(self) -> ZoneType:
-        """Return the type of the current zone as a ZoneType Enum object."""
+        """Current zone :class:`ZoneType` enum."""
         return ZoneType(libtecio.tec_zone_get_type(self._handle, self.zone_index))
 
     def is_enabled(self) -> bool:
-        """Return boolean if zone is enabled."""
+        """Return True if the zone is enabled."""
         return libtecio.tec_zone_is_enabled(self._handle, self.zone_index)
 
     @property
     def num_nodes(self) -> int:
-        """Return number of nodes for the current zone."""
+        """Number of nodes in current zone."""
         if self.zone_type == ZoneType.ORDERED:
             return self.I * self.J * self.K
         else:
@@ -187,10 +212,7 @@ class ReadZone:
 
     @property
     def num_elements(self) -> int:
-        """Return number of elements for the current zone.
-
-        Note: same as nodes for ORDERED.
-        """
+        """Number of elements (same as nodes for ORDERED)."""
         if self.zone_type == ZoneType.ORDERED:
             return self.I * self.J * self.K
         else:
@@ -198,12 +220,17 @@ class ReadZone:
 
     @property
     def dimensions(self) -> tuple[int, int, int]:
-        """Returns I, J, K, dimensions for the current zone."""
+        """``(I, J, K)`` dimensions for current zone."""
         return (self.I, self.J, self.K)
 
     @property
     def nodes_per_cell(self) -> int:
-        """Returns how many nodes per cell based on FE type."""
+        """Number of nodes per cell based on zone type.
+
+        Raises:
+            ValueError: If ZoneType not known.
+
+        """
         if self.zone_type == ZoneType.FELINESEG:
             return 2
         elif self.zone_type == ZoneType.FETRIANGLE:
@@ -224,20 +251,22 @@ class ReadZone:
 
     @property
     def solution_time(self) -> float:
-        """Returns the zone solution time for time dependent data.
-
-        Note: stationary data use 0.
-        """
+        """Solution time (0.0 for stationary data)."""
         return libtecio.tec_zone_get_solution_time(self._handle, self.zone_index)
 
     @property
     def strand_id(self) -> int:
-        """Returns the zone strand ID for time dependent data (0 for stationary)."""
+        """Strand ID (0 for stationary data)."""
         return libtecio.tec_zone_get_strand_id(self._handle, self.zone_index)
 
     @property
     def node_map(self) -> npt.NDArray[np.int64] | None:
-        """Returns (n x m) node map array for n-cells and m-nodes per cell."""
+        """Node connectivity array ``(num_elements, nodes_per_cell)``.
+
+        Returns:
+            (n x m) node map array for n-cells and m-nodes per cell.
+
+        """
         is64bit = libtecio.is_64bit(self._handle, self.zone_index)
         if self.zone_type == ZoneType.ORDERED:
             return None
@@ -258,7 +287,7 @@ class ReadZone:
 
     @property
     def auxdata(self) -> ReadAuxData:
-        """Get zone-level auxiliary data."""
+        """Zone-level auxiliary data."""
         if self._auxdata is None:
             self._auxdata = ReadAuxData(self._handle, "zone", self.zone_index)
         return self._auxdata
@@ -266,7 +295,17 @@ class ReadZone:
 
 @dataclass
 class ReadVariable:
-    """High level API with tecio functions to read szplt binary zone data."""
+    """Lazy variable reader for SZL files.
+
+    Data is read from the C library only when :attr:`values` or
+    :meth:`get_values` is called.
+
+    Args:
+        _handle (ctypes.c_void_p): C library file handle.
+        zone_index (int): 1-based zone index.
+        var_index (int): 1-based variable index.
+
+    """
 
     _handle: ctypes.c_void_p
     zone_index: int
@@ -274,43 +313,43 @@ class ReadVariable:
 
     @property
     def name(self) -> str:
-        """Return variable name as string."""
+        """Variable name string."""
         return libtecio.tec_var_get_name(self._handle, self.var_index)
 
     def is_enabled(self) -> bool:
-        """Return true/false if variable is enabled."""
+        """Return True if the variable is enabled."""
         return libtecio.tec_var_is_enabled(self._handle, self.var_index)
 
     @property
     def data_type(self) -> DataType:
-        """Return DataType Enum corresponding the C-type of the value array."""
+        """Data type enum for this variable in this zone."""
         return libtecio.tec_zone_var_get_type(
             self._handle, self.zone_index, self.var_index
         )
 
     @property
     def value_location(self) -> ValueLocation:
-        """Return the location (cell or node centered) for the current variable."""
+        """Value location (NODAL or CELL_CENTERED)."""
         return libtecio.tec_zone_var_get_value_location(
             self._handle, self.zone_index, self.var_index
         )
 
     def is_passive(self) -> bool:
-        """Return if current variable does not exist for the parent zone (passive)."""
+        """Return True if this variable is passive in this zone."""
         return libtecio.tec_zone_var_is_passive(
             self._handle, self.zone_index, self.var_index
         )
 
     @property
     def shared_zone(self) -> int | None:
-        """Outputs shared zone index (0 if none)."""
+        """Source zone index if shared, or None."""
         return libtecio.tec_zone_var_get_shared_zone(
             self._handle, self.zone_index, self.var_index
         )
 
     @property
     def num_values(self) -> int:
-        """Returns the number of values in the data array."""
+        """Number of values in the data array."""
         return libtecio.tec_zone_var_get_num_values(
             self._handle, self.zone_index, self.var_index
         )
@@ -326,7 +365,7 @@ class ReadVariable:
         | npt.NDArray[np.uint8]
         | None
     ):
-        """Get all values for this variable."""
+        """All values as a NumPy array, or None if passive/shared."""
         return self.get_values()
 
     def get_values(
@@ -351,7 +390,12 @@ class ReadVariable:
                          retrieves all values.
 
         Returns:
-            NumPy array of values with appropriate dtype
+            NumPy array of values with appropriate dtype. Ordered zones return arrays
+            reshaped to (I, J, K) or (I-1, J-1, K-1) for full reads. FE unstructured
+            zones return flat 1-D arrays. Returns None if variable is passive or shared.
+
+        Raises:
+            ValueError: If only one of start/end is specified.
 
         """
         # First check if variable is passive or shared (no data to return)
@@ -419,10 +463,17 @@ class ReadVariable:
 
 
 class ReadAuxData:
-    """Dictionary-like interface for Tecplot aux data with auto type conversion.
+    """Dict-like interface for Tecplot auxiliary data with type conversion.
 
     Values are accessed as strings in the SZL file but can be retrieved
     as integers or floats using the as_int() and as_float() methods.
+
+    Args:
+        handle (ctypes.c_void_p): C library file handle.
+        aux_type (str): One of ``'dataset'``, ``'var'``, or ``'zone'``.
+        index (int | None): 1-based variable or zone index (not needed
+            for dataset).
+
     """
 
     def __init__(
@@ -488,12 +539,12 @@ class ReadAuxData:
 
     @property
     def data(self) -> dict[str, str]:
-        """Return the underlying dictionary of auxiliary data."""
+        """Underlying dictionary of auxiliary data."""
         self._load_data()
         return self._data
 
     def __len__(self) -> int:
-        """Return number of auxiliary data items."""
+        """Number of auxiliary data items."""
         return len(self.data)
 
     def __getitem__(self, key: str) -> str:
@@ -525,7 +576,7 @@ class ReadAuxData:
         return self.data.items()
 
     def as_int(self, key: str, default: int | None = None) -> int | None:
-        """Get auxiliary data value as integer.
+        """Get auxiliary data as int, or *default* on failure.
 
         Args:
             key: Auxiliary data name
@@ -541,7 +592,7 @@ class ReadAuxData:
             return default
 
     def as_float(self, key: str, default: float | None = None) -> float | None:
-        """Get auxiliary data value as float.
+        """Get auxiliary data value as float or *default* on failure.
 
         Args:
             key: Auxiliary data name
@@ -557,7 +608,7 @@ class ReadAuxData:
             return default
 
     def as_bool(self, key: str, default: bool | None = None) -> bool | None:
-        """Get auxiliary data value as boolean.
+        """Return value for *key* as bool, or *default* on failure.
 
         Recognizes common boolean string representations:
         - True: 'true', 't', 'yes', 'y', '1' (case-insensitive)

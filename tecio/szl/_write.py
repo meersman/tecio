@@ -1,26 +1,22 @@
-"""Higher level API for writing SZPLT files.
+"""Write Tecplot SZL (``.szplt``) files via the TecIO C library.
 
-SZL Write class:
-- Supports lazy loading such that file and aux data are buffered until first zone
-  assignment if variable list not provided when intialized.
-- Some writing steps that can easily be automated (such as writing variable data)
-  is exposed to users through public funcitons (eg write_data combines all libtecio
-  write functions and infers/casts data type).
+Supports lazy-open (deferred until first zone write), buffered auxiliary
+data, and automatic dtype inference from NumPy arrays.
 
 Notes:
-- flush_aux():
-  - write dataset aux if self.aux_dataset is not empty
-  - write variable aux if self.aux_var is not empty
-  - after writing set both to empty with self.aux_dataset.clear() and
-    self.aux_var.clear()
-- Zone writers:
-  - write_ijk_zone(): write zone header and optionally data for input ORDERED data
-    - set default value location as NODAL
-    - write default data as DOUBLE
-    - support data provided as a list[npt.NDArrayLike, ...]
-    - if var list already defined for whole dataset, do not require, but if not
-      defined, throw error
-  - write_fe_zone():
+    - flush_aux():
+        - write dataset aux if self.aux_dataset is not empty
+        - write variable aux if self.aux_var is not empty
+        - after writing set both to empty with self.aux_dataset.clear() and
+          self.aux_var.clear()
+    - Zone writers:
+        - write_ijk_zone(): write zone header and optionally data for input ORDERED data
+            - set default value location as NODAL
+            - write default data as DOUBLE
+            - support data provided as a list[npt.NDArrayLike, ...]
+            - if var list already defined for whole dataset, do not require, but if not
+              defined, throw error
+    - write_fe_zone():
 
 """
 
@@ -53,7 +49,7 @@ _FE_SIMPLE: frozenset[ZoneType] = frozenset({
 
 
 def _infer_data_type(dt: DataType | np.dtype) -> DataType:
-    """Return a C-supported DataType for either DataType or any Numpy dtype input."""
+    """Return the closest C-supported DataType for a DataType or NumPy dtype."""
     # Mapping of NumPy type categories to closest DataType
     closest_dtype_map = {
         np.dtype(np.float64): DataType.DOUBLE,
@@ -89,6 +85,10 @@ def _infer_data_type(dt: DataType | np.dtype) -> DataType:
 class Write:
     """Write Tecplot SZL (``.szplt``) files with a lazy-open file handle.
 
+    Supports lazy-open: if *variables* is ``None`` at construction, the
+    file is created on the first zone write. Auxiliary data is buffered
+    and flushed automatically before the first zone.
+
     The tecio library requires a list of variables when the output file is
     opened. However if writing data on the fly, it may be beneficial to store file
     outputs until the first zone is passed to the writer. Then file header will be
@@ -96,7 +96,18 @@ class Write:
 
     For the SZL API, file contents can be written out of order after creating zones.
 
-    Idea: Make public zone method for users that want more manual data handling.
+    Args:
+        path (str): Output file path.
+        title (str): Dataset title.
+        variables (list[str] | None): Variable name list. ``None`` defers
+            file creation.
+        file_type (FileType): File type enum (FULL, GRID, or SOLUTION).
+
+    Attributes:
+        current_zone: 1-based index of the most recently created zone.
+        auxdataset: Buffered dataset-level auxiliary data.
+        auxvar: Buffered variable-level auxiliary data.
+
     """
 
     def __init__(
@@ -239,20 +250,44 @@ class Write:
         strand_id: int = 0,
         aux: dict[str, Any] | None = None,
     ) -> None:
-        """Write a whole ijk-ordered zone at once.
+        """Write a complete IJK-ordered zone.
+
+        Dimensions are inferred from the first array's shape. Arrays may
+        be 1-D, 2-D, or 3-D; missing trailing dimensions default to 1.
+
+        Args:
+            data (Sequence[npt.NDArray] | None): Arrays for active
+                (non-passive, non-shared) variables.
+            title (str | None): Zone title. Defaults to ``"IJK_Zone_N"``.
+            variables (list[str] | None): Variable names (required on first
+                zone if lazy-open).
+            value_locations (Sequence[ValueLocation] | None): Per-active-variable
+                location. Defaults to NODAL.
+            passive_vars (Sequence[bool | int] | None): Per-dataset-variable
+                passive flags.
+            var_sharing (Sequence[int] | None): Per-dataset-variable sharing
+                zone indices (0 = none).
+            solution_time (float): Solution time for transient data.
+            strand_id (int): Strand ID for transient data.
+            aux (dict[str, Any] | None): Zone-level auxiliary data
+                ``{name: value}``.
+
+        Raises:
+            ValueError: On variable count or array shape mismatch.
 
         Notes:
-        - Takes into account current state of output file
-          - If already initialized, minimally can be called without any additional info
-          - If not initialized, requires variable list
-          - Use input variable array shape as imax, jmax, and kmax
-          - Assume numpy array data input if want more generic data format use
-            "write_data" directly
-            - Assume correct variable types are already set in the numpy arrays
-          - If no value locations, set default to nodal
-          - If only zone header wanted, see public method below
-          - Does not handle separate grid file case where data arrays are all cell
-            centered (Could add a calculation for this case - skipped for now)
+          - Takes into account current state of output file
+            - If already initialized, minimally can be called without any additional
+              info
+            - If not initialized, requires variable list
+            - Use input variable array shape as imax, jmax, and kmax
+            - Assume numpy array data input if want more generic data format use
+              "write_data" directly
+              - Assume correct variable types are already set in the numpy arrays
+            - If no value locations, set default to nodal
+            - If only zone header wanted, see public method below
+            - Does not handle separate grid file case where data arrays are all cell
+              centered (Could add a calculation for this case - skipped for now)
 
         """
         # Set default title if none provided
@@ -437,7 +472,10 @@ class Write:
         strand_id: int = 0,
         aux: dict[str, Any] | None = None,
     ) -> None:
-        """Write a whole finite-element zone at once.
+        """Write a complete finite-element zone.
+
+        Node and cell counts are inferred from *node_map*. The 32- or
+        64-bit write path is chosen automatically from the max index.
 
         Args:
             zone_type: FE zone type from the ZoneType enum.  Must be one of the types in
@@ -470,6 +508,10 @@ class Write:
             solution_time: Solution time for transient data (0.0 = static).
             strand_id: Strand ID for transient data (0 = static).
             aux: Zone-level auxiliary data as ``{name: value}`` strings.
+
+        Raises:
+            NotImplementedError: For FEPOLYGON or FEPOLYHEDRON zones.
+            ValueError: On variable count or array length mismatch.
 
         Notes:
             FE variable arrays are 1-D and node-ordered — no axis-ordering
@@ -635,13 +677,24 @@ def write_data(
     data: npt.ArrayLike,
     dt: np.dtype | DataType | None = None,
 ) -> None:
-    """Single simplified function to write data using NEW SZL API.
+    """Write a single variable's data array to an SZL file.
+
+    Infers the data type from the array dtype and dispatches to the
+    appropriate C write function. Arrays are ravelled in Fortran order.
+
+    Args:
+        handle (ctypes.c_void_p): C library file handle.
+        zone_num (int): 1-based zone index.
+        var_num (int): 1-based variable index.
+        data (npt.ArrayLike): Array of values to write.
+        dt (np.dtype | DataType | None): Optional explicit data type override.
 
     Output defaults:
     1. Inferrs data_typeype for nummpy arrays
     2. Defaults to double precision for array-like (list, tuple, etc)
     3. Optionally casts to input DataType or numpy dtype.
     4. Assumes data is in the correct shape and order (column major / Fortran order)
+
     """
     # Mappings between C-supported data types and numpy dtypes
     dtype_to_datatype: dict[np.dtype, DataType] = {
@@ -690,12 +743,22 @@ def write_connectivity(
 ) -> None:
     """Write FE zone connectivity: node map and optional face-neighbor connections.
 
-    Both arrays are written using the minimum integer width capable of
-    representing the maximum index value present in each array.  No copy
-    is made for C-contiguous input arrays — ravel(order="C") returns a flat
-    view of the node_map or face_neighbors without making a copy
+    Integer width (32 or 64 bit) is chosen automatically from the
+    maximum index value in each array.
+
+    Args:
+        handle (ctypes.c_void_p): C library file handle.
+        zone_num (int): 1-based zone index.
+        node_map (npt.ArrayLike): Connectivity array, 1-based node indices.
+        face_neighbors (npt.ArrayLike | None): Optional face-neighbor
+            connection array.
 
     Notes:
+        Both arrays are written using the minimum integer width capable of
+        representing the maximum index value present in each array.  No copy
+        is made for C-contiguous input arrays — ravel(order="C") returns a flat
+        view of the node_map or face_neighbors without making a copy
+
         Node and face-neighbor integer widths are chosen independently based
         on the maximum value in each respective array.
 
@@ -723,9 +786,16 @@ def write_connectivity(
 def write_zone_aux_data(
     handle: ctypes.c_void_p, aux: dict[int, dict[str, Any]]
 ) -> None:
-    """Write zone aux data to file.
+    """Write zone-level auxiliary data.
 
-    Aux data should be structured as {zone_idx: {name, value}}
+    Args:
+        handle (ctypes.c_void_p): C library file handle.
+        aux (dict[int, dict[str, Any]]): Mapping of
+            ``{zone_index: {name: value}}``.
+
+    Notes:
+        Aux data should be structured as {zone_idx: {name, value}}
+
     """
     for zone_idx, subdict in aux.items():
         for name, value in subdict.items():
@@ -735,9 +805,16 @@ def write_zone_aux_data(
 def write_variable_aux_data(
     handle: ctypes.c_void_p, aux: dict[int, dict[str, Any]]
 ) -> None:
-    """Write variable aux data to file.
+    """Write variable-level auxiliary data.
 
-    Aux data should be structured as {var_idx: {name, value}}
+    Args:
+        handle (ctypes.c_void_p): C library file handle.
+        aux (dict[int, dict[str, Any]]): Mapping of
+            ``{var_index: {name: value}}``.
+
+    Notes:
+        Aux data should be structured as {var_idx: {name, value}}
+
     """
     for var_idx, subdict in aux.items():
         for name, value in subdict.items():
@@ -745,18 +822,31 @@ def write_variable_aux_data(
 
 
 def write_dataset_aux_data(handle: ctypes.c_void_p, aux: dict[str, Any]) -> None:
-    """Write whole dataset aux data to file.
+    """Write dataset-level auxiliary data.
 
-    Aux data should be structured as {var_idx: {name, value}}
+    Args:
+        handle (ctypes.c_void_p): C library file handle.
+        aux (dict[str, Any]): Mapping of ``{name: value}``.
+
+    Notes:
+        Aux data should be structured as {var_idx: {name, value}}
+
     """
     for name, value in aux.items():
         libtecio.tec_data_set_add_aux_data(handle, str(name), str(value))
 
 
 def write_aux_data(handle: ctypes.c_void_p, aux: dict[str, dict[Any]]) -> None:
-    """Write formatted aux data dictionary containing all types of aux data to file.
+    """Write a combined auxiliary data dictionary to the file.
 
-    Aux data dictionary format:
+    Args:
+        handle (ctypes.c_void_p): C library file handle.
+        aux (dict[str, dict[Any]]): Dict with keys ``"AUXDATA"``,
+            ``"AUXVAR"``, ``"AUXZONE"``, each containing the appropriate
+            nested structure.
+
+    Example:
+    ```
     {
         "AUXDATASET":
             {name1: value1}
@@ -773,6 +863,8 @@ def write_aux_data(handle: ctypes.c_void_p, aux: dict[str, dict[Any]]) -> None:
                         {name2: value2}
                 }
     }
+    ```
+
     """
     for auxtype, auxdict in aux.items():
         if auxtype.lower() == "auxdata":
