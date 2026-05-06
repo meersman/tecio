@@ -91,9 +91,9 @@ conv_v = np.zeros((nx, ny), dtype=complex)
 # Precompute invariant terms in the momentum and pressure equation
 ikx = 1j * KX
 iky = 1j * KY
-nu_lap = nu*lap
-ikx_lap = ikx/lap
-iky_lap = iky/lap
+nu_lap = nu * lap
+ikx_lap = ikx / lap
+iky_lap = iky / lap
 _uv_buf = np.empty((nx, ny), dtype=float)
 
 with tecio.open(f"simple_spectral2_nx_{nx}_ny_{ny}.szplt", "w") as szl:
@@ -196,7 +196,7 @@ with tecio.open(f"simple_spectral2_nx_{nx}_ny_{ny}.szplt", "w") as szl:
                 data=[X, Y, *flow] if szl.current_zone==0 else flow,
                 var_sharing=None if szl.current_zone==0 else [1, 1]+[0]*len(flow),
                 strand_id=1,
-                solution_time=t,
+                solution_time=time_array[k],
                 aux={"dt": dt, "SubIterCount": count},
             )
 
