@@ -24,6 +24,12 @@ tecstat = "tecio.cli.tecstat:main"
 
 [project.optional-dependencies]
 dev = ["ruff", "mypy", "pytest"]
+docs = [
+    "sphinx>=7.0",
+    "sphinx-book-theme>=1.1",
+    "sphinx-autodoc-typehints>=2.0",
+    "myst-parser>=3.0",
+]
 
 [tool.ruff]
 line-length = 88
@@ -45,6 +51,9 @@ select = [
    "I",  # isort
 ]
 ignore = ["D203", "D213", "SIM105"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.mypy]
 python_version = "3.10"
