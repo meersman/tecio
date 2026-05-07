@@ -10,10 +10,15 @@
 .. currentmodule:: tecio.plt
 
 .. autosummary::
-   :toctree: ../_autosummary
-   :template: class.rst
    :nosignatures:
 
    Read
    Write
+```
+
+```{toctree}
+:hidden:
+
+plt_read
+plt_write
 ```

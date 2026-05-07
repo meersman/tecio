@@ -10,10 +10,15 @@
 .. currentmodule:: tecio.szl
 
 .. autosummary::
-   :toctree: ../_autosummary
-   :template: class.rst
    :nosignatures:
 
    Read
    Write
+```
+
+```{toctree}
+:hidden:
+
+szl_read
+szl_write
 ```

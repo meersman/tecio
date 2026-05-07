@@ -10,10 +10,15 @@
 .. currentmodule:: tecio.dat
 
 .. autosummary::
-   :toctree: ../_autosummary
-   :template: class.rst
    :nosignatures:
 
    Read
    Write
+```
+
+```{toctree}
+:hidden:
+
+dat_read
+dat_write
 ```

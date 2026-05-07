@@ -278,39 +278,35 @@ class Write:
         be 1-D, 2-D, or 3-D; missing trailing dimensions default to 1.
 
         Args:
-            data (Sequence[npt.NDArray] | None): Arrays for active
-                (non-passive, non-shared) variables.
-            title (str | None): Zone title. Defaults to ``"IJK_Zone_N"``.
-            variables (list[str] | None): Variable names (required on first
-                zone if lazy-open).
-            value_locations (Sequence[ValueLocation] | None): Per-active-variable
-                location. Defaults to NODAL.
-            passive_vars (Sequence[bool | int] | None): Per-dataset-variable
-                passive flags.
-            var_sharing (Sequence[int] | None): Per-dataset-variable sharing
-                zone indices (0 = none).
-            solution_time (float): Solution time for transient data.
-            strand_id (int): Strand ID for transient data.
-            aux (dict[str, Any] | None): Zone-level auxiliary data
-                ``{name: value}``.
-
-        Raises:
-            ValueError: On variable count or array shape mismatch.
+            data: One NumPy array per dataset variable.  Array shape is used
+                to infer ``imax``, ``jmax``, and ``kmax``; Fortran (column-major)
+                order is assumed.  Pass ``None`` to write a zone header only.
+            title: Zone title.  Defaults to ``"IJK_Zone_{current_zone + 1}"``.
+            variables: Variable name list.  Required on the first call when the
+                file has not been opened yet (lazy-open path); ignored once the
+                file is already initialised.
+            value_locations: Per-variable :class:`~libtecio.ValueLocation`.
+                Defaults to all ``NODAL``.
+            passive_vars: Per-variable passive flags.  Defaults to all active
+                (``False``).
+            var_sharing: Per-variable share-from zone index (1-based).
+                Defaults to no sharing (all zeros).
+            solution_time: Solution time for transient data.  Use ``0.0`` for
+                static zones.
+            strand_id: Strand ID for transient data.  Use ``0`` for static zones.
+            aux: Zone-level auxiliary data as ``{name: value}`` string pairs.
 
         Notes:
-          - Takes into account current state of output file
-            - If already initialized, minimally can be called without any additional
-              info
-            - If not initialized, requires variable list
-            - Use input variable array shape as imax, jmax, and kmax
-            - Assume numpy array data input if want more generic data format use
-              "write_data" directly
-              - Assume correct variable types are already set in the numpy arrays
-            - If no value locations, set default to nodal
-            - If only zone header wanted, see public method below
-            - Does not handle separate grid file case where data arrays are all cell
-              centered (Could add a calculation for this case - skipped for now)
+            If the file is already open, ``data`` and ``variables`` may be
+            omitted to write a zone header only.  If the file has not been
+            opened yet, ``variables`` must be provided on this call.
 
+            Data arrays are written as DOUBLE precision by default.  To write
+            other types, cast the NumPy arrays before calling (e.g.
+            ``arr.astype(np.float32)``).
+
+            Separate grid files (where all variables are cell-centred) are not
+            handled automatically; use the low-level API for that case.
         """
         # Set default title if none provided
         if title is None:
