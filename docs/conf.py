@@ -1,7 +1,8 @@
 # Configuration file for the Sphinx documentation builder.
-#
-# For the full list of built-in configuration values, see the documentation:
-# https://www.sphinx-doc.org/en/master/usage/configuration.html
+# ruff: noqa D100 D103
+
+import shutil
+from pathlib import Path
 
 import tecio
 
@@ -39,14 +40,26 @@ napoleon_use_admonition_for_notes = True
 # -- Autodoc settings --------------------------------------------------------
 
 autodoc_default_options = {
-    "members": True,
-    "undoc-members": False,
     "show-inheritance": True,
-    "member-order": "bysource",
+    # "bysource" requires accurate __module__ for source lookup; our __module__
+    # overrides (e.g. Write.__module__ = "tecio.szl") point to __init__.py,
+    # not the actual _write.py, so bysource silently fails.  Use alphabetical.
+    "member-order": "alphabetical",
 }
-autodoc_typehints = "description"
-autodoc_typehints_format = "short"
+
+# "description" calls typing.get_type_hints() on every member.  With our
+# __module__ overrides, get_type_hints() evaluates annotations against
+# __init__.py's namespace, which does not import ValueLocation, Sequence,
+# npt, Any, etc.  This raises NameError and Sphinx silently skips the member.
+# "none" bypasses get_type_hints() entirely.  Types are still documented via
+# Napoleon's Args/Returns sections from the Google-style docstrings.
+autodoc_typehints = "none"
+autodoc_class_signature = "separated"
+
+# -- Autosummary settings ----------------------------------------------------
+
 autosummary_generate = True
+autosummary_generate_overwrite = True
 
 # -- Intersphinx mapping -----------------------------------------------------
 
@@ -55,7 +68,7 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
 }
 
-# -- MyST parser (for .md files including demos) ----------------------------
+# -- MyST parser -------------------------------------------------------------
 
 myst_enable_extensions = [
     "amsmath",
@@ -80,3 +93,30 @@ html_theme_options = {
     "show_toc_level": 2,
     "navigation_with_keys": True,
 }
+
+
+# -- Demo auto-copy ----------------------------------------------------------
+
+def _copy_demos(app) -> None:
+    """Copy demo markdown and images into the docs source tree."""
+    docs_dir = Path(__file__).parent
+    demos_src = docs_dir.parent / "demos"
+
+    if not demos_src.is_dir():
+        return
+
+    _image_exts = {".gif", ".png", ".jpg", ".jpeg", ".svg"}
+    _text_exts = {".md"}
+
+    for demo_dir in sorted(demos_src.iterdir()):
+        if not demo_dir.is_dir():
+            continue
+        dst = docs_dir / "_demos" / demo_dir.name
+        dst.mkdir(parents=True, exist_ok=True)
+        for src_file in demo_dir.iterdir():
+            if src_file.suffix in _text_exts | _image_exts:
+                shutil.copy2(src_file, dst / src_file.name)
+
+
+def setup(app):
+    app.connect("builder-inited", _copy_demos)

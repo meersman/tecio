@@ -10,25 +10,19 @@ quickstart
 ```
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 1
 :caption: Demos
 
-demos/lorenz/lorenz
-demos/gravity_waves/gravity_waves
-demos/simple_spectral_solver/simple_spectral
+_demos/lorenz/lorenz
+_demos/gravity_waves/gravity_waves
+_demos/simple_spectral_solver/simple_spectral
 ```
 
 ```{toctree}
 :maxdepth: 2
 :caption: API Reference
 
-api/io
-api/szl
-api/plt
-api/dat
-api/libtecio
-api/tecutils
-api/cli
+api/index
 ```
 
 ## Installation

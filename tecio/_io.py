@@ -22,7 +22,7 @@ Supported modes mirror Python's built-in :func:`open`:
             data can be inspected while new zones are written.
     ======  ================================================================
 
-Notes
+Notes:
     - ``"a"`` and ``"a+"`` work by reading the source file in full and re-writing
       it zone-by-zone into a temporary sibling file, then leaving the ``Write``
       handle open for the caller to add further zones.  On close the temporary
@@ -528,28 +528,29 @@ def open(
     the appropriate reader or writer object.
 
     Args:
-        path:     File path.  The extension determines the format:
-                  ``.szplt`` → SZL,  ``.plt`` / ``.bin`` → PLT,
-                  ``.dat`` / ``.tec`` → ASCII DAT.
-        mode:     One of ``'r'``, ``'w'``, ``'x'``, ``'a'``, ``'a+'``.
-        **kwargs: Forwarded to the underlying ``Read`` or ``Write``
-                  constructor.  Common writer kwargs are ``title``
-                  (``str``), ``variables`` (``list[str]``), and
-                  ``file_type`` (:class:`~libtecio.FileType`).
+        path (str | os.PathLike): File path. Extension determines format:
+            ``.szplt`` → :mod:`tecio.szl`,
+            ``.plt`` / ``.bin`` → :mod:`tecio.plt`,
+            ``.dat`` / ``.tec`` → :mod:`tecio.dat`.
+        mode (str): One of ``'r'``, ``'w'``, ``'x'``, ``'a'``, ``'a+'``.
+        **kwargs (Any): Forwarded to the underlying ``Read`` or ``Write``
+            constructor (e.g. ``title``, ``variables``, ``file_type``).
 
     Returns:
-        * ``'r'``  → format ``Read`` instance
-        * ``'w'``  → format ``Write`` instance
-        * ``'x'``  → format ``Write`` instance (file must not exist)
-        * ``'a'``  → :class:`AppendWrite` instance
-        * ``'a+'`` → :class:`AppendReadWrite` instance
+        The appropriate handler for the format and mode:
+
+        - ``'r'`` → :class:`tecio.szl.Read`, :class:`tecio.plt.Read`,
+          or :class:`tecio.dat.Read`
+        - ``'w'`` / ``'x'`` → :class:`tecio.szl.Write`,
+          :class:`tecio.plt.Write`, or :class:`tecio.dat.Write`
+        - ``'a'`` → :class:`~tecio._io.AppendWrite`
+        - ``'a+'`` → :class:`~tecio._io.AppendReadWrite`
 
     Raises:
-        ValueError:          Unsupported extension or unrecognised mode.
-        FileNotFoundError:   ``'r'`` or ``'a'`` / ``'a+'`` on a missing file.
-        FileExistsError:     ``'x'`` on an existing file.
-        NotImplementedError: ``'a'`` / ``'a+'`` when the source file contains
-                             FEPOLYGON or FEPOLYHEDRON zones.
+        ValueError: Unsupported extension or unrecognised mode.
+        FileNotFoundError: ``'r'``/``'a'``/``'a+'`` on a missing file.
+        FileExistsError: ``'x'`` on an existing file.
+        NotImplementedError: Append with FEPOLYGON/FEPOLYHEDRON zones.
 
     Examples::
 

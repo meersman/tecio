@@ -1,6 +1,7 @@
-# Command-Line Tools
+# tecio.cli
 
-Console scripts installed with the package via ``pip install -e .``.
+Console scripts installed with the package. Each tool accepts ``--help``
+for full usage.
 
 ## tecdump
 

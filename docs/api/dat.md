@@ -1,26 +1,19 @@
-# DAT (``.dat``) Files
-
-Read and write Tecplot ASCII data files.
-
-## Reading
+# tecio.dat
 
 ```{eval-rst}
-.. autoclass:: tecio.dat.Read
-   :members:
-
-.. autoclass:: tecio.dat._read.ReadZone
-   :members:
-
-.. autoclass:: tecio.dat._read.ReadVariable
-   :members:
-
-.. autoclass:: tecio.dat._read.ReadAuxData
-   :members:
+.. automodule:: tecio.dat
 ```
 
-## Writing
+## Classes
 
 ```{eval-rst}
-.. autoclass:: tecio.dat.Write
-   :members:
+.. currentmodule:: tecio.dat
+
+.. autosummary::
+   :toctree: ../_autosummary
+   :template: class.rst
+   :nosignatures:
+
+   Read
+   Write
 ```

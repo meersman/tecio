@@ -297,6 +297,21 @@ class Write:
 
     """
 
+    path: str
+    """Output file path."""
+
+    title: str
+    """Dataset title string."""
+
+    variables: list[str] | None
+    """Variable name list, or ``None`` if the file has not been opened yet."""
+
+    file_type: FileType
+    """File type (FULL, GRID, or SOLUTION)."""
+
+    current_zone: int
+    """Count of successfully written zones."""
+
     SIG_DIGITS: int = 9
 
     def __init__(

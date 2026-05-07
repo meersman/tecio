@@ -129,6 +129,28 @@ class Write:
 
     """
 
+    # Class-level annotations so autodoc can discover instance attributes.
+    path: str
+    """Output file path."""
+
+    title: str
+    """Dataset title string."""
+
+    variables: list[str] | None
+    """Variable name list, or ``None`` if the file has not been opened yet."""
+
+    file_type: FileType
+    """File type (FULL, GRID, or SOLUTION)."""
+
+    current_zone: int
+    """1-based index of the most recently written zone (0 before any zone is written)."""
+
+    auxdataset: dict[str, Any]
+    """Buffered dataset-level auxiliary data, flushed before the first zone."""
+
+    auxvar: dict[int, dict[str, Any]]
+    """Buffered variable-level auxiliary data, flushed before the first zone."""
+
     def __init__(
         self,
         path: str,

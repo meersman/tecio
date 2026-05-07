@@ -1,30 +1,19 @@
-# PLT (``.plt``) Files
-
-Read and write Tecplot PLT binary files (v112 and v191).
-
-## Reading
+# tecio.plt
 
 ```{eval-rst}
-.. autoclass:: tecio.plt.Read
-   :members:
-
-.. autoclass:: tecio.plt._read.ReadZone
-   :members:
-
-.. autoclass:: tecio.plt._read.ReadVariable
-   :members:
-
-.. autoclass:: tecio.plt._read.ReadAuxData
-   :members:
+.. automodule:: tecio.plt
 ```
 
-## Writing
+## Classes
 
 ```{eval-rst}
-.. autoclass:: tecio.plt.Write
-   :members:
+.. currentmodule:: tecio.plt
 
-.. autofunction:: tecio.plt._write.write_data
+.. autosummary::
+   :toctree: ../_autosummary
+   :template: class.rst
+   :nosignatures:
 
-.. autofunction:: tecio.plt._write.write_connectivity
+   Read
+   Write
 ```

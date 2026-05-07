@@ -1,36 +1,19 @@
-# SZL (``.szplt``) Files
-
-Read and write Tecplot SZL subzone-loadable binary files.
-
-## Reading
+# tecio.szl
 
 ```{eval-rst}
-.. autoclass:: tecio.szl.Read
-   :members:
-
-.. autoclass:: tecio.szl._read.ReadZone
-   :members:
-
-.. autoclass:: tecio.szl._read.ReadVariable
-   :members:
-
-.. autoclass:: tecio.szl._read.ReadAuxData
-   :members:
+.. automodule:: tecio.szl
 ```
 
-## Writing
+## Classes
 
 ```{eval-rst}
-.. autoclass:: tecio.szl.Write
-   :members:
+.. currentmodule:: tecio.szl
 
-.. autofunction:: tecio.szl._write.write_data
+.. autosummary::
+   :toctree: ../_autosummary
+   :template: class.rst
+   :nosignatures:
 
-.. autofunction:: tecio.szl._write.write_connectivity
-
-.. autofunction:: tecio.szl._write.write_zone_aux_data
-
-.. autofunction:: tecio.szl._write.write_dataset_aux_data
-
-.. autofunction:: tecio.szl._write.write_variable_aux_data
+   Read
+   Write
 ```

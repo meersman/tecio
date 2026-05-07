@@ -9,16 +9,16 @@ Python slice syntax::
 Any component may be omitted; the colon separators determine which part is
 which:
 
-    =========  ================  ==========================
-    Input      Equivalent        Meaning
-    =========  ================  ==========================
-    ``5``      ``[5:]``          From index 5 to end
-    ``:10``    ``[:10]``         From start to index 10
-    ``::2``    ``[::2]``         Every 2nd point/step
-    ``2:10``   ``[2:10]``        Index 2 through 10
-    ``2:10:3`` ``[2:10:3]``      Every 3rd from 2 through 10
-    ``::-1``   ``[::-1]``        Reverse (e.g. mirror an axis)
-    =========  ================  ==========================
+    ==========  ================  =============================
+    Input       Equivalent        Meaning
+    ==========  ================  =============================
+    ``5``       ``[5:]``          From index 5 to end
+    ``:10``     ``[:10]``         From start to index 10
+    ``::2``     ``[::2]``         Every 2nd point/step
+    ``2:10``    ``[2:10]``        Index 2 through 10
+    ``2:10:3``  ``[2:10:3]``      Every 3rd from 2 through 10
+    ``::-1``    ``[::-1]``        Reverse (e.g. mirror an axis)
+    ==========  ================  =============================
 
 IJK indices are **1-based and inclusive** at both ends.
 Solution-time ``start`` and ``end`` are **float values** (not indices);

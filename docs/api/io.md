@@ -1,6 +1,4 @@
-# File I/O
-
-The primary entry point for reading and writing Tecplot files.
+# tecio.open
 
 ```{eval-rst}
 .. autofunction:: tecio.open
@@ -8,10 +6,16 @@ The primary entry point for reading and writing Tecplot files.
 
 ## Append Handles
 
-```{eval-rst}
-.. autoclass:: tecio._io.AppendWrite
-   :members:
+Returned by :func:`tecio.open` when using ``'a'`` or ``'a+'`` mode.
 
-.. autoclass:: tecio._io.AppendReadWrite
-   :members:
+```{eval-rst}
+.. currentmodule:: tecio._io
+
+.. autosummary::
+   :toctree: ../_autosummary
+   :template: class.rst
+   :nosignatures:
+
+   AppendWrite
+   AppendReadWrite
 ```

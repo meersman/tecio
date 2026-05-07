@@ -11,17 +11,19 @@ try:
 except metadata.PackageNotFoundError:
     __version__ = "0.0.0"
 
-from . import cli, dat, libtecio, plt, szl, tecutils
+from . import cli, dat, libtecio, plt, szl, utils
 from ._io import open
+
+# Ensure tecio.open displays as the canonical public name in docs and help().
+open.__module__ = "tecio"
 
 __all__ = [
     "libtecio",
     "open",
     "dat",
     "plt",
-    "pltread",
     "szl",
-    "tecutils",
+    "utils",
     "cli",
     "__version__",
 ]

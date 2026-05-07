@@ -1,41 +1,29 @@
-# libtecio — C Library Bindings
+# tecio.libtecio
 
-Low-level Python wrappers for the TecIO C library functions.
+Low-level Python wrappers around the TecIO C library. Most users interact
+with the higher-level :mod:`tecio.szl`, :mod:`tecio.plt`, and
+:mod:`tecio.dat` APIs.
 
 ## Enums
 
 ```{eval-rst}
-.. autoclass:: tecio.libtecio.FileFormat
-   :members:
-   :undoc-members:
+.. currentmodule:: tecio.libtecio
 
-.. autoclass:: tecio.libtecio.FileType
-   :members:
-   :undoc-members:
+.. autosummary::
+   :toctree: ../_autosummary
+   :template: enum.rst
+   :nosignatures:
 
-.. autoclass:: tecio.libtecio.ZoneType
-   :members:
-   :undoc-members:
-
-.. autoclass:: tecio.libtecio.DataType
-   :members:
-   :undoc-members:
-
-.. autoclass:: tecio.libtecio.ValueLocation
-   :members:
-   :undoc-members:
-
-.. autoclass:: tecio.libtecio.FaceNeighborMode
-   :members:
-   :undoc-members:
-
-.. autoclass:: tecio.libtecio.FeCellShape
-   :members:
-   :undoc-members:
-
-.. autoclass:: tecio.libtecio.DataFormat
-   :members:
-   :undoc-members:
+   FileFormat
+   FileType
+   ZoneType
+   DataType
+   ValueLocation
+   FaceNeighborMode
+   FeCellShape
+   DataFormat
+   VarStatus
+   Boolean
 ```
 
 ## Exceptions

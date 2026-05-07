@@ -14,10 +14,10 @@ from enum import Enum
 import numpy as np
 import numpy.typing as npt
 
-from . import tecutils
+from . import utils
 
 # Load tecio library
-TECIO_LIB_PATH = tecutils.get_tecio_lib()
+TECIO_LIB_PATH = utils.get_tecio_lib()
 lib = ctypes.cdll.LoadLibrary(TECIO_LIB_PATH)
 
 
@@ -40,10 +40,19 @@ class TecioError(RuntimeError):
 class FileFormat(Enum):
     """Binary data format selector.
 
-    Attributes:
-        PLT: Classic PLT format (0).
-        SZPLT: SZL subzone format (1).
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
 
+       * - Attribute
+         - Value
+         - Description
+       * - ``PLT``
+         - ``0``
+         - Classic PLT binary format.
+       * - ``SZPLT``
+         - ``1``
+         - SZL subzone-loadable format.
     """
 
     PLT = 0
@@ -53,11 +62,22 @@ class FileFormat(Enum):
 class FileType(Enum):
     """Tecplot file type.
 
-    Attributes:
-        FULL: Grid and solution data (0).
-        GRID: Grid coordinates only (1).
-        SOLUTION: Solution variables only (2).
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
 
+       * - Attribute
+         - Value
+         - Description
+       * - ``FULL``
+         - ``0``
+         - Contains both grid and solution data.
+       * - ``GRID``
+         - ``1``
+         - Grid coordinates only.
+       * - ``SOLUTION``
+         - ``2``
+         - Solution variables only.
     """
 
     FULL = 0
@@ -68,17 +88,40 @@ class FileType(Enum):
 class ZoneType(Enum):
     """Tecplot zone type.
 
-    Attributes:
-        ORDERED: Structured IJK grid (0).
-        FELINESEG: Finite-element line segments (1).
-        FETRIANGLE: Finite-element triangles (2).
-        FEQUADRILATERAL: Finite-element quadrilaterals (3).
-        FETETRAHEDRON: Finite-element tetrahedra (4).
-        FEBRICK: Finite-element hexahedra (5).
-        FEPOLYGON: Finite-element polygons (6).
-        FEPOLYHEDRON: Finite-element polyhedra (7).
-        FEMIXED: Mixed finite-element types (8).
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
 
+       * - Attribute
+         - Value
+         - Description
+       * - ``ORDERED``
+         - ``0``
+         - Structured IJK grid.
+       * - ``FELINESEG``
+         - ``1``
+         - Finite-element line segments.
+       * - ``FETRIANGLE``
+         - ``2``
+         - Finite-element triangles.
+       * - ``FEQUADRILATERAL``
+         - ``3``
+         - Finite-element quadrilaterals.
+       * - ``FETETRAHEDRON``
+         - ``4``
+         - Finite-element tetrahedra.
+       * - ``FEBRICK``
+         - ``5``
+         - Finite-element hexahedra.
+       * - ``FEPOLYGON``
+         - ``6``
+         - Finite-element polygons (face-based).
+       * - ``FEPOLYHEDRON``
+         - ``7``
+         - Finite-element polyhedra (face-based).
+       * - ``FEMIXED``
+         - ``8``
+         - Mixed finite-element types.
     """
 
     ORDERED = 0
@@ -93,17 +136,36 @@ class ZoneType(Enum):
 
 
 class FeCellShape(Enum):
-    """Class for categorizing unstructured cell shapes.
+    """Unstructured cell shape category.
 
-    Attributes:
-        BAR: 2D two-node elements (0).
-        TRIANGLE: 2D three-node elements (1).
-        QUADRILATERAL: 2D four-node elements (2).
-        TETRAHEDRON: 3D four-node elements (3).
-        HEXAHEDRON: 3D eight-node elements (4).
-        PYRAMID: 3D five-node elements (5).
-        PRISM: 3D six-node elements (6).
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
 
+       * - Attribute
+         - Value
+         - Description
+       * - ``BAR``
+         - ``0``
+         - 2D two-node element.
+       * - ``TRIANGLE``
+         - ``1``
+         - 2D three-node element.
+       * - ``QUADRILATERAL``
+         - ``2``
+         - 2D four-node element.
+       * - ``TETRAHEDRON``
+         - ``3``
+         - 3D four-node element.
+       * - ``HEXAHEDRON``
+         - ``4``
+         - 3D six-node element.
+       * - ``PYRAMID``
+         - ``5``
+         - 3D five-node element.
+       * - ``PRISM``
+         - ``6``
+         - 3D eight-node element.
     """
 
     BAR = 0
@@ -116,14 +178,27 @@ class FeCellShape(Enum):
 
 
 class FaceNeighborMode(Enum):
-    """Class for specifying boundary face sharing of nodes between zones.
+    """Boundary face-sharing mode between zones.
 
-    Attributes:
-        LOCAL_ONE_TO_ONE: Conventional intra-zone face sharing (0).
-        LOCAL_ONE_TO_MANY: Hanging node intra-zone face sharing (1).
-        GLOBAL_ONE_TO_ONE: Conventional inter-zone face sharing (2).
-        GLOBAL_ONE_TO_MANY: Hanging node inter-zone face sharing (3).
+    .. list-table::
+       :header-rows: 1
+       :widths: 35 10 55
 
+       * - Attribute
+         - Value
+         - Description
+       * - ``LOCAL_ONE_TO_ONE``
+         - ``0``
+         - Each face has at most one local neighbor.
+       * - ``LOCAL_ONE_TO_MANY``
+         - ``1``
+         - Each face may have multiple local neighbors (hanging nodes).
+       * - ``GLOBAL_ONE_TO_ONE``
+         - ``2``
+         - Each face has at most one neighbor in any zone.
+       * - ``GLOBAL_ONE_TO_MANY``
+         - ``3``
+         - Each face may have multiple neighbors in any zone (hanging nodes).
     """
 
     LOCAL_ONE_TO_ONE = 0
@@ -135,10 +210,19 @@ class FaceNeighborMode(Enum):
 class ValueLocation(Enum):
     """Data value location within a cell.
 
-    Attributes:
-        CELL_CENTERED: Values at cell centers (0).
-        NODAL: Values at grid nodes (1).
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
 
+       * - Attribute
+         - Value
+         - Description
+       * - ``CELL_CENTERED``
+         - ``0``
+         - Values stored at cell centres.
+       * - ``NODAL``
+         - ``1``
+         - Values stored at grid nodes.
     """
 
     CELL_CENTERED = 0
@@ -146,12 +230,21 @@ class ValueLocation(Enum):
 
 
 class DataFormat(Enum):
-    """Class for specifiying format of zone data for ascii file formats.
+    """Zone data packing order for ASCII files.
 
-    Attributes:
-        POINT: Variables appear as columns in each row(0)
-        BLOCK: All values for each variable appear in a block (1)
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
 
+       * - Attribute
+         - Value
+         - Description
+       * - ``POINT``
+         - ``0``
+         - All variables for one point written together.
+       * - ``BLOCK``
+         - ``1``
+         - All points for one variable written together.
     """
 
     POINT = 0
@@ -161,13 +254,28 @@ class DataFormat(Enum):
 class DataType(Enum):
     """On-disk storage type for variable data.
 
-    Attributes:
-        FLOAT: 32-bit float (1).
-        DOUBLE: 64-bit float (2).
-        INT32: 32-bit signed integer (3).
-        INT16: 16-bit signed integer (4).
-        BYTE: 8-bit unsigned integer (5).
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
 
+       * - Attribute
+         - Value
+         - Description
+       * - ``FLOAT``
+         - ``1``
+         - 32-bit IEEE floating point.
+       * - ``DOUBLE``
+         - ``2``
+         - 64-bit IEEE floating point.
+       * - ``INT32``
+         - ``3``
+         - 32-bit signed integer.
+       * - ``INT16``
+         - ``4``
+         - 16-bit signed integer.
+       * - ``BYTE``
+         - ``5``
+         - 8-bit unsigned integer.
     """
 
     FLOAT = 1
@@ -178,12 +286,21 @@ class DataType(Enum):
 
 
 class VarStatus(Enum):
-    """Passive variable flag.
+    """Variable active/passive flag.
 
-    Attributes:
-        ACTIVE: Active variable (0).
-        PASSIVE: Passive variable (1).
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
 
+       * - Attribute
+         - Value
+         - Description
+       * - ``ACTIVE``
+         - ``0``
+         - Variable has data in this zone.
+       * - ``PASSIVE``
+         - ``1``
+         - Variable has no data in this zone.
     """
 
     ACTIVE = 0
@@ -193,10 +310,19 @@ class VarStatus(Enum):
 class Boolean(Enum):
     """Boolean flag for C function arguments.
 
-    Attributes:
-        FALSE: False value (0).
-        TRUE: True value (1).
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
 
+       * - Attribute
+         - Value
+         - Description
+       * - ``FALSE``
+         - ``0``
+         - Logical false.
+       * - ``TRUE``
+         - ``1``
+         - Logical true.
     """
 
     FALSE = 0
@@ -206,8 +332,19 @@ class Boolean(Enum):
 class Debug(Enum):
     """Debug flag for C function arguments.
 
-    FALSE = 0
-    TRUE = 1
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
+
+       * - Attribute
+         - Value
+         - Description
+       * - ``FALSE``
+         - ``0``
+         - Debug output disabled.
+       * - ``TRUE``
+         - ``1``
+         - Debug output enabled.
     """
 
     FALSE = 0
@@ -3170,7 +3307,7 @@ def tecdat142(
         - For ORDERED zones: data should be ordered with the I dimension varying
           fastest, then J, then K
         - For FE zones: data should be ordered by node index for nodal variables, and by
-        element index for cell-centered variables
+          element index for cell-centered variables
 
     """
     # Convert to appropriate numpy array

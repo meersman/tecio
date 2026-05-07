@@ -16,38 +16,33 @@ import tecio
 from tecio.libtecio import ZoneType
 
 # Create szplt reader object for access-on-demand
-szl_in = tecio.open("flow.szplt", "r")
+szl = tecio.open("flow.szplt")
 
 # List available variables in the dataset
-print(szl_in.variables)
+print(szl.variables)
 # ['x', 'y', 'z', 'uvel', 'vvel', 'wvel', 'pres', 'dens', 'temp']
-
-# Extract single variable arrays from all zones
-x = [szl_in.zone[i].x for i in range(len(szl_in.zone))]
-y = [szl_in.zone[i].y for i in range(len(szl_in.zone))]
-z = [szl_in.zone[i].z for i in range(len(szl_in.zone))]
 
 # Create nondimensional pressure variable
 pressure = [
-    szl_in.zone[i].pres / szl_in.auxdata["Common.ReferencePressure"]
-    for i in range(len(szl_in.zone))
+    szl.zone[i].pres / szl.auxdata["Common.ReferencePressure"]
+    for i in range(len(szl.zone))
 ]
 
 # Write out grid and nodimensional pressure variable
-with tecio.open("pres.szplt", "w") as szl_out:
+with tecio.open("pres.szplt", "w") as writer:
     for i in range(len(x)):
-        if szl_in.zone[i].zone_type == ZoneType.ORDERED:
-            szl_out.write_ijk_zone(
-                title=szl_in.zone[i].title,
+        if szl.zone[i].zone_type == ZoneType.ORDERED:
+            writer.write_ijk_zone(
+                title=szl.zone[i].title,
                 variables=["x", "y", "z", "pressure"],
-                data=[x[i], y[i], z[i], pressure[i]],
+                data=[szl.zone[i].x, szl.zone[i].y, szl.zone[i].z, pressure[i]],
             )
         else:
-            szl_out.write_fe_zone(
-                title=szl_in.zone[i].title,
+            writer.write_fe_zone(
+                title=szl.zone[i].title,
                 variables=["x", "y", "z", "pressure"],
                 data=[x[i], y[i], z[i], pressure[i]],
-                node_map=szl_in.zone[i].node_map,
+                node_map=szl.zone[i].node_map,
             )
 ```
 
@@ -69,17 +64,17 @@ tecio
 │   └── tecstat.py
 ├── dat                 # Higher level Tecplot ascii API
 │   ├── __init__.py
-│   ├── read.py
-│   └── write.py
+│   ├── _read.py
+│   └── _write.py
 ├── libtecio.py         # TecIO Python wrapper functions
 ├── plt                 # Higher level PLT file API
 │   ├── __init__.py
-│   ├── read.py
-│   └── write.py
+│   ├── _read.py
+│   └── _write.py
 ├── szl                 # Higher level SZL file API
 │   ├── __init__.py
-│   ├── read.py
-│   └── write.py
+│   ├── _read.py
+│   └── _write.py
 └── tecutils.py
 ```
 
