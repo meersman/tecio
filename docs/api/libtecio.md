@@ -1,5 +1,9 @@
 # tecio.libtecio
 
+```{eval-rst}
+.. automodule:: tecio.libtecio
+```
+
 Low-level Python wrappers around the TecIO C library. Most users interact
 with the higher-level :mod:`tecio.szl`, :mod:`tecio.plt`, and
 :mod:`tecio.dat` APIs.

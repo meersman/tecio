@@ -14,18 +14,4 @@ scripts are available directly from the shell:
     $ tecextract -zones 1,2 -o subset.szplt flow.szplt
     $ tecscale -variable Pressure -scale 1e-3 flow.szplt
     $ tecstat flow.szplt
-
-Modules
--------
-.. autosummary::
-   :toctree: generated
-
-   tecdump
-   tecfix
-   tecslice
-   tecmerge
-   teconvert
-   tecextract
-   tecscale
-   tecstat
 """
