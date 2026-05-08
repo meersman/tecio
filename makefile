@@ -60,7 +60,7 @@ check: format lint typecheck
 
 # Run unit tests
 test:
-	pytest --junitxml=junit.xml
+	pytest -v --junitxml=junit.xml
 	genbadge tests -i junit.xml -o badges/tests.svg
 	@echo "✓ Tests complete"
 
