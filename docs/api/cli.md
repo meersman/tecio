@@ -53,9 +53,9 @@
    :members: main
 ```
 
-## tecstat
+## tecstats
 
 ```{eval-rst}
-.. automodule:: tecio.cli.tecstat
+.. automodule:: tecio.cli.tecstats
    :members: main
 ```

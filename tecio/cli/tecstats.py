@@ -8,16 +8,16 @@ noted but skipped.
 Example usage::
 
     # Print stats for all zones and variables
-    $ tecstat flow.szplt
+    $ tecstats flow.szplt
 
     # Stats for zone 2 only
-    $ tecstat -zone 2 flow.szplt
+    $ tecstats -zone 2 flow.szplt
 
     # Stats for variable 3 only, all zones
-    $ tecstat -variable 3 flow.szplt
+    $ tecstats -variable 3 flow.szplt
 
     # Stats for zone 1, variable 2
-    $ tecstat -zone 1 -variable 2 flow.szplt
+    $ tecstats -zone 1 -variable 2 flow.szplt
 """
 
 from __future__ import annotations
@@ -38,11 +38,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         epilog=(
             "Example usage:\n"
             "  Print stats for all zones and variables\n"
-            "    $ tecstat <file>\n"
+            "    $ tecstats <file>\n"
             "  Print stats for zone 2 only\n"
-            "    $ tecstat -zone 2 <file>\n"
+            "    $ tecstats -zone 2 <file>\n"
             "  Print stats for variable 3 only\n"
-            "    $ tecstat -variable 3 <file>\n"
+            "    $ tecstats -variable 3 <file>\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

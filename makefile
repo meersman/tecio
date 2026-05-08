@@ -1,7 +1,12 @@
 PYTHON ?= python3
-PACKAGE_NAME = tecio
+PACKAGE = tecio
 
-.PHONY: help install install-dev format lint check test clean
+.PHONY: help \
+	install install-dev uninstall \
+	format lint typecheck \
+	test coverage testclean \
+	clean \
+	versions \
 
 # Default target
 help:
@@ -26,15 +31,15 @@ help:
 
 # Install package dependencies
 install:
-	pip install -e .
+	$(PYTHON) -m pip install -e .
 
 # Install package + development dependencies
 install-dev:
-	pip install -e ".[dev]"
+	$(PYTHON) -m pip install -e ".[dev]"
 
 # Uninstall package
 uninstall:
-	pip uninstall tecio
+	$(PYTHON) -m pip uninstall tecio
 
 # Format code with black and isort
 format:
@@ -53,9 +58,16 @@ check: format lint typecheck
 	@echo ""
 	@echo "✓ All checks passed"
 
-# Run unit tests (when implemented)
+# Run unit tests
 test:
-	pytest
+	pytest --junitxml=junit.xml
+	genbadge tests -i junit.xml -o badges/tests.svg
+	@echo "✓ Tests complete"
+
+# Run coverage report
+coverage:
+	pytest -q --cov=$(PACKAGE) --cov-report=xml  --cov-report=term
+	genbadge coverage -i coverage.xml -o badges/coverage.svg
 	@echo "✓ Tests complete"
 
 # Clean test artifacts
@@ -64,6 +76,7 @@ testclean:
 	@find . -type f -name "test*.plt" -delete
 	@find . -type f -name "test*.szplt" -delete
 	@find . -type f -name "test*.dat" -delete
+	@find . -type f -name "*.xml" -delete
 
 # Clean up generated files
 clean:

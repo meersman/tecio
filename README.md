@@ -1,5 +1,10 @@
 # tecio
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Tests](badges/tests.svg)
+![Coverage](badges/coverage.svg)
+![Lines of Code](https://img.shields.io/tokei/lines/github/USER/REPO)
+
 Python interface for reading and writing Tecplot data files.
 
 ## Overview
@@ -61,7 +66,7 @@ tecio
 │   ├── teconvert.py
 │   ├── tecscale.py
 │   ├── tecslice.py
-│   └── tecstat.py
+│   └── tecstats.py
 ├── dat                 # Higher level Tecplot ascii API
 │   ├── __init__.py
 │   ├── _read.py
