@@ -1,6 +1,6 @@
 # tecio
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Tests](badges/tests.svg)
 ![Coverage](badges/coverage.svg)
 ![Lines of Code](https://sloc.xyz/github/meersman/tecio/)
