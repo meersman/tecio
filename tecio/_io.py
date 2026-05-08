@@ -201,20 +201,37 @@ def _copy_zones(reader: szl.Read | plt.Read, writer: szl.Write | plt.Write) -> N
 
 
 class AppendWrite:
-    """Write handle returned by ``open(path, 'a')``.
+    """Write handle returned by :func:`tecio.open` with ``mode='a'``.
 
-    All write methods are delegated to the inner :class:`szl.Write` /
-    :class:`plt.Write` instance.  On :meth:`close` (or context-manager
-    exit) the temporary file is atomically renamed over the original path.
+    Appends new zones to an existing Tecplot file.  Internally the existing
+    file is stream-copied zone-by-zone into a temporary sibling file, and
+    the write handle is left open past all copied zones so new zones can be
+    appended.  On :meth:`close` (or context-manager exit) the temporary file
+    is atomically renamed over the original path — a POSIX rename on Unix,
+    :func:`Path.replace` on Windows.
 
-    You should not instantiate this class directly; use :func:`open`.
+    The copy step preserves the original title, variable list, file type,
+    all zone data, all zone metadata (strand, solution time, aux data), and
+    variable sharing.  Connectivity is copied for FE zones.
 
-    Args:
-        original_path: Path of the file being appended to.
-        tmp_path:      Path of the in-progress temporary output file.
-        writer:        Live ``Write`` instance already populated with all
-                       zones from the original file.
+    Do not instantiate this class directly — use :func:`tecio.open`.
 
+    Note:
+        FEPOLYGON and FEPOLYHEDRON zones cannot be copied because the Write
+        API does not yet expose a poly-zone writer.  A
+        :exc:`NotImplementedError` is raised during ``open()`` if such zones
+        are present in the source file.
+
+    Example:
+        >>> with tecio.open("flow.szplt", "a") as w:
+        ...     print(w.variables)      # variable list from the existing file
+        ...     print(w.current_zone)   # number of zones already copied
+        ...     w.write_ijk_zone(
+        ...         data=[x_new, y_new, p_new],
+        ...         solution_time=10.0,
+        ...         strand_id=1,
+        ...     )
+        >>> # flow.szplt now contains the original zones plus the new one
     """
 
     def __init__(
@@ -247,11 +264,103 @@ class AppendWrite:
     # ------------------------------------------------------------------
 
     def write_ijk_zone(self, *args: Any, **kwargs: Any) -> None:
-        """Write an IJK-ordered zone — see :meth:`szl.Write.write_ijk_zone`."""
+        """Append a structured IJK-ordered zone.
+
+        Delegates to the underlying format writer's ``write_ijk_zone``
+        (e.g. :meth:`tecio.szl.Write.write_ijk_zone`).  All parameters
+        from that method are accepted here with one exception: ``variables``
+        is not meaningful because the variable list is fixed at open time
+        from the existing file.
+
+        Args:
+            data (Sequence[ndarray]): One NumPy array per **active**
+                variable (non-passive, non-shared).  Shape
+                ``(imax[, jmax[, kmax]])`` is inferred automatically.
+                Fortran (column-major) order is assumed.
+            title (str | None): Zone title.  Defaults to
+                ``"IJK_Zone_{n}"``.
+            value_locations (Sequence[ValueLocation] | None): Per-variable
+                :class:`~tecio.libtecio.ValueLocation` for active variables.
+                Defaults to all :attr:`~tecio.libtecio.ValueLocation.NODAL`.
+            passive_vars (Sequence[bool | int] | None): Per-variable passive
+                flag for the **full** variable list (length = total variables
+                in the file, not just active ones).  Defaults to all
+                ``False``.
+            var_sharing (Sequence[int] | None): Per-variable share-from zone
+                index (1-based, counting all zones including those copied
+                from the original file).  ``0`` = no sharing.  Defaults to
+                all ``0``.  Sharing grid coordinates from zone 1 is a common
+                pattern for transient data to avoid duplicating large arrays.
+            solution_time (float): Solution time for transient data.
+                Defaults to ``0.0``.
+            strand_id (int): Strand ID grouping related time steps.  Zones
+                with the same strand ID animate together in Tecplot 360.
+                Defaults to ``0`` (static).
+            aux (dict[str, str] | None): Zone-level auxiliary data as
+                ``{name: value}`` pairs.  Defaults to ``None``.
+
+        Example:
+            Append a time step, sharing the grid from zone 1:
+
+            >>> n = len(w.variables)           # e.g. ["x", "y", "pressure"]
+            >>> w.write_ijk_zone(
+            ...     data=[p_new],              # only the non-shared variable
+            ...     passive_vars=[False] * n,
+            ...     var_sharing=[1, 1, 0],     # x and y shared from zone 1
+            ...     solution_time=5.0,
+            ...     strand_id=1,
+            ... )
+        """
         self._writer.write_ijk_zone(*args, **kwargs)
 
     def write_fe_zone(self, *args: Any, **kwargs: Any) -> None:
-        """Write a finite-element zone — see :meth:`szl.Write.write_fe_zone`."""
+        """Append an unstructured finite-element zone.
+
+        Delegates to the underlying format writer's ``write_fe_zone``
+        (e.g. :meth:`tecio.szl.Write.write_fe_zone`).  The ``variables``
+        parameter is not meaningful here — the variable list is fixed from
+        the existing file.  FEPOLYGON and FEPOLYHEDRON are not supported.
+
+        Args:
+            zone_type (ZoneType): Element topology.  One of:
+                :attr:`~tecio.libtecio.ZoneType.FELINESEG`,
+                :attr:`~tecio.libtecio.ZoneType.FETRIANGLE`,
+                :attr:`~tecio.libtecio.ZoneType.FEQUADRILATERAL`,
+                :attr:`~tecio.libtecio.ZoneType.FETETRAHEDRON`, or
+                :attr:`~tecio.libtecio.ZoneType.FEBRICK`.
+            data (Sequence[ndarray]): One 1-D array per active variable.
+                NODAL arrays must have length ``num_nodes``; CELL_CENTERED
+                arrays must have length ``num_cells``.  Both are inferred
+                from ``node_map``.
+            node_map (array-like | None): Integer array of shape
+                ``(num_cells, nodes_per_cell)`` with **1-based** node
+                indices.  ``num_nodes = node_map.max()``.  The 32- or
+                64-bit write path is chosen automatically.
+            title (str | None): Zone title.  Defaults to ``"FE_Zone_{n}"``.
+            value_locations (Sequence[ValueLocation] | None): Per-variable
+                value location for active variables.  Defaults to all
+                :attr:`~tecio.libtecio.ValueLocation.NODAL`.
+            passive_vars (Sequence[bool | int] | None): Per-variable passive
+                flags for the full variable list.  Defaults to all ``False``.
+            var_sharing (Sequence[int] | None): Per-variable share-from zone
+                index (1-based).  ``0`` = no sharing.  Defaults to all ``0``.
+            con_sharing (int): Zone index to share connectivity from
+                (1-based).  ``0`` = write connectivity directly.  Cannot be
+                used with GLOBAL face-neighbor modes.  Defaults to ``0``.
+            face_neighbors (array-like | None): Face-neighbor connectivity.
+                When provided, ``num_face_cons`` is set automatically.
+            face_nbr_mode (FaceNeighborMode | None): Face-neighbor mode.
+                Defaults to
+                :attr:`~tecio.libtecio.FaceNeighborMode.LOCAL_ONE_TO_ONE`.
+                Ignored when ``face_neighbors`` is ``None``.
+            solution_time (float): Solution time.  Defaults to ``0.0``.
+            strand_id (int): Strand ID.  Defaults to ``0``.
+            aux (dict[str, str] | None): Zone-level auxiliary data.
+
+        Raises:
+            NotImplementedError: If ``zone_type`` is FEPOLYGON or
+                FEPOLYHEDRON.
+        """
         self._writer.write_fe_zone(*args, **kwargs)
 
     def add_auxdataset_dict(self, auxdict: dict[str, Any]) -> None:
@@ -306,22 +415,38 @@ class AppendWrite:
 
 
 class AppendReadWrite(AppendWrite):
-    """Read + write handle returned by ``open(path, 'a+')``.
+    """Read + write handle returned by :func:`tecio.open` with ``mode='a+'``.
 
     Inherits all write methods from :class:`AppendWrite` and additionally
-    exposes the full ``Read`` interface populated from the *original* file.
-    The read data reflects the file **before** any new zones are appended.
+    exposes the full read interface populated from the **original** file.
+    The read data reflects the file as it existed before any new zones were
+    appended — zones written during the current session are not visible via
+    :attr:`zone` until the file is closed and re-opened.
 
-    You should not instantiate this class directly; use :func:`open`.
+    Useful when new zones depend on existing zone data — for example,
+    computing a time-average over all previous time steps and writing it
+    as an additional zone.
 
-    Args:
-        original_path: Path of the file being appended to.
-        tmp_path:      Path of the in-progress temporary output file.
-        writer:        Live ``Write`` instance already populated with all
-                       zones from the original file.
-        reader:        ``Read`` instance opened against the *original* file
-                       before the copy began.
+    Do not instantiate this class directly — use :func:`tecio.open`.
 
+    Example:
+        >>> with tecio.open("flow.szplt", "a+") as rw:
+        ...     # Read from all zones present before this session
+        ...     times = [rw.zone[i].solution_time for i in range(rw.num_zones)]
+        ...     p_avg = sum(
+        ...         rw.zone[i].variable["p"].values
+        ...         for i in range(rw.num_zones)
+        ...     ) / rw.num_zones
+        ...
+        ...     # Append a new zone using the computed average
+        ...     x = rw.zone[0].variable["x"].values
+        ...     y = rw.zone[0].variable["y"].values
+        ...     rw.write_ijk_zone(
+        ...         data=[x, y, p_avg],
+        ...         title="Time-average",
+        ...         solution_time=max(times) + 1.0,
+        ...         strand_id=2,
+        ...     )
     """
 
     def __init__(
@@ -525,20 +650,93 @@ def open(
     """Open a Tecplot file for reading, writing, or appending.
 
     Selects the correct format handler from the file extension and returns
-    the appropriate reader or writer object.
+    the appropriate reader or writer.  All handles are context managers.
 
     Args:
-        path (str | os.PathLike): File path. Extension determines format:
-            ``.szplt`` → :mod:`tecio.szl`,
-            ``.plt`` / ``.bin`` → :mod:`tecio.plt`,
-            ``.dat`` / ``.tec`` → :mod:`tecio.dat`.
-        mode (str): One of ``'r'``, ``'w'``, ``'x'``, ``'a'``, ``'a+'``.
-        **kwargs (Any): Forwarded to the underlying ``Read`` or ``Write``
-            constructor (e.g. ``title``, ``variables``, ``file_type``).
+        path (str | os.PathLike): File path. Extension determines the
+            format handler:
+
+            - ``.szplt`` → :mod:`tecio.szl`
+            - ``.plt`` / ``.bin`` → :mod:`tecio.plt`
+            - ``.dat`` / ``.tec`` → :mod:`tecio.dat`
+
+        mode (str): Access mode — mirrors Python's built-in :func:`open`:
+
+            - ``'r'`` -- Read an existing file. Raises
+              :exc:`FileNotFoundError` if it does not exist.
+            - ``'w'`` -- Write a new file, overwriting any existing file.
+            - ``'x'`` -- Exclusive creation: write a new file only if it
+              does not already exist.  Raises :exc:`FileExistsError` if
+              it does.
+            - ``'a'`` -- Append new zones to an existing file.  The file
+              is stream-copied to a temporary file; on close the temporary
+              atomically replaces the original.  Raises
+              :exc:`FileNotFoundError` if the file does not exist (use
+              ``'w'`` to create a new file).
+            - ``'a+'`` -- Same as ``'a'`` but the returned handle also
+              exposes the full read API populated from the original file.
+
+        **kwargs: Forwarded to the underlying handler constructor.  The
+            accepted keyword arguments differ by mode — see the tables
+            below.
+
+    Keyword Args (modes ``'r'``, ``'w'``, ``'x'``):
+        Forwarded directly to the format's ``Read`` or ``Write``
+        constructor.
+
+        For **reading** — no keyword arguments are accepted; all metadata
+        is read from the file.
+
+        For **writing** (``'w'`` and ``'x'``):
+
+        .. list-table::
+           :header-rows: 1
+           :widths: 20 15 65
+
+           * - Keyword
+             - Default
+             - Description
+           * - ``title``
+             - ``""``
+             - Dataset title string embedded in the file header.
+           * - ``variables``
+             - ``None``
+             - Variable name list.  For SZL and PLT this may be deferred
+               to the first :meth:`~tecio.szl.Write.write_ijk_zone` or
+               :meth:`~tecio.szl.Write.write_fe_zone` call.  Required at
+               open time for DAT.
+           * - ``file_type``
+             - ``FileType.FULL``
+             - One of :attr:`~tecio.libtecio.FileType.FULL`,
+               :attr:`~tecio.libtecio.FileType.GRID`, or
+               :attr:`~tecio.libtecio.FileType.SOLUTION`.
+
+    Keyword Args (modes ``'a'``, ``'a+'``):
+        ``title``, ``variables``, and ``file_type`` default to the values
+        read from the existing file.  In most cases you should **not**
+        pass these — they are documented here for completeness.
+
+        .. list-table::
+           :header-rows: 1
+           :widths: 20 15 65
+
+           * - Keyword
+             - Default
+             - Description
+           * - ``title``
+             - From file
+             - Override the dataset title in the output file.  Rarely
+               needed — the existing title is preserved by default.
+           * - ``variables``
+             - From file
+             - **Do not override.** The variable list is fixed by the
+               existing file.  Passing a different list will cause a
+               mismatch between the copied zones and any new zones.
+           * - ``file_type``
+             - From file
+             - Override the file type.  Rarely needed.
 
     Returns:
-        The appropriate handler for the format and mode:
-
         - ``'r'`` → :class:`tecio.szl.Read`, :class:`tecio.plt.Read`,
           or :class:`tecio.dat.Read`
         - ``'w'`` / ``'x'`` → :class:`tecio.szl.Write`,
@@ -547,33 +745,33 @@ def open(
         - ``'a+'`` → :class:`~tecio._io.AppendReadWrite`
 
     Raises:
-        ValueError: Unsupported extension or unrecognised mode.
-        FileNotFoundError: ``'r'``/``'a'``/``'a+'`` on a missing file.
+        ValueError: Unsupported file extension or unrecognised mode.
+        FileNotFoundError: ``'r'``, ``'a'``, or ``'a+'`` on a missing file.
         FileExistsError: ``'x'`` on an existing file.
-        NotImplementedError: Append with FEPOLYGON/FEPOLYHEDRON zones.
+        NotImplementedError: Append mode on a file containing FEPOLYGON
+            or FEPOLYHEDRON zones.
 
-    Examples::
+    Example:
+        Read a file:
 
-        # Read
-        r = tecio.open("results.szplt")
-        print(r.zone[0].variable[0].values)
+        >>> with tecio.open("flow.szplt") as r:
+        ...     x = r.zone[0].variable["x"].values
 
-        # Write (overwrite)
-        with tecio.open("out.szplt", "w", title="Run 1") as w:
-            w.write_ijk_zone(data=[x, y, p], title="Zone 1")
+        Write a new file, deferring variable names to the first zone:
 
-        # Exclusive create — fails if file exists
-        w = tecio.open("new.szplt", "x", title="Run 1")
+        >>> with tecio.open("out.szplt", "w", title="Run 1") as w:
+        ...     w.write_ijk_zone(data=[x, y, p], variables=["x","y","p"])
 
-        # Append new zones to an existing file
-        with tecio.open("out.szplt", "a") as w:
-            w.write_ijk_zone(data=[x2, y2, p2], title="Zone 2")
+        Append a new zone to an existing file:
 
-        # Append and read
-        with tecio.open("out.szplt", "a+") as rw:
-            print(rw.zone[0].title)  # read from original
-            rw.write_ijk_zone(data=[x2, y2, p2], title="Zone 2")  # append
+        >>> with tecio.open("out.szplt", "a") as w:
+        ...     w.write_ijk_zone(data=[x2, y2, p2], solution_time=2.0)
 
+        Append and read in the same session:
+
+        >>> with tecio.open("out.szplt", "a+") as rw:
+        ...     prev_p = rw.zone[-1].variable["p"].values
+        ...     rw.write_ijk_zone(data=[x2, y2, prev_p * 0.9])
     """
     ext = Path(path).suffix.lower()
 

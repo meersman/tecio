@@ -1,3 +1,6 @@
+PYTHON ?= python3
+PACKAGE_NAME = tecio
+
 .PHONY: help install install-dev format lint check test clean
 
 # Default target
@@ -54,6 +57,14 @@ check: format lint typecheck
 test:
 	pytest
 	@echo "✓ Tests complete"
+
+# Clean test artifacts
+testclean:
+	@echo "✓ Cleaning test generated files"
+	@find . -type f -name "test*.plt" -delete
+	@find . -type f -name "test*.szplt" -delete
+	@find . -type f -name "test*.dat" -delete
+
 # Clean up generated files
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
@@ -64,6 +75,7 @@ clean:
 	find . -type f -name "*.pyo" -delete
 	find . -type f -name "test*.plt" -delete
 	find . -type f -name "test*.szplt" -delete
+	find . -type f -name "test*.dat" -delete
 	rm -rf build/ dist/ .coverage htmlcov/
 	@echo "✓ Cleanup complete"
 

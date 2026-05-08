@@ -39,6 +39,10 @@ docs = [
     "myst-parser>=3.0",
 ]
 
+[tool.setuptools.packages.find]
+include = ["tecio*"]
+exclude = ["demos*", "archive*", "test*"]
+
 [tool.ruff]
 line-length = 88
 target-version = "py310"
