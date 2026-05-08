@@ -9,7 +9,7 @@ DEMOSRC       = ../demos
 # Copy demo markdown + images into docs/demos/ before building
 .PHONY: copy-demos
 copy-demos:
-	@mkdir -p demos
+	@mkdir -p _demos
 	@for demo in lorenz gravity_waves simple_spectral_solver; do \
 		mkdir -p demos/$$demo; \
 		cp -u $(DEMOSRC)/$$demo/*.md _demos/$$demo/ 2>/dev/null || true; \
