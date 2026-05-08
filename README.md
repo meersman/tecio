@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Tests](badges/tests.svg)
 ![Coverage](badges/coverage.svg)
-![Lines of Code](https://img.shields.io/tokei/lines/github/USER/REPO)
+![Lines of Code](https://sloc.xyz/github/meersman/tecio/)
 
 Python interface for reading and writing Tecplot data files.
 
