@@ -24,7 +24,7 @@ jobs:
 
       - name: Build docs
         run: |
-          cd tecio/docs
+          cd docs
           make html
 
       - name: Deploy to GitHub Pages
