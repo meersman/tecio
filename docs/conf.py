@@ -2,16 +2,22 @@
 # ruff: noqa D100 D103
 
 import shutil
+import tomllib
 from pathlib import Path
-
-import tecio
 
 # -- Project information -----------------------------------------------------
 
-project = "tecio"
+ROOT = Path(__file__).resolve().parent.parent
+PYPROJECT = ROOT / "pyproject.toml"
+
+with PYPROJECT.open("rb") as f:
+    data = tomllib.load(f)
+
+project_info = data["project"]
+project = project_info["name"]
+release = project_info["version"]
 copyright = "2026, John Meesman"
 author = "John Meesman"
-release = tecio.__version__
 
 # -- General configuration ---------------------------------------------------
 
