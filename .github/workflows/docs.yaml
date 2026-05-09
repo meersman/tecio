@@ -20,7 +20,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r tecio/docs/requirements.txt
+          pip install -r docs/requirements.txt
 
       - name: Build docs
         run: |
@@ -31,4 +31,4 @@ jobs:
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: tecio/docs/_build/html
+          publish_dir: docs/_build/html
