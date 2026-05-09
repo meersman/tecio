@@ -245,8 +245,12 @@ class TestTecextract:
             assert r.num_zones == 1
 
     def test_extract_variable_1_reduces_count(self, tmp_path: Path) -> None:
-        """``-variables 1`` (x) produces a file with exactly 1 variable."""
-        dst = tmp_path / "out.szplt"
+        """
+        Output is written to DAT format because the SZL C library requires
+        variables 1, 2, and 3 (x, y, z) to be present to compute its
+        subzone layout — writing a single-variable SZL file is not supported.
+        """
+        dst = tmp_path / "out.dat"
         ret = tecextract_main([
             "-variables", "1", "-o", str(dst), str(_ONERA["szplt"])
         ])
@@ -254,7 +258,17 @@ class TestTecextract:
         with tecio.open(str(dst), "r") as r:
             assert r.num_vars == 1
             assert r.variables == ["x"]
-
+            
+    def test_extract_variable_1_szplt_requires_xyz(self, tmp_path: Path) -> None:
+        """Extracting a single variable to SZL fails — the format requires
+        variables 1, 2, and 3 (x, y, z) to compute its subzone layout.
+        """
+        dst = tmp_path / "out.szplt"
+        ret = tecextract_main([
+            "-variables", "1", "-o", str(dst), str(_ONERA["szplt"])
+        ])
+        assert ret == 1
+    
     def test_extract_multiple_variables(self, tmp_path: Path) -> None:
         """``-variables 1,2,3`` produces a file with exactly 3 variables."""
         dst = tmp_path / "out.szplt"

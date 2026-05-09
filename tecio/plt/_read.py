@@ -561,9 +561,14 @@ class ReadZone:
 
     @property
     def strand_id(self) -> int:
-        """Strand ID (-1 = static, >= 0 = transient strand)."""
-        return self._meta.strand_id
-
+        """Strand ID (0 = static, positive = transient strand).
+        
+        PLT files store -1 as a sentinel for "no strand assigned".
+        Normalised to 0 here to match the SZL/DAT convention and
+        to prevent invalid arguments to tec_zone_set_unsteady_options.
+        """
+        return max(self._meta.strand_id, 0)
+    
     @property
     def num_nodes(self) -> int:
         """Number of nodes/points in this zone."""
