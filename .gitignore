@@ -142,9 +142,12 @@ dmypy.json
 *.lay
 tp?*
 *.mp4
+*.csv
 
 # Project-specific
 test_output/
 examples/output/
 *.tmp
 archive/
+third_party/
+LICENSES/

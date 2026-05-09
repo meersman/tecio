@@ -80,7 +80,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "    $ tecmerge --assign-time-strands -start 0.0 -delta 0.1 \\\n"
             '               -o transient.szplt "step_*.szplt"\n'
         ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
+            prog, width=70, max_help_position=24
+        ),
     )
 
     # Input files
@@ -206,11 +208,7 @@ def _expand_inputs(patterns: list[str]) -> list[Path]:
             if p.exists():
                 matches = [str(p)]
             else:
-                print(
-                    f"Error: no files matched pattern: {pattern!r}",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
+                raise FileNotFoundError(f"no files matched pattern: {pattern!r}")
         for m in matches:
             p = Path(m).resolve()
             if p not in seen:
@@ -382,7 +380,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             return 1
     # Expand input globs
-    input_paths = _expand_inputs(args.files)
+    try:
+        input_paths = _expand_inputs(args.files)
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     if not input_paths:
         print("Error: no input files found.", file=sys.stderr)
         return 1

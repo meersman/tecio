@@ -5,3 +5,5 @@ rm -f test*.plt
 rm -f test*.szplt
 rm -f tp?*
 rm -f batch.log
+rm -f batch.log
+rm -f *.csv

@@ -206,7 +206,7 @@ class _ZoneMeta:
     j_max: int = 0
     k_max: int = 0
     # FE zone counts
-    num_points: int = 0
+    num_nodes: int = 0
     num_elements: int = 0
     # Poly zone extras
     num_faces: int = 0
@@ -565,15 +565,15 @@ class ReadZone:
         return self._meta.strand_id
 
     @property
-    def num_points(self) -> int:
+    def num_nodes(self) -> int:
         """Number of nodes/points in this zone."""
         if self.zone_type == ZoneType.ORDERED:
             return max(self.I, 1) * max(self.J, 1) * max(self.K, 1)
-        return self._meta.num_points
+        return self._meta.num_nodes
 
     @property
     def num_elements(self) -> int:
-        """Number of elements in this zone (same as num_points for ORDERED)."""
+        """Number of elements in this zone (same as num_nodes for ORDERED)."""
         if self.zone_type == ZoneType.ORDERED:
             return max(self.I, 1) * max(self.J, 1) * max(self.K, 1)
         return self._meta.num_elements
@@ -656,7 +656,7 @@ class ReadZone:
             fp.seek(self._meta.connectivity_offset)
             flat = np.fromfile(fp, dtype=dt, count=count)
 
-        return flat.reshape(self.num_elements, -1).astype(np.int64)
+        return flat.reshape(self.num_elements, -1).astype(np.int64) + 1
 
     # ------------------------------------------------------------------
     # Auxiliary data
@@ -865,7 +865,7 @@ class _PltParser:
             meta.j_max = _read_int32(fp, byte_order)
             meta.k_max = _read_int32(fp, byte_order)
         else:
-            meta.num_points = _read_int32(fp, byte_order)
+            meta.num_nodes = _read_int32(fp, byte_order)
 
             if meta.zone_type in (ZoneType.FEPOLYGON, ZoneType.FEPOLYHEDRON):
                 if v191:
@@ -1085,7 +1085,7 @@ class _PltParser:
             # FE zones
             if loc == ValueLocation.CELL_CENTERED:
                 return meta.num_elements
-            return meta.num_points
+            return meta.num_nodes
 
     def _record_connectivity_offset(
         self,

@@ -23,7 +23,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "  Print all values from zone 1 variable 3 (set maxval to large number)\n"
             "    $ tecdump -zone 1 -variable 3 -maxvals 1e6 <input file>\n"
         ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
+            prog, width=70, max_help_position=24
+        ),
     )
     parser.add_argument(
         "filename",

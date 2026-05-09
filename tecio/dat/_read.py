@@ -732,6 +732,28 @@ class ReadZone:
             return self.I * self.J * self.K
         return self.J  # FE: J stores num_cells
 
+    @property
+    def nodes_per_cell(self) -> int:
+        """Nodes per cell based on zone type.
+
+        Uses the module-level ``_NODES_PER_ELEM`` table for simple FE types.
+        For ORDERED zones the count is inferred from the number of active
+        dimensions (1-D → 2, 2-D → 4, 3-D → 8).
+
+        Raises:
+            ValueError: For zone types without a fixed nodes-per-cell count.
+
+        """
+        zt = self.zone_type
+        if zt in _NODES_PER_ELEM:
+            return _NODES_PER_ELEM[zt]
+        if zt == ZoneType.ORDERED:
+            dims = sum(1 for x in (self.I, self.J, self.K) if x > 1)
+            return 2 ** dims
+        raise ValueError(
+            f"ZoneType {zt} does not have a fixed nodes-per-cell count."
+        )
+
     def is_enabled(self) -> bool:
         """Always ``True`` for zones successfully parsed from a file."""
         return True

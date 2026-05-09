@@ -82,7 +82,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "  Extract and convert format\n"
             "    $ tecextract -zones 1,2 -o subset.dat <file>\n"
         ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
+            prog, width=70, max_help_position=24
+        ),
     )
     parser.add_argument(
         "filename",

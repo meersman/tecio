@@ -220,7 +220,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "  Every 3rd step of strand 1\n"
             "    $ tecslice -t ::3 --strand-id 1 -o sparse.szplt transient.szplt\n"
         ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
+            prog, width=70, max_help_position=24
+        ),
     )
 
     parser.add_argument(

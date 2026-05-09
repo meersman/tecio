@@ -62,7 +62,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "  Offset temperature in zone 2 only\n"
             "    $ tecscale -variable Temperature -offset -273.15 -zone 2 <file>\n"
         ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
+            prog, width=70, max_help_position=24
+        ),
     )
     parser.add_argument(
         "filename",
@@ -127,7 +129,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_variable(spec: str, var_names: list[str]) -> int:
+def _resolve_variable(spec: str, var_names: list[str]) -> int | None:
     """Return a 0-based variable index from a name or 1-based integer string.
 
     Args:
@@ -145,11 +147,12 @@ def _resolve_variable(spec: str, var_names: list[str]) -> int:
     try:
         idx = int(spec)
         if idx < 1 or idx > len(var_names):
-            print(
-                f"Error: variable index {idx} out of range [1, {len(var_names)}].",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            # print(
+            #     f"Error: variable index {idx} out of range [1, {len(var_names)}].",
+            #     file=sys.stderr,
+            # )
+            # sys.exit(1)
+            raise IndexError(f"Error: variable index {idx} out of range [1, {len(var_names)}].")
         return idx - 1
     except ValueError:
         pass
@@ -164,12 +167,12 @@ def _resolve_variable(spec: str, var_names: list[str]) -> int:
         f"Error: variable '{spec}' not found.  Available: {var_names}",
         file=sys.stderr,
     )
-    sys.exit(1)
+    return None
 
 
 # ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -205,6 +208,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             # Resolve target variable.
             var_idx0: int = _resolve_variable(args.variable, var_names)
+            if var_idx0 is None:
+                return 1
 
             # Validate zone if specified.
             if args.zone is not None:

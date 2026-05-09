@@ -31,7 +31,13 @@ tecslice = "tecio.cli.tecslice:main"
 tecstats = "tecio.cli.tecstats:main"
 
 [project.optional-dependencies]
-dev = ["ruff", "mypy", "pytest"]
+dev = [
+    "ruff",
+    "mypy",
+    "pytest",
+    "pytest-cov",
+    "genbadge"
+]
 docs = [
     "sphinx>=7.0",
     "sphinx-book-theme>=1.1",

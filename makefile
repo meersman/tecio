@@ -33,13 +33,17 @@ help:
 install:
 	$(PYTHON) -m pip install -e .
 
-# Install package + development dependencies
+# Install development dependencies
 install-dev:
 	$(PYTHON) -m pip install -e ".[dev]"
 
+# Install autodoc dependencies
+install-docs:
+	$(PYTHON) -m pip install -e ".[docs]"
+
 # Uninstall package
 uninstall:
-	$(PYTHON) -m pip uninstall tecio
+	$(PYTHON) -m pip uninstall -y $(PACKAGE)
 
 # Format code with black and isort
 format:
