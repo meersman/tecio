@@ -749,10 +749,8 @@ class ReadZone:
             return _NODES_PER_ELEM[zt]
         if zt == ZoneType.ORDERED:
             dims = sum(1 for x in (self.I, self.J, self.K) if x > 1)
-            return 2 ** dims
-        raise ValueError(
-            f"ZoneType {zt} does not have a fixed nodes-per-cell count."
-        )
+            return 2**dims
+        raise ValueError(f"ZoneType {zt} does not have a fixed nodes-per-cell count.")
 
     def is_enabled(self) -> bool:
         """Always ``True`` for zones successfully parsed from a file."""
@@ -917,7 +915,8 @@ class Read:
         while tokens.has_more():
             line = tokens.peek_stripped()
             upper = line.upper()
-            if upper.startswith("ZONE"):
+            # if upper.startswith("ZONE"):
+            if upper.lstrip().split("=")[0].split()[0] == "ZONE":
                 self._parse_zone(tokens)
             elif upper.startswith("DATASETAUXDATA"):
                 raw = tokens.next_stripped()
@@ -1020,7 +1019,7 @@ class Read:
                 continue
             nxt_upper = nxt.lstrip().upper()
             # Stop at a new zone, top-level keyword, or the first data line.
-            if nxt_upper.startswith("ZONE"):
+            if nxt_upper.split("=")[0].split()[0] == "ZONE":
                 break
             if nxt_upper.startswith("DATASETAUXDATA") or nxt_upper.startswith(
                 "VARAUXDATA"
@@ -1061,7 +1060,7 @@ class Read:
             J = int(kv.get("J", "1") or "1")
             K = int(kv.get("K", "1") or "1")
             num_nodes = I * J * K
-            num_cells = num_nodes
+            num_cells = max(I - 1, 1) * max(J - 1, 1) * max(K - 1, 1)
         else:
             num_nodes = int(kv.get("NODES", kv.get("N", "0")) or "0")
             num_cells = int(kv.get("ELEMENTS", kv.get("E", "0")) or "0")
@@ -1186,7 +1185,7 @@ class Read:
             nxt = tokens.peek_stripped()
             upper = nxt.lstrip().upper()
             if (
-                upper.startswith("ZONE")
+                upper.split("=")[0].split()[0] == "ZONE"
                 or upper.startswith("DATASETAUXDATA")
                 or upper.startswith("VARAUXDATA")
                 or (upper.startswith("TITLE") and "=" in upper)

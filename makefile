@@ -64,14 +64,16 @@ check: format lint typecheck
 
 # Run unit tests
 test:
-	pytest -v --junitxml=junit.xml
-	genbadge tests -i junit.xml -o badges/tests.svg
+	pytest -v --junitxml=junit.xml; EXIT=$$?; \
+	genbadge tests -i junit.xml -o badges/tests.svg; \
+	exit $$EXIT
 	@echo "✓ Tests complete"
 
 # Run coverage report
 coverage:
-	pytest -q --cov=$(PACKAGE) --cov-report=xml  --cov-report=term
-	genbadge coverage -i coverage.xml -o badges/coverage.svg
+	pytest -q --cov=$(PACKAGE) --cov-report=xml  --cov-report=term; EXIT=$$?; \
+	genbadge coverage -i coverage.xml -o badges/coverage.svg; \
+	exit $$EXIT
 	@echo "✓ Tests complete"
 
 # Clean test artifacts
@@ -81,6 +83,7 @@ testclean:
 	@find . -type f -name "test*.szplt" -delete
 	@find . -type f -name "test*.dat" -delete
 	@find . -type f -name "*.xml" -delete
+	@find . -type f -name "tp?*" -delete
 
 # Clean up generated files
 clean:

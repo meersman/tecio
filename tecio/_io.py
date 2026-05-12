@@ -150,7 +150,7 @@ def _copy_zones(reader: szl.Read | plt.Read, writer: szl.Write | plt.Write) -> N
             passive_vars.append(var.is_passive())
             sv = var.shared_zone  # None or 0-based zone number (szl convention)
             # Write API expects 0 = no sharing, positive = 1-based zone source.
-            var_sharing.append((sv + 1) if sv is not None else 0)
+            var_sharing.append((sv) if sv is not None else 0)
             value_locations.append(var.value_location)
 
             if var.is_passive() or sv is not None:
@@ -224,8 +224,8 @@ class AppendWrite:
 
     Example:
         >>> with tecio.open("flow.szplt", "a") as w:
-        ...     print(w.variables)      # variable list from the existing file
-        ...     print(w.current_zone)   # number of zones already copied
+        ...     print(w.variables)  # variable list from the existing file
+        ...     print(w.current_zone)  # number of zones already copied
         ...     w.write_ijk_zone(
         ...         data=[x_new, y_new, p_new],
         ...         solution_time=10.0,
@@ -302,11 +302,11 @@ class AppendWrite:
         Example:
             Append a time step, sharing the grid from zone 1:
 
-            >>> n = len(w.variables)           # e.g. ["x", "y", "pressure"]
+            >>> n = len(w.variables)  # e.g. ["x", "y", "pressure"]
             >>> w.write_ijk_zone(
-            ...     data=[p_new],              # only the non-shared variable
+            ...     data=[p_new],  # only the non-shared variable
             ...     passive_vars=[False] * n,
-            ...     var_sharing=[1, 1, 0],     # x and y shared from zone 1
+            ...     var_sharing=[1, 1, 0],  # x and y shared from zone 1
             ...     solution_time=5.0,
             ...     strand_id=1,
             ... )
@@ -433,10 +433,10 @@ class AppendReadWrite(AppendWrite):
         >>> with tecio.open("flow.szplt", "a+") as rw:
         ...     # Read from all zones present before this session
         ...     times = [rw.zone[i].solution_time for i in range(rw.num_zones)]
-        ...     p_avg = sum(
-        ...         rw.zone[i].variable["p"].values
-        ...         for i in range(rw.num_zones)
-        ...     ) / rw.num_zones
+        ...     p_avg = (
+        ...         sum(rw.zone[i].variable["p"].values for i in range(rw.num_zones))
+        ...         / rw.num_zones
+        ...     )
         ...
         ...     # Append a new zone using the computed average
         ...     x = rw.zone[0].variable["x"].values
@@ -576,7 +576,13 @@ def _open_append(
         # Replay all existing zones into the new file.
         _copy_zones(reader, writer)
     except Exception:
-        # Clean up the temp file if anything goes wrong during the copy.
+        # Close writer and clean up the temp file if anything goes wrong during the
+        # copy.
+        if writer is not None:
+            try:
+                writer.close()
+            except Exception:
+                pass
         tmp_path.unlink(missing_ok=True)
         raise
 
@@ -760,7 +766,7 @@ def open(
         Write a new file, deferring variable names to the first zone:
 
         >>> with tecio.open("out.szplt", "w", title="Run 1") as w:
-        ...     w.write_ijk_zone(data=[x, y, p], variables=["x","y","p"])
+        ...     w.write_ijk_zone(data=[x, y, p], variables=["x", "y", "p"])
 
         Append a new zone to an existing file:
 

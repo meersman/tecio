@@ -286,7 +286,7 @@ class Write:
         Significant digits for scientific-notation float output.  Default
         is ``9``; use ``17`` for full ``float64`` round-trip fidelity.
 
-    Attributes
+    Attributes:
     ----------
     auxdataset : dict[str, str]
         Dataset-level auxiliary data buffer.
@@ -437,6 +437,14 @@ class Write:
         self.auxdataset.clear()
         self.auxvar.clear()
 
+    def add_auxdataset_dict(self, auxdict: dict[str, Any]) -> None:
+        """Buffer dataset-level auxiliary data from input dictionary."""
+        self.auxdataset.update(auxdict)
+
+    def add_auxvar_dict(self, auxdict: dict[int, dict[str, Any]]) -> None:
+        """Buffer variable-level auxiliary data from input dictionary."""
+        self.auxvar.update(auxdict)
+
     # -- zone writers ---------------------------------------------------------
 
     def write_ijk_zone(
@@ -482,13 +490,13 @@ class Write:
 
         # Validate count
         if len(data) != len(self.variables):
-            self._handle_zone_error()
             expected = sum(
                 1
                 for p, s in zip(passive_vars, var_sharing, strict=True)
                 if not p and not s
             )
             if len(data) != expected:
+                self._handle_zone_error()
                 raise ValueError(
                     f"Expected {expected} data arrays for active variables, "
                     f"got {len(data)}."
@@ -774,8 +782,7 @@ class Write:
         buf.write(f" STRANDID={strand_id}, SOLUTIONTIME={float(solution_time)}\n")
 
         if zone_type == ZoneType.ORDERED:
-            buf.write(f" I={imax}, J={jmax}, K={kmax}\n")
-            buf.write(f" ZONETYPE={zt_str},\n")
+            buf.write(f" I={imax}, J={jmax}, K={kmax}, ZONETYPE={zt_str}\n")
         else:
             buf.write(
                 f" Nodes={num_nodes}, Elements={num_elements}, ZONETYPE={zt_str}\n"

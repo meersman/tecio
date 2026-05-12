@@ -13,6 +13,7 @@ from __future__ import annotations
 import ctypes
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -35,6 +36,8 @@ class Read:
 
     def __init__(self, file_name):
         """Initialize with a C-pointer file handle, metadata, and a list of zones."""
+        if not Path(file_name).exists():
+            raise FileNotFoundError(f"No such file or directory: '{file_name}'")
         self.handle = libtecio.tec_file_reader_open(file_name)
         self.zone = [
             ReadZone(self.handle, i + 1, self.num_vars) for i in range(self.num_zones)
@@ -46,14 +49,17 @@ class Read:
         """Context manager for Read class."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Context manager protocol for read-only file interfaces.
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        """Exit Read class context manager regardless of exceptions.
 
-        Read classes hold no open file handle between accesses, so there is nothing to
-        release on exit.  Provided for API consistency with the Write classes and to
-        support the ``with tecio.open(...) as r:`` pattern.
+        Only raise an exception if closing the file fails, not if an exception is raised
+        in the with block.
         """
-        pass
+        try:
+            self.close()
+        except Exception:
+            if exc_type is None:
+                raise
 
     @property
     def file_type(self) -> FileType:
@@ -124,13 +130,18 @@ class Read:
 
         Raises:
             IndexError: If *zone_index* is out of range.
-
         """
         if zone_index < 1 or zone_index > self.num_zones:
             raise IndexError(
                 f"Variable index {zone_index} out of range [1, {self.num_zones}]"
             )
         return ReadAuxData(self.handle, "zone", zone_index)
+
+    def close(self) -> None:
+        """Close the file reader handle."""
+        if self.handle is not None:
+            libtecio.tec_file_reader_close(self.handle)
+            self.handle = None
 
 
 @dataclass
@@ -143,7 +154,6 @@ class ReadZone:
         _handle (ctypes.c_void_p): C library file handle.
         zone_index (int): 1-based zone index.
         num_vars (int): Number of variables in the dataset.
-
     """
 
     _handle: ctypes.c_void_p

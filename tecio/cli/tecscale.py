@@ -152,7 +152,9 @@ def _resolve_variable(spec: str, var_names: list[str]) -> int | None:
             #     file=sys.stderr,
             # )
             # sys.exit(1)
-            raise IndexError(f"Error: variable index {idx} out of range [1, {len(var_names)}].")
+            raise IndexError(
+                f"Error: variable index {idx} out of range [1, {len(var_names)}]."
+            )
         return idx - 1
     except ValueError:
         pass

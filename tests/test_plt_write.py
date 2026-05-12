@@ -1,428 +1,630 @@
 #!/usr/bin/env python3
-r"""Tests for the :class:`plt.Write` higher-level writing API."""
+"""pytest tests for :class:`tecio.plt.Write` — PLT high-level writer.
+
+Pattern per test:
+    1. Create data with specific dtypes
+    2. Write file via tecio.open(..., "w")
+    3. Read back via tecio.open(..., "r")
+    4. Assert on metadata and values
+
+PLT dtype limitation
+--------------------
+The classic ``tecdat142`` call accepts only float32 or float64.
+Input arrays are mapped as follows by the high-level writer:
+
+    float32  →  FLOAT  on disk  →  reads back as DataType.FLOAT
+    float64  →  DOUBLE on disk  →  reads back as DataType.DOUBLE
+    int32    →  upcast to DOUBLE on disk  →  reads back as DataType.DOUBLE
+    int16    →  upcast to DOUBLE on disk  →  reads back as DataType.DOUBLE
+    uint8    →  upcast to DOUBLE on disk  →  reads back as DataType.DOUBLE
+
+Integer arrays are upcast to float64 in the file; values are still preserved
+exactly because float64 can represent all int32 values.
+
+Run directly:
+
+    $ python tests/test_plt_write.py -v
+
+Keep output files for Tecplot 360 inspection:
+
+    $ python tests/test_plt_write.py -v --keep-files
+"""
+
+import sys
+from pathlib import Path
+from typing import Callable
 
 import numpy as np
+import pytest
+
 import tecio
-from tecio.libtecio import FaceNeighborMode, ValueLocation, ZoneType
+from create_test_data import (
+    create_FE_brick,
+    create_FE_lineseg,
+    create_FE_prism,
+    create_FE_pyramid,
+    create_FE_quad,
+    create_FE_tet,
+    create_FE_tri,
+    create_FE_two_bricks,
+    create_ordered,
+    scalar_field,
+)
+from tecio.libtecio import DataType, FaceNeighborMode, ValueLocation, ZoneType
 
-from create_test_data import *
+_RTOL_F32 = 1e-5
+_RTOL_F64 = 1e-10
 
 
-#=======================================================================================
-# IJK-ordered zone tests
-#=======================================================================================
+# ===========================================================================
+# Ordered (IJK) zone tests
+# ===========================================================================
 
-def test_write_ijk_3d() -> None:
-    """Write a 3D ordered zone (I, J, K all > 1).
 
-    Demonstrates:
-    - 3D Structured zone writing
-    - Mixed nodal / cell-centred variables
-    - Variable sharing across zones
-    """
-    try:
+class TestWriteIJKZone:
+    """Tests for write_ijk_zone targeting PLT output."""
+
+    def test_write_ijk_3d_float32_float64(self, output_path: Callable) -> None:
+        """3-D zone — float32 x/z, float64 y/scalar.
+
+        Demonstrates:
+        - Basic ``write_ijk_zone`` call for PLT: identical API to SZL
+        - Mixed float32 / float64: PLT preserves FLOAT and DOUBLE natively
+        - Zone dimensions inferred from the first nodal array shape
+        - DataType limitation: PLT classic API calls tecini142 with VIsDouble=1
+          (the default), which tells the C library to store all floating-point
+          data as DOUBLE regardless of the per-variable is_double flag passed
+          to individual tecdat142 calls.  Every variable reads back as DOUBLE.
+          Use SZL format if per-variable float32 storage is required.
+        """
         i, j, k = 3, 4, 5
         x, y, z = create_ordered((i, j, k))
-        c = scalar_field(x, y, z)
+        x = x.astype(np.float32)                          # → FLOAT
+        y = y.astype(np.float64)                          # → DOUBLE
+        z = z.astype(np.float32)                          # → FLOAT
+        c = scalar_field(x, y, z).astype(np.float64)      # → DOUBLE
 
-        # Cell-centered array: shape (I-1) x (J-1) x (K-1)
-        cc = np.random.rand(i - 1, j - 1, k - 1)
-
-        with tecio.open("test_plt_write_ijk_3d.plt", "w") as pltfile:
+        path = output_path("test_plt_write_ijk_3d.plt")
+        with tecio.open(str(path), "w") as pltfile:
             pltfile.write_ijk_zone(
                 data=[x, y, z, c],
                 variables=["x", "y", "z", "c"],
                 title="zone_3d",
             )
-            pltfile.write_ijk_zone(
-                data=[cc],
-                title="zone_cc",
-                var_sharing=[1, 1, 1, 0],  # share x,y,z from first zone
-                value_locations=[ValueLocation.CELL_CENTERED],
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            assert r.num_zones == 1
+            assert r.num_vars == 4
+            zone = r.zone[0]
+            assert zone.zone_type == ZoneType.ORDERED
+            assert zone.dimensions == (i, j, k)
+            assert zone.variable[0].data_type == DataType.DOUBLE   # input was float32
+            assert zone.variable[1].data_type == DataType.DOUBLE
+            assert zone.variable[2].data_type == DataType.DOUBLE   # input was float32
+            assert zone.variable[3].data_type == DataType.DOUBLE
+            np.testing.assert_allclose(zone.variable[0].values.ravel(), x.ravel(), rtol=_RTOL_F32)
+            np.testing.assert_allclose(zone.variable[1].values.ravel(), y.ravel(), rtol=_RTOL_F64)
+
+    def test_write_ijk_int32_upcasts_to_double(self, output_path: Callable) -> None:
+        """int32 input is stored as float64 in PLT.
+
+        Demonstrates:
+        - PLT limitation: only float32 and float64 are stored natively;
+          ``_infer_data_type(np.int32)`` → DataType.INT32 → ``is_double=True``
+          → written as float64 → reads back as DataType.DOUBLE
+        - Values are still correct: float64 can represent all int32 exactly
+        - Implication: if you need integer storage, use SZL format instead
+        - Assertion pattern for upcast variables: compare against
+          ``c.astype(np.float64)`` rather than the original int32 array
+        """
+        i, j = 5, 6
+        x, y, z = create_ordered((i, j, 1))
+        x = x.astype(np.float32)
+        y = y.astype(np.float32)
+        c = (scalar_field(x, y) * 1000).astype(np.int32)
+
+        path = output_path("test_plt_write_ijk_int32.plt")
+        with tecio.open(str(path), "w") as pltfile:
+            pltfile.write_ijk_zone(data=[x, y, c], variables=["x", "y", "c"])
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            zone = r.zone[0]
+            assert zone.variable[2].data_type == DataType.DOUBLE  # upcast from INT32
+            np.testing.assert_allclose(
+                zone.variable[2].values.ravel(), c.ravel().astype(np.float64)
             )
-        print("PASS: test_write_ijk_3d")
-    except Exception as exc:
-        print(f"FAIL: test_write_ijk_3d: {exc}")
 
+    def test_write_ijk_cell_centered(self, output_path: Callable) -> None:
+        """3-D zone with float32 nodal coords and float64 cell-centered scalar.
 
-def test_write_ijk_unsteady() -> None:
-    """Write multiple zones representing a transient solution (strand + time).
-
-    Demonstrates:
-    - Strand ID and solution time for unsteady data
-    - Zone-level auxiliary data
-    - Variable sharing across zones
-    """
-    try:
-        i, j, k = 100, 50, 20
+        Demonstrates:
+        - Cell-centered variable in PLT: ``value_locations=[..., CELL_CENTERED]``
+        - Cell-centered array shape: ``(imax-1, jmax-1, kmax-1)``
+        - PLT stores DOUBLE exactly; verified with float64 tolerance
+        """
+        i, j, k = 4, 5, 3
         x, y, z = create_ordered((i, j, k))
+        x = x.astype(np.float32)
+        y = y.astype(np.float32)
+        z = z.astype(np.float32)
+        cc = np.random.default_rng(42).random((i - 1, j - 1, k - 1)).astype(np.float64)
 
+        path = output_path("test_plt_write_ijk_cc.plt")
+        with tecio.open(str(path), "w") as pltfile:
+            pltfile.write_ijk_zone(
+                data=[x, y, z, cc],
+                variables=["x", "y", "z", "cc"],
+                value_locations=[
+                    ValueLocation.NODAL,
+                    ValueLocation.NODAL,
+                    ValueLocation.NODAL,
+                    ValueLocation.CELL_CENTERED,
+                ],
+            )
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            zone = r.zone[0]
+            cc_var = zone.variable[3]
+            assert cc_var.value_location == ValueLocation.CELL_CENTERED
+            assert cc_var.data_type == DataType.DOUBLE
+            np.testing.assert_allclose(cc_var.values.ravel(), cc.ravel(), rtol=_RTOL_F64)
+
+    def test_write_ijk_unsteady_with_sharing(self, output_path: Callable) -> None:
+        """100-zone transient dataset with variable sharing — float32 grid, float64 solution.
+
+        Demonstrates:
+        - Same variable-sharing pattern as SZL: ``var_sharing=[1, 1, 1, 0]``
+          shares x/y/z from zone 1 for zones 2-100
+        - PLT supports variable sharing identically to SZL at the high-level API
+        - Significant file size reduction for large grids with many time steps
+        - ``strand_id`` and ``solution_time`` enable Tecplot 360 animation
+        """
+        i, j, k = 20, 15, 10
+        x, y, z = create_ordered((i, j, k))
+        x = x.astype(np.float32)
+        y = y.astype(np.float32)
+        z = z.astype(np.float32)
         solution_times = np.linspace(0.0, 2 * np.pi, 100)
-        aux = {"MeshType": "structured", "Author": "test_plt_write"}
 
-        with tecio.open("test_plt_write_ijk_unsteady.plt", "w") as pltfile:
+        path = output_path("test_plt_write_ijk_unsteady.plt")
+        with tecio.open(str(path), "w") as pltfile:
             for n, t in enumerate(solution_times):
-                c = scalar_field(x + t, y + t, z).astype(np.float32)
-                # On first write: supply all variable arrays
+                c = scalar_field(x + t, y + t, z).astype(np.float64)
                 pltfile.write_ijk_zone(
                     variables=["x", "y", "z", "c"],
-                    data=[x, y, z, c] if pltfile.current_zone==0 else [c],
-                    var_sharing=None if pltfile.current_zone==0 else [1, 1, 1, 0],
+                    data=[x, y, z, c] if n == 0 else [c],
+                    var_sharing=None if n == 0 else [1, 1, 1, 0],
                     strand_id=1,
-                    solution_time=t,
-                    aux=aux,
+                    solution_time=float(t),
                 )
-        print("PASS: test_write_ijk_unsteady")
-    except Exception as exc:
-        print(f"FAIL: test_write_ijk_unsteady: {exc}")
 
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            assert r.num_zones == 100
+            assert r.zone[0].solution_time == pytest.approx(0.0)
+            assert r.zone[99].solution_time == pytest.approx(solution_times[-1])
 
-#---------------------------------------------------------------------------------------
-# Exception-raising tests for invalid input data
-#---------------------------------------------------------------------------------------
+    def test_write_ijk_passive_variable(self, output_path: Callable) -> None:
+        """Passive variable in PLT — identical to SZL behaviour.
 
-def test_write_ijk_var_count_mismatch() -> None:
-    """write_ijk_zone must raise ValueError when data count != active variable count.
+        Demonstrates:
+        - ``passive_vars=[False, True, False]``: same API as SZL; passive
+          variables take no storage in PLT either
+        - Verified with ``variable.is_passive() == True`` on read-back
+        """
+        x = np.linspace(0.0, 1.0, 8, dtype=np.float32)
+        c = np.sin(2 * np.pi * x).astype(np.float64)
+        path = output_path("test_plt_write_ijk_passive.plt")
 
-    Demonstrates:
-    - Variable count mismatch validation for the structured zone writer
-    """
-    try:
-        i, j, k = 3, 3, 1
-        x, y, _ = create_ordered((i, j, k))
+        with tecio.open(str(path), "w", variables=["x", "unused", "c"]) as pltfile:
+            pltfile.write_ijk_zone(data=[x, c], passive_vars=[False, True, False])
 
-        with tecio.open(
-            "test_plt_write_ijk_var_mismatch.plt",
-            "w",
-            title="mismatch_test",
-            variables=["x", "y", "c"],  # 3 variables declared
-        ) as pltfile:
-            pltfile.write_ijk_zone(
-                data=[x, y],  # only 2 arrays supplied
-                title="zone_bad",
-            )
-            print(
-                "FAIL: test_write_ijk_var_count_mismatch: expected ValueError, got none"
-            )
-    except ValueError:
-        print("PASS: test_write_ijk_var_count_mismatch")
-    except Exception as exc:
-        print(f"FAIL: test_write_ijk_var_count_mismatch: unexpected exception: {exc}")
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            assert r.zone[0].variable[1].is_passive()
 
+    def test_write_ijk_aux_data(self, output_path: Callable) -> None:
+        """Dataset and zone auxiliary data survive PLT round-trip.
 
-def test_write_ijk_shape_mismatch() -> None:
-    """write_ijk_zone must raise ValueError when two nodal arrays differ in shape.
+        Demonstrates:
+        - ``add_auxdataset_dict`` and ``aux={}`` work identically in PLT and SZL
+        - Both levels of metadata are stored in the PLT binary header and
+          recovered correctly by the reader
+        """
+        x = np.linspace(0.0, 1.0, 5, dtype=np.float64)
+        dataset_aux = {"Solver": "TestCode", "Mach": "0.72"}
+        zone_aux = {"MeshType": "structured", "Author": "pytest"}
+        path = output_path("test_plt_write_ijk_aux.plt")
 
-    Demonstrates:
-    - Array shape mismatch validation for the structured zone writer
-    """
-    try:
+        with tecio.open(str(path), "w") as pltfile:
+            pltfile.add_auxdataset_dict(dataset_aux)
+            pltfile.write_ijk_zone(data=[x], variables=["x"], aux=zone_aux)
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            for k, v in dataset_aux.items():
+                assert r.auxdata[k] == v
+            for k, v in zone_aux.items():
+                assert r.zone[0].auxdata[k] == v
+
+    # ------------------------------------------------------------------
+    # Error paths
+    # ------------------------------------------------------------------
+
+    def test_write_ijk_var_count_mismatch_raises(self, output_path: Callable) -> None:
+        """Fewer arrays than active variables raises ValueError."""
+        x = np.linspace(0.0, 1.0, 5, dtype=np.float32)
+        y = np.linspace(0.0, 1.0, 5, dtype=np.float32)
+        path = output_path("test_plt_write_ijk_mismatch.plt")
+
+        with pytest.raises(ValueError, match="[Ee]xpected"):
+            with tecio.open(str(path), "w", variables=["x", "y", "c"]) as pltfile:
+                pltfile.write_ijk_zone(data=[x, y])
+
+    def test_write_ijk_shape_mismatch_raises(self, output_path: Callable) -> None:
+        """Inconsistent array shapes raise ValueError."""
         i, j, k = 4, 5, 1
         x, y, _ = create_ordered((i, j, k))
-        x = x.squeeze(0)  # shape (j, i) = (5, 4)
-        y_bad = y.squeeze(0)[:-1, :]  # shape (4, 4) — wrong
+        x = x.squeeze(-1)
+        y_bad = y.squeeze(-1)[:-1, :]
+        path = output_path("test_plt_write_ijk_shape.plt")
 
-        with tecio.open(
-            "test_plt_write_ijk_shape_mismatch.plt",
-            "w",
-            title="shape_test",
-        ) as pltfile:
-            pltfile.write_ijk_zone(
-                data=[x, y_bad],
-                title="zone_bad",
-                variables=["x", "y"],
+        with pytest.raises(ValueError):
+            with tecio.open(str(path), "w") as pltfile:
+                pltfile.write_ijk_zone(data=[x, y_bad], variables=["x", "y"])
+
+
+# ===========================================================================
+# Finite-element zone tests
+# ===========================================================================
+
+
+class TestWriteFEZone:
+    """Tests for write_fe_zone targeting PLT output."""
+
+    def test_write_fe_lineseg(self, output_path: Callable) -> None:
+        """FELINESEG — float32 x/y, float64 scalar. Node map preserved exactly.
+
+        Demonstrates:
+        - Basic FE write to PLT: same ``write_fe_zone`` API as SZL
+        - FLOAT x/y coordinates, DOUBLE scalar; PLT stores both natively
+        - Node map round-trip: verified with ``assert_array_equal``
+        """
+        x, y, nodes = create_FE_lineseg()
+        x = x.astype(np.float32)
+        y = y.astype(np.float32)
+        c = np.sin(2 * np.pi * x).astype(np.float64)
+
+        path = output_path("test_plt_write_fe_lineseg.plt")
+        with tecio.open(str(path), "w") as pltfile:
+            pltfile.write_fe_zone(
+                zone_type=ZoneType.FELINESEG,
+                data=[x, y, c],
+                node_map=nodes,
+                variables=["x", "y", "c"],
+                title="FE_LineSeg",
             )
-        print("FAIL: test_write_ijk_shape_mismatch: expected ValueError, got none")
-    except ValueError:
-        print("PASS: test_write_ijk_shape_mismatch")
-    except Exception as exc:
-        print(f"FAIL: test_write_ijk_shape_mismatch: unexpected exception: {exc}")
 
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            zone = r.zone[0]
+            assert zone.zone_type == ZoneType.FELINESEG
+            assert zone.num_nodes == len(x)
+            assert zone.num_elements == len(nodes)
+            np.testing.assert_allclose(zone.variable[0].values, x, rtol=_RTOL_F32)
+            np.testing.assert_array_equal(zone.node_map, nodes.astype(np.int64))
 
-#=======================================================================================
-# FE zone tests — one per zone type
-#=======================================================================================
+    def test_write_fe_tri(self, output_path: Callable) -> None:
+        """FETRIANGLE — float64 x/y, float32 scalar.
 
-def test_write_fe_cells() -> None:
-    """Write all FE cell shapes.
+        Demonstrates:
+        - Reversed precision: DOUBLE coordinates, FLOAT solution field
+        - PLT stores FLOAT and DOUBLE natively; DataType verified on read-back
+        """
+        x, y, nodes = create_FE_tri()
+        x = x.astype(np.float64)
+        y = y.astype(np.float64)
+        c = scalar_field(x, y).astype(np.float32)
 
-    Demonstrates:
-    - All FE cell shapes (line seg, tri, quad, tet, pyramid, prism, brick)
-    - Face neighbor connectivity for FE cells
-    - Passive variable support
-    - Mixed nodal / cell-centered variables
-    """
-    # Shape offset to view all at once
-    offset = 2
+        path = output_path("test_plt_write_fe_tri.plt")
+        with tecio.open(str(path), "w") as pltfile:
+            pltfile.write_fe_zone(
+                zone_type=ZoneType.FETRIANGLE,
+                data=[x, y, c],
+                node_map=nodes,
+                variables=["x", "y", "c"],
+                title="FE_Tri",
+            )
 
-    try:
-        with tecio.open("test_plt_write_fe_cells.plt", "w") as pltfile:
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            zone = r.zone[0]
+            assert zone.zone_type == ZoneType.FETRIANGLE
+            assert zone.variable[0].data_type == DataType.DOUBLE
+            assert zone.variable[2].data_type == DataType.DOUBLE  # input was float32
+            np.testing.assert_allclose(zone.variable[0].values, x, rtol=_RTOL_F64)
 
-            # Write a FE line segment
-            try:
-                x, y, nodes = create_FE_lineseg()
-                c = scalar_field(x, y)
-                pltfile.write_fe_zone(
-                    zone_type=ZoneType.FELINESEG,
-                    data=[x, y, c],
-                    node_map=nodes,
-                    title="FE_LineSeg",
-                    variables=["x", "y", "z", "c"],
-                    passive_vars=[False, False, True, False]
-                )
-                print("PASS: test_write_fe_lineseg")
-            except Exception as exc:
-                print(f"FAIL: test_write_fe_lineseg: {exc}")
+    def test_write_fe_quad(self, output_path: Callable) -> None:
+        """FEQUADRILATERAL — float32 x/y, float64 scalar.
 
-            # Write a FE triangle
-            try:
-                x, y, nodes = create_FE_tri()
-                c = scalar_field(x, y)
-                x = x + offset
-                pltfile.write_fe_zone(
-                    zone_type=ZoneType.FETRIANGLE,
-                    data=[x, y, c],
-                    node_map=nodes,
-                    title="FE_Tri",
-                    variables=["x", "y", "z", "c"],
-                    passive_vars=[False, False, True, False]
-                )
-                print("PASS: test_write_fe_tri")
-            except Exception as exc:
-                print(f"FAIL: test_write_fe_tri: {exc}")
+        Demonstrates:
+        - Standard CFD precision: compact FLOAT coordinates, DOUBLE solution
+        - PLT FE quad: node_map shape ``(num_elements, 4)``
+        """
+        x, y, nodes = create_FE_quad()
+        x = x.astype(np.float32)
+        y = y.astype(np.float32)
+        c = scalar_field(x, y).astype(np.float64)
 
-            # Write a FE quadrilateral
-            try:
-                x, y, nodes = create_FE_quad()
-                c = scalar_field(x, y)
-                x = x + 2*offset
-                pltfile.write_fe_zone(
-                    zone_type=ZoneType.FEQUADRILATERAL,
-                    data=[x, y, c],
-                    node_map=nodes,
-                    title="FE_Quad",
-                    variables=["x", "y", "z", "c"],
-                    passive_vars=[False, False, True, False]
-                )
-                print("PASS: test_write_fe_quad")
-            except Exception as exc:
-                print(f"FAIL: test_write_fe_quad: {exc}")
+        path = output_path("test_plt_write_fe_quad.plt")
+        with tecio.open(str(path), "w") as pltfile:
+            pltfile.write_fe_zone(
+                zone_type=ZoneType.FEQUADRILATERAL,
+                data=[x, y, c],
+                node_map=nodes,
+                variables=["x", "y", "c"],
+                title="FE_Quad",
+            )
 
-            # Write a FE tetrahedron
-            try:
-                x, y, z, nodes = create_FE_tet()
-                c = scalar_field(x, y)
-                x = x + 3*offset
-                pltfile.write_fe_zone(
-                    zone_type=ZoneType.FETETRAHEDRON,
-                    data=[x, y, z, c],
-                    node_map=nodes,
-                    title="FE_Tet",
-                    variables=["x", "y", "z", "c"],
-                )
-                print("PASS: test_write_fe_tet")
-            except Exception as exc:
-                print(f"FAIL: test_write_fe_tet: {exc}")
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            zone = r.zone[0]
+            assert zone.zone_type == ZoneType.FEQUADRILATERAL
+            assert zone.num_nodes == 6
+            assert zone.num_elements == 2
 
-            # Write a FE pyramid as degenerate FEBRICK
-            try:
-                x, y, z, nodes = create_FE_pyramid()
-                c = scalar_field(x, y)
-                x = x + 4*offset
-                pltfile.write_fe_zone(
-                    zone_type=ZoneType.FEBRICK,
-                    data=[x, y, z, c],
-                    node_map=nodes,
-                    title="FE_Pyramid",
-                    variables=["x", "y", "z", "c"],
-                )
-                print("PASS: test_write_fe_pyramid")
-            except Exception as exc:
-                print(f"FAIL: test_write_fe_pyramid: {exc}")
+    def test_write_fe_tet(self, output_path: Callable) -> None:
+        """FETETRAHEDRON — float32 x/y/z, float64 scalar. Node map verified.
 
-            # Write a FE triangular prism as degenerate FEBRICK
-            try:
-                x, y, z, nodes = create_FE_prism()
-                c = scalar_field(x, y)
-                x = x + 5*offset
-                pltfile.write_fe_zone(
-                    zone_type=ZoneType.FEBRICK,
-                    data=[x, y, z, c],
-                    node_map=nodes,
-                    title="FE_Prism",
-                    variables=["x", "y", "z", "c"],
-                )
-                print("PASS: test_write_fe_prism")
-            except Exception as exc:
-                print(f"FAIL: test_write_fe_prism: {exc}")
-
-            # Write a FEBRICK
-            try:
-                x, y, z, _faces, nodes = create_FE_brick()
-                c = scalar_field(x, y)
-                x = x + 6*offset
-                pltfile.write_fe_zone(
-                    zone_type=ZoneType.FEBRICK,
-                    data=[x, y, z, c],
-                    node_map=nodes,
-                    title="FE_Brick",
-                    variables=["x", "y", "z", "c"],
-                )
-                print("PASS: test_write_fe_brick")
-            except Exception as exc:
-                print(f"FAIL: test_write_fe_brick: {exc}")
-
-            # Write two adjacent FEBRICK cells with explicit face-neighbour connections
-            try:
-                x, y, z, nodes, face_neighbors = create_FE_two_bricks()
-                c = np.array([1, 2])
-                x = x + 7*offset
-                pltfile.write_fe_zone(
-                    zone_type=ZoneType.FEBRICK,
-                    data=[x, y, z, c],
-                    node_map=nodes,
-                    title="FE_2Bricks",
-                    variables=["x", "y", "z", "c"],
-                    value_locations=[
-                        ValueLocation.NODAL,
-                        ValueLocation.NODAL,
-                        ValueLocation.NODAL,
-                        ValueLocation.CELL_CENTERED,
-                    ],
-                    face_neighbors=face_neighbors,
-                    face_nbr_mode=FaceNeighborMode.LOCAL_ONE_TO_ONE,
-                )
-                print("PASS: test_write_fe_face_neighbors")
-            except Exception as exc:
-                print(f"FAIL: test_write_fe_face_neighbors: {exc}")
-
-    except Exception as exc:
-        print(f"FAIL: test_write_fe_cells: {exc}")
-
-
-def test_write_fe_unsteady() -> None:
-    """Write multiple FE zones with strand ID and solution time.
-
-    Demonstrates:
-    - Strand ID and solution time for unsteady data
-    - Zone-level auxiliary data
-    """
-    try:
+        Demonstrates:
+        - 3-D FETETRAHEDRON in PLT: same call as SZL
+        - Standard precision pattern for CFD: float32 grid, float64 solution
+        - Node map round-trip verified with ``assert_array_equal``
+        """
         x, y, z, nodes = create_FE_tet()
+        x = x.astype(np.float32)
+        y = y.astype(np.float32)
+        z = z.astype(np.float32)
+        c = scalar_field(x, y).astype(np.float64)
+
+        path = output_path("test_plt_write_fe_tet.plt")
+        with tecio.open(str(path), "w") as pltfile:
+            pltfile.write_fe_zone(
+                zone_type=ZoneType.FETETRAHEDRON,
+                data=[x, y, z, c],
+                node_map=nodes,
+                variables=["x", "y", "z", "c"],
+                title="FE_Tet",
+            )
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            zone = r.zone[0]
+            assert zone.zone_type == ZoneType.FETETRAHEDRON
+            assert zone.num_nodes == 5
+            assert zone.num_elements == 2
+            np.testing.assert_array_equal(zone.node_map, nodes.astype(np.int64))
+
+    def test_write_fe_pyramid(self, output_path: Callable) -> None:
+        """Degenerate FEBRICK pyramid — float64 all variables.
+
+        Demonstrates:
+        - Pyramid as collapsed FEBRICK in PLT: same node_map convention as SZL
+        - All float64 (maximum precision); useful when no precision trade-off
+          is needed or when the grid is also needed at high precision
+        """
+        x, y, z, nodes = create_FE_pyramid()
+        x = x.astype(np.float64)
+        y = y.astype(np.float64)
+        z = z.astype(np.float64)
+        c = scalar_field(x, y).astype(np.float64)
+
+        path = output_path("test_plt_write_fe_pyramid.plt")
+        with tecio.open(str(path), "w") as pltfile:
+            pltfile.write_fe_zone(
+                zone_type=ZoneType.FEBRICK,
+                data=[x, y, z, c],
+                node_map=nodes,
+                variables=["x", "y", "z", "c"],
+                title="FE_Pyramid",
+            )
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            assert r.zone[0].zone_type == ZoneType.FEBRICK
+
+    def test_write_fe_prism(self, output_path: Callable) -> None:
+        """Degenerate FEBRICK prism — float32 all variables.
+
+        Demonstrates:
+        - Triangular prism as FEBRICK in PLT: identical collapsed-node convention
+        - All float32 (minimum precision, smallest file size);
+          suitable for visualization-only data where solver precision is not needed
+        """
+        x, y, z, nodes = create_FE_prism()
+        x = x.astype(np.float32)
+        y = y.astype(np.float32)
+        z = z.astype(np.float32)
+        c = scalar_field(x, y).astype(np.float32)
+
+        path = output_path("test_plt_write_fe_prism.plt")
+        with tecio.open(str(path), "w") as pltfile:
+            pltfile.write_fe_zone(
+                zone_type=ZoneType.FEBRICK,
+                data=[x, y, z, c],
+                node_map=nodes,
+                variables=["x", "y", "z", "c"],
+                title="FE_Prism",
+            )
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            assert r.zone[0].zone_type == ZoneType.FEBRICK
+
+    def test_write_fe_brick(self, output_path: Callable) -> None:
+        """FEBRICK — float32 x/y, float64 z/scalar.
+
+        Demonstrates:
+        - Standard 8-node hex in PLT
+        - Mixed precision: compact float32 for x/y, full float64 for z and solution
+        - DOUBLE z verified on read-back; values match within float64 tolerance
+        """
+        x, y, z, faces, nodes = create_FE_brick()
+        x = x.astype(np.float32)
+        y = y.astype(np.float32)
+        z = z.astype(np.float64)
+        c = scalar_field(x, y).astype(np.float64)
+
+        path = output_path("test_plt_write_fe_brick.plt")
+        with tecio.open(str(path), "w") as pltfile:
+            pltfile.write_fe_zone(
+                zone_type=ZoneType.FEBRICK,
+                data=[x, y, z, c],
+                node_map=nodes,
+                variables=["x", "y", "z", "c"],
+                title="FE_Brick",
+            )
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            zone = r.zone[0]
+            assert zone.num_nodes == 8
+            assert zone.num_elements == 1
+            assert zone.variable[2].data_type == DataType.DOUBLE
+            np.testing.assert_allclose(zone.variable[2].values, z, rtol=_RTOL_F64)
+
+    def test_write_fe_face_neighbors(self, output_path: Callable) -> None:
+        """Two FEBRICK cells with face-neighbor connectivity and cell-centered variable.
+
+        Demonstrates:
+        - Face neighbors in PLT: ``face_neighbors`` and ``face_nbr_mode`` work
+          identically to SZL at the high-level API
+        - Cell-centered float64 variable: one value per element
+        - Value assertion: float64 CC values survive PLT round-trip exactly
+        """
+        x, y, z, nodes, face_neighbors = create_FE_two_bricks()
+        x = x.astype(np.float32)
+        y = y.astype(np.float32)
+        z = z.astype(np.float32)
+        c = np.array([1.1, 2.2], dtype=np.float64)  # one per element
+
+        path = output_path("test_plt_write_fe_face_neighbors.plt")
+        with tecio.open(str(path), "w") as pltfile:
+            pltfile.write_fe_zone(
+                zone_type=ZoneType.FEBRICK,
+                data=[x, y, z, c],
+                node_map=nodes,
+                variables=["x", "y", "z", "c"],
+                title="FE_2Bricks",
+                value_locations=[
+                    ValueLocation.NODAL,
+                    ValueLocation.NODAL,
+                    ValueLocation.NODAL,
+                    ValueLocation.CELL_CENTERED,
+                ],
+                face_neighbors=face_neighbors,
+                face_nbr_mode=FaceNeighborMode.LOCAL_ONE_TO_ONE,
+            )
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            zone = r.zone[0]
+            assert zone.num_elements == 2
+            cc_var = zone.variable[3]
+            assert cc_var.value_location == ValueLocation.CELL_CENTERED
+            np.testing.assert_allclose(cc_var.values, c, rtol=_RTOL_F64)
+
+    def test_write_fe_unsteady(self, output_path: Callable) -> None:
+        """100 FETETRAHEDRON zones — float32 coords, float64 solution.
+
+        Demonstrates:
+        - Transient FE dataset in PLT: same ``strand_id`` and ``solution_time``
+          API as SZL; zones with the same strand_id animate together
+        - PLT requires strict ordering: header → data → connectivity per zone
+          before the next zone begins; the high-level writer handles this
+        """
+        x, y, z, nodes = create_FE_tet()
+        x = x.astype(np.float32)
+        y = y.astype(np.float32)
+        z = z.astype(np.float32)
         solution_times = np.linspace(0.0, 2 * np.pi, 100)
 
-        with tecio.open(
-            "test_plt_write_fe_unsteady.plt",
-            "w",
-            title="fe_unsteady_test",
-            variables=["x", "y", "z", "c"],
-        ) as pltfile:
+        path = output_path("test_plt_write_fe_unsteady.plt")
+        with tecio.open(str(path), "w", variables=["x", "y", "z", "c"]) as pltfile:
             for step, t in enumerate(solution_times):
-                c = np.sin(x + t) * np.cos(y + t)
-                x = x + np.random.rand()/10
-                y = y + np.random.rand()/10
-                z = z + np.random.rand()/10
+                c = np.sin(x + t).astype(np.float64)
                 pltfile.write_fe_zone(
                     zone_type=ZoneType.FETETRAHEDRON,
                     data=[x, y, z, c],
                     node_map=nodes,
                     title=f"zone_t{step + 1}",
                     strand_id=1,
-                    solution_time=t,
-                    aux={"MeshType": "unstructured", "Author": "test_plt_write"},
+                    solution_time=float(t),
                 )
-        print("PASS: test_write_fe_unsteady")
-    except Exception as exc:
-        print(f"FAIL: test_write_fe_unsteady: {exc}")
 
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            assert r.num_zones == 100
+            assert r.zone[0].solution_time == pytest.approx(0.0)
+            assert r.zone[99].solution_time == pytest.approx(solution_times[-1])
 
-#---------------------------------------------------------------------------------------
-# Exception-raising tests for invalid input data
-#---------------------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Error paths
+    # ------------------------------------------------------------------
 
-def test_write_fe_var_count_mismatch() -> None:
-    """write_fe_zone must raise ValueError when data count != active variable count."""
-    try:
+    def test_write_fe_var_count_mismatch_raises(self, output_path: Callable) -> None:
+        """Too few data arrays raises ValueError."""
         x, y, nodes = create_FE_tri()
+        path = output_path("test_plt_write_fe_mismatch.plt")
 
-        with tecio.open(
-            "test_plt_write_fe_var_mismatch.plt",
-            "w",
-            title="fe_mismatch_test",
-            variables=["x", "y", "c"],  # 3 variables declared
-        ) as pltfile:
-            pltfile.write_fe_zone(
-                zone_type=ZoneType.FETRIANGLE,
-                data=[x, y],  # only 2 arrays
-                node_map=nodes,
-                title="zone_bad",
-            )
-        print("FAIL: test_write_fe_var_count_mismatch: expected ValueError, got none")
-    except ValueError:
-        print("PASS: test_write_fe_var_count_mismatch")
-    except Exception as exc:
-        print(f"FAIL: test_write_fe_var_count_mismatch: unexpected exception: {exc}")
+        with pytest.raises(ValueError, match="[Ee]xpected"):
+            with tecio.open(str(path), "w", variables=["x", "y", "c"]) as pltfile:
+                pltfile.write_fe_zone(
+                    zone_type=ZoneType.FETRIANGLE,
+                    data=[x, y],
+                    node_map=nodes,
+                )
 
-
-def test_write_fe_array_length_mismatch() -> None:
-    """write_fe_zone must raise ValueError when a nodal array has the wrong length."""
-    try:
-        x, y, nodes = create_FE_tri()  # 4 nodes
-        x_short = x[:-1]  # 3 values — one too few
-
-        with tecio.open("test_plt_write_fe_len_mismatch.plt", "w") as pltfile:
-            pltfile.write_fe_zone(
-                zone_type=ZoneType.FETRIANGLE,
-                data=[x_short, y],
-                node_map=nodes,
-                title="zone_bad",
-                variables=["x", "y"],
-            )
-        print(
-            "FAIL: test_write_fe_array_length_mismatch: expected ValueError, got none"
-        )
-    except ValueError:
-        print("PASS: test_write_fe_array_length_mismatch")
-    except Exception as exc:
-        print(f"FAIL: test_write_fe_array_length_mismatch: unexpected exception: {exc}")
-
-
-def test_write_fe_unsupported_zone_type() -> None:
-    """write_fe_zone must raise NotImplementedError for FEPOLYGON."""
-    try:
+    def test_write_fe_array_length_mismatch_raises(self, output_path: Callable) -> None:
+        """Nodal array shorter than num_nodes raises ValueError."""
         x, y, nodes = create_FE_tri()
+        path = output_path("test_plt_write_fe_len.plt")
 
-        with tecio.open("test_plt_write_fe_polygon.plt", "w") as pltfile:
-            pltfile.write_fe_zone(
-                zone_type=ZoneType.FEPOLYGON,
-                data=[x, y],
-                node_map=nodes,
-                title="zone_polygon",
-                variables=["x", "y"],
-            )
-        print(
-            "FAIL: test_write_fe_unsupported_zone_type: "
-            "expected NotImplementedError, got none"
-        )
-    except NotImplementedError:
-        print("PASS: test_write_fe_unsupported_zone_type")
-    except Exception as exc:
-        print(f"FAIL: test_write_fe_unsupported_zone_type: unexpected exception: {exc}")
+        with pytest.raises(ValueError):
+            with tecio.open(str(path), "w") as pltfile:
+                pltfile.write_fe_zone(
+                    zone_type=ZoneType.FETRIANGLE,
+                    data=[x[:-1], y],
+                    node_map=nodes,
+                    variables=["x", "y"],
+                )
+
+    def test_write_fe_unsupported_zone_type_raises(self, output_path: Callable) -> None:
+        """FEPOLYGON raises NotImplementedError.
+
+        Demonstrates:
+        - Poly zones require the low-level ``tecpolyzne142`` + ``tecpolyface142``
+          path (see test_libtecio.py::TestClassicApi::test_plt_tec_zone_create_fe_polygon)
+        """
+        x, y, nodes = create_FE_tri()
+        path = output_path("test_plt_write_fe_poly.plt")
+
+        with pytest.raises(NotImplementedError):
+            with tecio.open(str(path), "w") as pltfile:
+                pltfile.write_fe_zone(
+                    zone_type=ZoneType.FEPOLYGON,
+                    data=[x, y],
+                    node_map=nodes,
+                    variables=["x", "y"],
+                )
 
 
-#=======================================================================================
-# Run all tests
-#=======================================================================================
+# ===========================================================================
+# Entry point
+# ===========================================================================
+
 if __name__ == "__main__":
-    # Ordered zone tests
-    test_write_ijk_3d()
-    test_write_ijk_unsteady()
-    # FE zone tests
-    test_write_fe_cells()
-    test_write_fe_unsteady()
-    # Zone validation tests (pass = raise expected exception)
-    test_write_ijk_var_count_mismatch()
-    test_write_ijk_shape_mismatch()
-    test_write_fe_var_count_mismatch()
-    test_write_fe_array_length_mismatch()
-    test_write_fe_unsupported_zone_type()
+    sys.exit(pytest.main([__file__, "-v"] + sys.argv[1:]))

@@ -168,11 +168,11 @@ class Write:
 
     # Context manager
     def __enter__(self) -> Write:
-        """Context manager to automatically close and flush file."""
+        """Context manager to automatically open, close, and flush file."""
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
-        """Exit contex manager regardless of exceptions.
+        """Exit Write class context manager regardless of exceptions.
 
         Only raise an exception if closing the file fails, not if an exception is raised
         in the with block.

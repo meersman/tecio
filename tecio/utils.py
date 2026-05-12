@@ -171,20 +171,43 @@ def get_tec_bin() -> str:
 
 
 def get_tecio_lib() -> str:
-    """Return full path to the tecio shared library.
+    """Return full path to the TecIO shared library.
 
-    - Linux: libtecio.so
-    - macOS: libtecio.dylib.
+    Search order:
+    1. TECIO_LIB environment variable
+    2. Local project build directories (CI/dev)
+    3. Installed Tecplot distribution
     """
+    libname = "libtecio.dylib" if platform.system() == "Darwin" else "libtecio.so"
+
+    # Explicit environment variable override
+    env_path = os.environ.get("TECIO_LIB")
+    if env_path:
+        env_path = os.path.abspath(env_path)
+        if os.path.isfile(env_path):
+            return env_path
+
+    # Try Local project build directories
+    here = Path(__file__).resolve()
+
+    candidate_dirs = [
+        here.parents[2] / "third_party" / "teciosrc",
+    ]
+
+    for d in candidate_dirs:
+        libpath = d / libname
+        if libpath.is_file():
+            return str(libpath.resolve())
+
+    # Look for Installed Tecplot distribution
     bin_dir = get_tec_bin()
 
-    libname = "libtecio.dylib" if platform.system() == "Darwin" else "libtecio.so"
     libpath = os.path.join(bin_dir, libname)
 
-    if not os.path.isfile(libpath):
-        raise TecplotNotFoundError(f"TecIO library not found:\n  {libpath}")
+    if os.path.isfile(libpath):
+        return libpath
 
-    return libpath
+    raise TecplotNotFoundError(f"Unable to locate TecIO shared library ({libname}).")
 
 
 def get_tec_version() -> str:

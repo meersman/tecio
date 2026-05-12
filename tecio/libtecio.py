@@ -430,6 +430,10 @@ lib.tecFileReaderOpen.argtypes = [
     ctypes.c_char_p,
     ctypes.POINTER(ctypes.c_void_p),
 ]
+lib.tecFileReaderClose.restype = ctypes.c_int32
+lib.tecFileReaderClose.argtypes = [
+    ctypes.POINTER(ctypes.c_void_p),
+]
 lib.tecFileGetType.restype = ctypes.c_int32
 lib.tecFileGetType.argtypes = [
     ctypes.c_void_p,
@@ -1074,6 +1078,23 @@ def tec_file_reader_open(file_name: str) -> ctypes.c_void_p:
         )
 
     return handle
+
+
+def tec_file_reader_close(handle: ctypes.c_void_p) -> None:
+    """Close an SZL file reader handle and release its resources.
+
+    Args:
+        handle: File handle from :func:`tec_file_reader_open`.
+
+    Raises:
+        TecioError: On C library error.
+
+    """
+    ret = lib.tecFileReaderClose(ctypes.byref(handle))
+    if ret != 0:
+        raise TecioError(
+            f"tecFileReaderClose Error: handle={handle}, return_code={ret}"
+        )
 
 
 def tec_file_get_type(handle: ctypes.c_void_p) -> FileType:
@@ -2199,7 +2220,7 @@ def tec_zone_create_ijk(
     var_types: Sequence[DataType | int],
     var_sharing: Sequence[int] | None = None,
     value_locations: Sequence[int | ValueLocation] | None = None,
-    pas_vars: Sequence[VarStatus |bool | int] | None = None,
+    pas_vars: Sequence[VarStatus | bool | int] | None = None,
     face_nbr_sharing: int = 0,
     num_face_cons: int = 0,
     face_nbr_mode: FaceNeighborMode | int = FaceNeighborMode.LOCAL_ONE_TO_ONE,

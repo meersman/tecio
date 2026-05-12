@@ -562,13 +562,13 @@ class ReadZone:
     @property
     def strand_id(self) -> int:
         """Strand ID (0 = static, positive = transient strand).
-        
+
         PLT files store -1 as a sentinel for "no strand assigned".
         Normalised to 0 here to match the SZL/DAT convention and
         to prevent invalid arguments to tec_zone_set_unsteady_options.
         """
         return max(self._meta.strand_id, 0)
-    
+
     @property
     def num_nodes(self) -> int:
         """Number of nodes/points in this zone."""
@@ -1084,7 +1084,7 @@ class _PltParser:
             k = max(meta.k_max, 1)
             if loc == ValueLocation.CELL_CENTERED:
                 # Ghost values included (see spec Note 5)
-                return i * j * (k - 1) if k > 1 else i * (j - 1) if j > 1 else i - 1
+                return max(i - 1, 1) * max(j - 1, 1) * max(k - 1, 1)
             return i * j * k
         else:
             # FE zones

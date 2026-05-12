@@ -2,33 +2,50 @@ name: Build and Deploy Docs
 
 on:
   push:
-    branches:
-      - main   # run this workflow whenever main is updated
+    branches: [main]
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
+
+      - name: Set TECIO_LIB
+        run: |
+          echo "TECIO_LIB=${{ github.workspace }}/lib/linux_x86_64/libtecio.so" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: |
+          pip install -e .
           pip install -r docs/requirements.txt
 
       - name: Build docs
-        run: |
-          cd docs
-          make html
+        run: cd docs && make html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_build/html
 
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: docs/_build/html
+        id: deploy
+        uses: actions/deploy-pages@v4

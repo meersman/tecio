@@ -212,9 +212,7 @@ def _format_console_row(
     v_name = var_name[:_NAME_WIDTH]
 
     if isinstance(vmin, float):
-        nums = (
-            f"{vmin:>14.6g}  {vmax:>14.6g}  {vmean:>14.6g}  {vstd:>14.6g}"
-        )
+        nums = f"{vmin:>14.6g}  {vmax:>14.6g}  {vmean:>14.6g}  {vstd:>14.6g}"
     else:
         nums = f"{'':>14}  {'':>14}  {'':>14}  {'':>14}"
 
@@ -333,15 +331,31 @@ def main(argv: Sequence[str] | None = None) -> int:
                         note = "passive"
                         print(
                             _format_console_row(
-                                zone_num, zone_title, var_num, name,
-                                "", "", "", "", loc, note,
+                                zone_num,
+                                zone_title,
+                                var_num,
+                                name,
+                                "",
+                                "",
+                                "",
+                                "",
+                                loc,
+                                note,
                             )
                         )
                         if csv_path is not None:
                             csv_rows.append(
                                 _csv_row(
-                                    zone_num, zone_title, var_num, name,
-                                    "", "", "", "", loc, note,
+                                    zone_num,
+                                    zone_title,
+                                    var_num,
+                                    name,
+                                    "",
+                                    "",
+                                    "",
+                                    "",
+                                    loc,
+                                    note,
                                 )
                             )
                         continue
@@ -350,15 +364,31 @@ def main(argv: Sequence[str] | None = None) -> int:
                         note = f"shared (zone {var.shared_zone + 1})"
                         print(
                             _format_console_row(
-                                zone_num, zone_title, var_num, name,
-                                "", "", "", "", loc, note,
+                                zone_num,
+                                zone_title,
+                                var_num,
+                                name,
+                                "",
+                                "",
+                                "",
+                                "",
+                                loc,
+                                note,
                             )
                         )
                         if csv_path is not None:
                             csv_rows.append(
                                 _csv_row(
-                                    zone_num, zone_title, var_num, name,
-                                    "", "", "", "", loc, note,
+                                    zone_num,
+                                    zone_title,
+                                    var_num,
+                                    name,
+                                    "",
+                                    "",
+                                    "",
+                                    "",
+                                    loc,
+                                    note,
                                 )
                             )
                         continue
@@ -368,15 +398,31 @@ def main(argv: Sequence[str] | None = None) -> int:
                         note = "no data"
                         print(
                             _format_console_row(
-                                zone_num, zone_title, var_num, name,
-                                "", "", "", "", loc, note,
+                                zone_num,
+                                zone_title,
+                                var_num,
+                                name,
+                                "",
+                                "",
+                                "",
+                                "",
+                                loc,
+                                note,
                             )
                         )
                         if csv_path is not None:
                             csv_rows.append(
                                 _csv_row(
-                                    zone_num, zone_title, var_num, name,
-                                    "", "", "", "", loc, note,
+                                    zone_num,
+                                    zone_title,
+                                    var_num,
+                                    name,
+                                    "",
+                                    "",
+                                    "",
+                                    "",
+                                    loc,
+                                    note,
                                 )
                             )
                         continue
@@ -391,15 +437,29 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                     print(
                         _format_console_row(
-                            zone_num, zone_title, var_num, name,
-                            vmin, vmax, vmean, vstd, loc,
+                            zone_num,
+                            zone_title,
+                            var_num,
+                            name,
+                            vmin,
+                            vmax,
+                            vmean,
+                            vstd,
+                            loc,
                         )
                     )
                     if csv_path is not None:
                         csv_rows.append(
                             _csv_row(
-                                zone_num, zone_title, var_num, name,
-                                vmin, vmax, vmean, vstd, loc,
+                                zone_num,
+                                zone_title,
+                                var_num,
+                                name,
+                                vmin,
+                                vmax,
+                                vmean,
+                                vstd,
+                                loc,
                             )
                         )
 
