@@ -24,7 +24,7 @@ Example usage::
     # Overwrite an existing output file
     $ tecfix --force flow.szplt
 
-Notes:
+Notes
 -----
 - Only floating-point variables (``FLOAT`` and ``DOUBLE``) are inspected;
   integer variables cannot represent NaN / Inf and are always copied as-is.

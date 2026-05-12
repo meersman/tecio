@@ -286,7 +286,7 @@ class Write:
         Significant digits for scientific-notation float output.  Default
         is ``9``; use ``17`` for full ``float64`` round-trip fidelity.
 
-    Attributes:
+    Attributes
     ----------
     auxdataset : dict[str, str]
         Dataset-level auxiliary data buffer.
