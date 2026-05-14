@@ -1,7 +1,7 @@
 # tecio
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Docs](https://github.com/meersman/tecio/actions/workflows/docs.yml/badge.svg)](https://meersman.github.io/tecio)
+[![Build Docs](https://github.com/meersman/tecio/actions/workflows/docs.yaml/badge.svg)](https://github.com/meersman/tecio/actions/workflows/docs.yaml)
 ![Tests](badges/tests.svg)
 ![Coverage](badges/coverage.svg)
 ![Lines of Code](https://sloc.xyz/github/meersman/tecio/)
