@@ -9,6 +9,7 @@ scripts are available directly from the shell:
     $ tecdump flow.szplt
     $ tecfix flow.szplt
     $ tecslice -i ::2 -o thinned.szplt flow.szplt
+    $ tecplit --pop-all flow.szplt
     $ tecmerge -o combined.szplt "step_*.szplt"
     $ teconvert -dat flow.szplt
     $ tecextract -zones 1,2 -o subset.szplt flow.szplt

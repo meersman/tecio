@@ -1,4 +1,4 @@
-# tecio.cli
+# Console Scripts
 
 ```{eval-rst}
 .. automodule:: tecio.cli
@@ -57,5 +57,12 @@
 
 ```{eval-rst}
 .. automodule:: tecio.cli.tecstats
+   :members: main
+```
+
+## tecsplit
+
+```{eval-rst}
+.. automodule:: tecio.cli.tecsplit
    :members: main
 ```

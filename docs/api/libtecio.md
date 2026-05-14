@@ -14,8 +14,6 @@ with the higher-level :mod:`tecio.szl`, :mod:`tecio.plt`, and
 .. currentmodule:: tecio.libtecio
 
 .. autosummary::
-   :toctree: ../_autosummary
-   :template: enum.rst
    :nosignatures:
 
    FileFormat
@@ -38,86 +36,111 @@ with the higher-level :mod:`tecio.szl`, :mod:`tecio.plt`, and
 
 ## SZL Read Functions
 
-```{eval-rst}
-.. autofunction:: tecio.libtecio.tec_file_reader_open
-.. autofunction:: tecio.libtecio.tec_file_get_type
-.. autofunction:: tecio.libtecio.tec_data_set_get_title
-.. autofunction:: tecio.libtecio.tec_data_set_get_num_vars
-.. autofunction:: tecio.libtecio.tec_data_set_get_num_zones
-.. autofunction:: tecio.libtecio.tec_zone_get_ijk
-.. autofunction:: tecio.libtecio.tec_zone_get_title
-.. autofunction:: tecio.libtecio.tec_zone_get_type
-.. autofunction:: tecio.libtecio.tec_zone_is_enabled
-.. autofunction:: tecio.libtecio.tec_zone_get_solution_time
-.. autofunction:: tecio.libtecio.tec_zone_get_strand_id
-.. autofunction:: tecio.libtecio.is_64bit
-.. autofunction:: tecio.libtecio.tec_zone_node_map_get_64
-.. autofunction:: tecio.libtecio.tec_zone_node_map_get
-.. autofunction:: tecio.libtecio.tec_var_get_name
-.. autofunction:: tecio.libtecio.tec_var_is_enabled
-.. autofunction:: tecio.libtecio.tec_zone_var_get_type
-.. autofunction:: tecio.libtecio.tec_zone_var_get_value_location
-.. autofunction:: tecio.libtecio.tec_zone_var_is_passive
-.. autofunction:: tecio.libtecio.tec_zone_var_get_shared_zone
-.. autofunction:: tecio.libtecio.tec_zone_var_get_num_values
-.. autofunction:: tecio.libtecio.tec_zone_var_get_float_values
-.. autofunction:: tecio.libtecio.tec_zone_var_get_double_values
-.. autofunction:: tecio.libtecio.tec_zone_var_get_int32_values
-.. autofunction:: tecio.libtecio.tec_zone_var_get_int16_values
-.. autofunction:: tecio.libtecio.tec_zone_var_get_uint8_values
-```
-
-## SZL Auxiliary Data Functions
+See {doc}`libtecio_szl_read` for full documentation.
 
 ```{eval-rst}
-.. autofunction:: tecio.libtecio.tec_data_set_aux_data_get_num_items
-.. autofunction:: tecio.libtecio.tec_data_set_aux_data_get_item
-.. autofunction:: tecio.libtecio.tec_var_aux_data_get_num_items
-.. autofunction:: tecio.libtecio.tec_var_aux_data_get_item
-.. autofunction:: tecio.libtecio.tec_zone_aux_data_get_num_items
-.. autofunction:: tecio.libtecio.tec_zone_aux_data_get_item
+.. currentmodule:: tecio.libtecio
+
+.. autosummary::
+   :nosignatures:
+
+   tec_file_reader_open
+   tec_file_reader_close
+   tec_file_get_type
+   tec_data_set_get_title
+   tec_data_set_get_num_vars
+   tec_data_set_get_num_zones
+   tec_zone_get_ijk
+   tec_zone_get_title
+   tec_zone_get_type
+   tec_zone_is_enabled
+   tec_zone_get_solution_time
+   tec_zone_get_strand_id
+   is_64bit
+   tec_zone_node_map_get_64
+   tec_zone_node_map_get
+   tec_var_get_name
+   tec_var_is_enabled
+   tec_zone_var_get_type
+   tec_zone_var_get_value_location
+   tec_zone_var_is_passive
+   tec_zone_var_get_shared_zone
+   tec_zone_var_get_num_values
+   tec_zone_var_get_float_values
+   tec_zone_var_get_double_values
+   tec_zone_var_get_int32_values
+   tec_zone_var_get_int16_values
+   tec_zone_var_get_uint8_values
+   tec_data_set_aux_data_get_num_items
+   tec_data_set_aux_data_get_item
+   tec_var_aux_data_get_num_items
+   tec_var_aux_data_get_item
+   tec_zone_aux_data_get_num_items
+   tec_zone_aux_data_get_item
 ```
 
 ## SZL Write Functions
 
+See {doc}`libtecio_szl_write` for full documentation.
+
 ```{eval-rst}
-.. autofunction:: tecio.libtecio.tec_file_writer_open
-.. autofunction:: tecio.libtecio.tec_file_writer_close
-.. autofunction:: tecio.libtecio.tec_zone_create_ijk
-.. autofunction:: tecio.libtecio.tec_zone_create_fe
-.. autofunction:: tecio.libtecio.tec_zone_set_unsteady_options
-.. autofunction:: tecio.libtecio.tec_data_set_add_aux_data
-.. autofunction:: tecio.libtecio.tec_var_add_aux_data
-.. autofunction:: tecio.libtecio.tec_zone_add_aux_data
-.. autofunction:: tecio.libtecio.tec_zone_var_write_double_values
-.. autofunction:: tecio.libtecio.tec_zone_var_write_float_values
-.. autofunction:: tecio.libtecio.tec_zone_var_write_int32_values
-.. autofunction:: tecio.libtecio.tec_zone_var_write_int16_values
-.. autofunction:: tecio.libtecio.tec_zone_var_write_uint8_values
-.. autofunction:: tecio.libtecio.tec_zone_node_map_write32
-.. autofunction:: tecio.libtecio.tec_zone_node_map_write64
-.. autofunction:: tecio.libtecio.tec_zone_face_nbr_write_connections32
-.. autofunction:: tecio.libtecio.tec_zone_face_nbr_write_connections64
+.. currentmodule:: tecio.libtecio
+
+.. autosummary::
+   :nosignatures:
+
+   tec_file_writer_open
+   tec_file_writer_close
+   tec_zone_create_ijk
+   tec_zone_create_fe
+   tec_zone_set_unsteady_options
+   tec_zone_var_write_double_values
+   tec_zone_var_write_float_values
+   tec_zone_var_write_int32_values
+   tec_zone_var_write_int16_values
+   tec_zone_var_write_uint8_values
+   tec_zone_node_map_write32
+   tec_zone_node_map_write64
+   tec_zone_face_nbr_write_connections32
+   tec_zone_face_nbr_write_connections64
+   tec_data_set_add_aux_data
+   tec_var_add_aux_data
+   tec_zone_add_aux_data
 ```
 
-## Classic PLT API Functions
+## Classic API Functions
+
+See {doc}`libtecio_classic` for full documentation.
 
 ```{eval-rst}
-.. autofunction:: tecio.libtecio.tecini142
-.. autofunction:: tecio.libtecio.tecend142
-.. autofunction:: tecio.libtecio.tecflush142
-.. autofunction:: tecio.libtecio.tecfil142
-.. autofunction:: tecio.libtecio.tecforeign142
-.. autofunction:: tecio.libtecio.teczne142
-.. autofunction:: tecio.libtecio.tecpolyzne142
-.. autofunction:: tecio.libtecio.tecznefemixed142
-.. autofunction:: tecio.libtecio.tecdat142
-.. autofunction:: tecio.libtecio.tecnode142
-.. autofunction:: tecio.libtecio.tecface142
-.. autofunction:: tecio.libtecio.tecpolyface142
-.. autofunction:: tecio.libtecio.tecpolybconn142
-.. autofunction:: tecio.libtecio.tecauxstr142
-.. autofunction:: tecio.libtecio.tecvauxstr142
-.. autofunction:: tecio.libtecio.teczauxstr142
-.. autofunction:: tecio.libtecio.tecusr142
+.. currentmodule:: tecio.libtecio
+
+.. autosummary::
+   :nosignatures:
+
+   tecini142
+   tecend142
+   tecflush142
+   tecfil142
+   tecforeign142
+   teczne142
+   tecpolyzne142
+   tecznefemixed142
+   tecdat142
+   tecnode142
+   tecface142
+   tecpolyface142
+   tecpolybconn142
+   tecauxstr142
+   tecvauxstr142
+   teczauxstr142
+   tecusr142
+```
+
+```{toctree}
+:hidden:
+
+libtecio_szl_read
+libtecio_szl_write
+libtecio_classic
 ```

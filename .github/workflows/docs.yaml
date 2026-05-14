@@ -2,7 +2,14 @@ name: Build and Deploy Docs
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - "tecio/**/*.py"
+    tags:
+      - "update-docs*"
+  workflow_dispatch:
 
 concurrency:
   group: pages

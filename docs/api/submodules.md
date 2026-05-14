@@ -1,19 +1,4 @@
-# API Reference
-
-```{eval-rst}
-.. autofunction:: tecio.open
-```
-
-## Append Handles
-
-Returned by :func:`tecio.open` when using ``'a'`` or ``'a+'`` mode.
-
-| Class | Mode | Description |
-|---|---|---|
-| {class}`~tecio._io.AppendWrite` | ``'a'`` | Append zones to an existing SZL file |
-| {class}`~tecio._io.AppendReadWrite` | ``'a+'`` | Append zones and read existing zones |
-
-## Submodules
+# Submodules
 
 | Module | Description |
 |---|---|
@@ -26,12 +11,9 @@ Returned by :func:`tecio.open` when using ``'a'`` or ``'a+'`` mode.
 ```{toctree}
 :hidden:
 
-append_write
-append_read_write
 szl
 plt
 dat
 libtecio
 utils
-cli
 ```
