@@ -1,12 +1,14 @@
 # tecio
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Build Docs](https://github.com/meersman/tecio/actions/workflows/docs.yaml/badge.svg)](https://github.com/meersman/tecio/actions/workflows/docs.yaml)
+[![Build and Deploy Docs](https://github.com/meersman/tecio/actions/workflows/docs.yaml/badge.svg)](https://github.com/meersman/tecio/actions/workflows/docs.yaml)
 ![Tests](badges/tests.svg)
 ![Coverage](badges/coverage.svg)
 ![Lines of Code](https://sloc.xyz/github/meersman/tecio/)
 
 Python interface for reading and writing Tecplot data files.
+
+📖 **[Documentation](https://meersman.github.io/tecio)**
 
 ## Overview
 
