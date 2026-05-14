@@ -2,8 +2,40 @@
 
 Python interface for reading and writing Tecplot data files.
 
-Wraps Tecplot's TecIO C library for working with binary SZL (`.szplt`)
-and PLT (`.plt`) formats as well as ASCII DAT (`.dat`) files.
+This package wraps Tecplot's TecIO C library for reading and writing
+binary SZL (`.szplt`) and PLT (`.plt`) formats as well as providing
+read/write utilities for ASCII DAT (`.dat`) files.
+
+The Tecplot data format is organised around *zones*, a flexible object
+that can represent a structured or unstructured block, subdomain, or
+boundary surface of a CFD solution, a single time step in a transient
+dataset, or a line or scatter point in a plot. Zone data may be
+*structured* (IJK-ordered matrix) or *unstructured* (nodes and cells
+with an explicit connectivity map). A file may contain both grid and
+solution data, or just one or the other via the GRID and SOLUTION file
+types.
+
+All zones in a dataset share the same variable list, though individual
+variables may be marked *passive* (no data for that zone) or *shared*
+from another zone to avoid storing redundant data, commonly used to
+share grid coordinates across time steps. Auxiliary data can be
+attached at the dataset, variable, or zone level as free-form
+key-value strings. Special `Common.*` auxiliary data keys are
+recognised by Tecplot 360 EX on load and can be used to automatically
+configure axis variables, velocity vectors, the default contour
+variable, and more.
+
+The SZL (`.szplt`) format additionally uses a proprietary node-map
+compression algorithm that produces significantly smaller files
+compared to the classic PLT format, particularly for large
+unstructured meshes.
+
+> The TecIO C library is proprietary software distributed by Tecplot,
+  Inc. under a permissive license agreement. This package is an
+  independent utility and is not affiliated with or endorsed by
+  Tecplot, Inc. Use of `tecio` requires an existing Tecplot
+  installation to provide the shared library, but does not require an
+  active Tecplot license.
 
 ---
 

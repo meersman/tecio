@@ -1,6 +1,7 @@
 # tecio
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Docs](https://github.com/meersman/tecio/actions/workflows/docs.yml/badge.svg)](https://meersman.github.io/tecio)
 ![Tests](badges/tests.svg)
 ![Coverage](badges/coverage.svg)
 ![Lines of Code](https://sloc.xyz/github/meersman/tecio/)
@@ -66,6 +67,7 @@ tecio
 │   ├── teconvert.py
 │   ├── tecscale.py
 │   ├── tecslice.py
+│   ├── tecsplit.py
 │   └── tecstats.py
 ├── dat                 # Higher level Tecplot ascii API
 │   ├── __init__.py
