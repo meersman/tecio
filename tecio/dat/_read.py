@@ -1,5 +1,4 @@
-r""":mod:`dat`: Tecplot ASCII DAT file reader and writer.
-=====================================================
+r"""Tecplot ASCII DAT file reader and writer.
 
 This module provides :class:`Read` for parsing and :class:`Write` for
 producing Tecplot 360 ASCII data files (``.dat`` / ``.tec``).  Both
@@ -8,52 +7,48 @@ and :class:`plt.Read` / :class:`plt.Write` so that downstream code can
 switch between file formats by changing only the file extension passed to
 :func:`tecio.open`.
 
-Reading
--------
-:class:`Read` parses the entire file on construction and stores all data
-in memory::
+Reading:
+    :class:`Read` parses the entire file on construction and stores all data
+    in memory::
+    
+        dat = tecio.open("result.dat", "r")
+    
+        print(dat.title)
+        print(dat.variables)  # list of variable name strings
+        print(dat.num_zones)
+    
+        zone = dat.zone[0]
+        print(zone.title, zone.zone_type, zone.solution_time)
+    
+        var = zone.variable[0]
+        print(var.name, var.data_type, var.values)
+    
+        if zone.zone_type != ZoneType.ORDERED:
+            print(zone.node_map)  # (num_elements, nodes_per_cell) int64 array
 
-    dat = tecio.open("result.dat", "r")
+Supported read features:
+    * ``FULL``, ``GRID``, and ``SOLUTION`` file types
+    * Ordered and simple FE zones (FELINESEG through FEBRICK)
+    * ``DATAPACKING=BLOCK`` only (POINT packing raises :exc:`ValueError`)
+    * ``VARLOCATION`` (cell-centred variables)
+    * ``PASSIVEVARLIST`` and ``VARSHARELIST``
+    * ``CONNECTIVITYSHAREZONE``
+    * Dataset-level ``DATASETAUXDATA`` and variable-level ``VARAUXDATA``
+    * Zone-level ``AUXDATA``
 
-    print(dat.title)
-    print(dat.variables)  # list of variable name strings
-    print(dat.num_zones)
+Writing:
+    :class:`Write` is a context-manager writer that supports lazy-open,
+    buffered aux data, and atomic (all-or-nothing) zone writes::
+    
+        with tecio.open("result.dat", "w", title="Demo",
+                        variables=["X", "Y", "P"]) as w:
+            w.write_ijk_zone(data=[x, y, p], title="Zone 1")
+    
+    All floating-point variable data is written in scientific notation with a
+    configurable number of significant digits (default 9).
 
-    zone = dat.zone[0]
-    print(zone.title, zone.zone_type, zone.solution_time)
-
-    var = zone.variable[0]
-    print(var.name, var.data_type, var.values)
-
-    if zone.zone_type != ZoneType.ORDERED:
-        print(zone.node_map)  # (num_elements, nodes_per_cell) int64 array
-
-Supported read features
-~~~~~~~~~~~~~~~~~~~~~~~
-* ``FULL``, ``GRID``, and ``SOLUTION`` file types
-* Ordered and simple FE zones (FELINESEG through FEBRICK)
-* ``DATAPACKING=BLOCK`` only (POINT packing raises :exc:`ValueError`)
-* ``VARLOCATION`` (cell-centred variables)
-* ``PASSIVEVARLIST`` and ``VARSHARELIST``
-* ``CONNECTIVITYSHAREZONE``
-* Dataset-level ``DATASETAUXDATA`` and variable-level ``VARAUXDATA``
-* Zone-level ``AUXDATA``
-
-Writing
--------
-:class:`Write` is a context-manager writer that supports lazy-open,
-buffered aux data, and atomic (all-or-nothing) zone writes::
-
-    with tecio.open("result.dat", "w", title="Demo",
-                    variables=["X", "Y", "P"]) as w:
-        w.write_ijk_zone(data=[x, y, p], title="Zone 1")
-
-All floating-point variable data is written in scientific notation with a
-configurable number of significant digits (default 9).
-
-Format specification reference
--------------------------------
-Tecplot 360 Data Format Guide 2025 R2, "ASCII Data" chapter.
+Format specification reference:
+    Tecplot 360 Data Format Guide 2025 R2, "ASCII Data" chapter.
 """
 
 from __future__ import annotations
@@ -162,10 +157,8 @@ _VALUES_PER_LINE: int = 5
 def _quote(s: str) -> str:
     """Wrap *s* in double-quotes, escaping embedded double-quotes.
 
-    :Call:
+    Example:
         >>> q = _quote("hello world")
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
     """
     return '"' + str(s).replace('"', '\\"') + '"'
 
@@ -173,10 +166,8 @@ def _quote(s: str) -> str:
 def _unquote(s: str) -> str:
     r"""Remove surrounding double-quotes and unescape internal ``\\"``.
 
-    :Call:
+    Example:
         >>> s = _unquote('"hello \\"world\\""')
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
     """
     s = s.strip()
     if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
@@ -187,10 +178,8 @@ def _unquote(s: str) -> str:
 def _strip_comment(line: str) -> str:
     """Remove a Tecplot ``#`` comment and trailing whitespace.
 
-    :Call:
+    Example:
         >>> clean = _strip_comment(line)
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
     """
     idx = line.find("#")
     return line[:idx].rstrip() if idx >= 0 else line.rstrip()
@@ -199,10 +188,8 @@ def _strip_comment(line: str) -> str:
 def _infer_data_type(arr: npt.NDArray) -> DataType:
     """Return the most appropriate :class:`DataType` for *arr*'s dtype.
 
-    :Call:
+    Example:
         >>> dt = _infer_data_type(arr)
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
     """
     dtype = arr.dtype
     if dtype.kind == "f":
@@ -224,10 +211,8 @@ def _infer_data_type(arr: npt.NDArray) -> DataType:
 def _extract_quoted_strings(text: str) -> list[str]:
     """Return all double-quoted strings found in *text* (content unescaped).
 
-    :Call:
+    Example:
         >>> names = _extract_quoted_strings('"X" "Y" "Pressure"')
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
     """
     return [
         m.group(1).replace('\\"', '"')
@@ -241,10 +226,8 @@ def _kv_split(text: str) -> dict[str, str]:
     Handles quoted values, parenthesised blocks (VARLOCATION, VARSHARELIST),
     and bracketed lists (PASSIVEVARLIST).
 
-    :Call:
+    Example:
         >>> d = _kv_split("I=3, J=4, K=1")
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
     """
     result: dict[str, str] = {}
     text = text.replace("\n", " ").strip().rstrip(",")
@@ -319,10 +302,8 @@ def _kv_split(text: str) -> dict[str, str]:
 def _parse_index_list(text: str) -> list[int]:
     """Parse ``[1,3,5]`` into a list of 0-based integers.
 
-    :Call:
+    Example:
         >>> indices = _parse_index_list("[1,3,5]")
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
     """
     text = text.strip().lstrip("[").rstrip("]")
     result = []
@@ -339,10 +320,8 @@ def _parse_index_list(text: str) -> list[int]:
 def _parse_varlocation(text: str) -> dict[int, ValueLocation]:
     """Parse ``VARLOCATION=([i,j,...]=CELLCENTERED)`` → ``{0-based: loc}``.
 
-    :Call:
+    Example:
         >>> locs = _parse_varlocation("([3,4]=CELLCENTERED)")
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
     """
     result: dict[int, ValueLocation] = {}
     for m in re.finditer(r"\[([^\]]+)\]\s*=\s*(\w+)", text):
@@ -364,10 +343,8 @@ def _parse_varlocation(text: str) -> dict[int, ValueLocation]:
 def _parse_varsharelist(text: str) -> dict[int, int]:
     """Parse ``VARSHARELIST=([i]=z,[j]=z)`` → ``{0-based var: 1-based zone}``.
 
-    :Call:
+    Example:
         >>> share = _parse_varsharelist("([1]=2,[2]=2)")
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
     """
     result: dict[int, int] = {}
     for m in re.finditer(r"\[(\d+)\]\s*=\s*(\d+)", text):
@@ -378,10 +355,8 @@ def _parse_varsharelist(text: str) -> dict[int, int]:
 def _parse_auxdata_line(line: str) -> tuple[str, str]:
     """Parse ``DATASETAUXDATA name="value"`` → ``(name, value)``.
 
-    :Call:
+    Example:
         >>> name, val = _parse_auxdata_line('DATASETAUXDATA Solver="MyCFD"')
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
     """
     m = re.match(r"(?i)DATASETAUXDATA\s+", line)
     rest = line[m.end() :] if m else line
@@ -394,10 +369,8 @@ def _parse_auxdata_line(line: str) -> tuple[str, str]:
 def _apply_varauxdata(line: str, var_auxdata_list: list) -> None:
     """Parse ``VARAUXDATA 1-based-idx name="value"`` and store in list.
 
-    :Call:
+    Example:
         >>> _apply_varauxdata(line, var_auxdata_list)
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
     """
     m = re.match(r"(?i)VARAUXDATA\s+(\d+)\s+", line)
     if not m:
@@ -416,10 +389,8 @@ def _apply_varauxdata(line: str, var_auxdata_list: list) -> None:
 class _LineBuffer:
     """Peekable iterator over stripped, comment-free text lines.
 
-    :Call:
+    Example:
         >>> buf = _LineBuffer(lines)
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
     """
 
     def __init__(self, lines: list[str]) -> None:
@@ -462,10 +433,8 @@ class ReadAuxData:
 
     Interface matches :class:`szl.ReadAuxData` exactly.
 
-    :Call:
+    Example:
         >>> aux = ReadAuxData({"Solver": "MyCFD"})
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
     """
 
     def __init__(self, data: dict[str, str] | None = None) -> None:
@@ -521,10 +490,8 @@ class ReadAuxData:
     def as_float(self, key: str, default: float | None = None) -> float | None:
         """Return value for *key* as :class:`float`, or *default* on failure.
 
-        :Call:
+        Example:
             >>> t = aux.as_float("TimeValue", default=0.0)
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
         """
         try:
             return float(self._data[key])
@@ -537,10 +504,8 @@ class ReadAuxData:
         Recognises ``"true"``/``"false"``, ``"yes"``/``"no"``,
         ``"1"``/``"0"`` (case-insensitive).
 
-        :Call:
+        Example:
             >>> flag = aux.as_bool("IsBoundaryZone", default=False)
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
         """
         try:
             v = self._data[key].lower().strip()
@@ -563,10 +528,8 @@ class ReadVariable:
 
     Interface matches :class:`szl.ReadVariable`.
 
-    :Call:
+    Example:
         >>> var = ReadVariable(name, data, value_location, ...)
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
     """
 
     def __init__(
@@ -644,17 +607,15 @@ class ReadVariable:
     ) -> npt.NDArray | None:
         """Return a slice of the data array using a 1-based range.
 
-        :Call:
+        Example:
             >>> arr = var.get_values((1, 100))
-        :Inputs:
-            *value_range*: ``(None, None)`` | ``(start, end)``
+        Args:
+            value_range ((None, None) | (start, end)):
                 1-based start (inclusive) and end (exclusive).
-        :Outputs:
-            *arr*: :class:`numpy.ndarray` | ``None``
-        :Raises:
-            :exc:`ValueError`: If only one of start/end is given.
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
+        Returns:
+            arr (numpy.ndarray | None)
+        Raises:
+            ValueError: If only one of start/end is given.
         """
         if self._data is None:
             return None
@@ -683,10 +644,8 @@ class ReadZone:
 
     Interface matches :class:`szl.ReadZone`.
 
-    :Call:
+    Example:
         >>> zone = ReadZone(title, zone_type, I, J, K, ...)
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
     """
 
     def __init__(
@@ -775,17 +734,15 @@ class Read:
     The entire file is parsed on construction.  All data is then available
     through the same attributes and methods as :class:`szl.Read`.
 
-    :Call:
+    Example:
         >>> dat = Read("Onera.dat")
         >>> dat = tecio.open("Onera.dat", "r")
-    :Inputs:
-        *path*: :class:`str`
+    Args:
+        path (str):
             Path to the ``.dat`` file.
-    :Raises:
-        :exc:`FileNotFoundError`: If *path* does not exist.
-        :exc:`ValueError`: On unsupported format features.
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
+    Raises
+        FileNotFoundError: If *path* does not exist.
+        ValueError: On unsupported format features.
     """
 
     def __init__(self, path: str) -> None:
@@ -862,14 +819,12 @@ class Read:
         return self._var_auxdata
 
     def get_var_auxdata(self, var_index: int) -> ReadAuxData:
-        """Return auxiliary data for variable *var_index* (1-based).
+        """Return auxiliary data for variable ``var_index`` (1-based).
 
-        :Call:
+        Example:
             >>> aux = dat.get_var_auxdata(1)
-        :Raises:
-            :exc:`IndexError`: If *var_index* is out of range.
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
+        Raises:
+            IndexError: If ``var_index`` is out of range.
         """
         if var_index < 1 or var_index > self.num_vars:
             raise IndexError(
@@ -878,14 +833,12 @@ class Read:
         return self._var_auxdata[var_index]
 
     def get_zone_auxdata(self, zone_index: int) -> ReadAuxData:
-        """Return auxiliary data for zone *zone_index* (1-based).
+        """Return auxiliary data for zone ``zone_index`` (1-based).
 
-        :Call:
+        Example:
             >>> aux = dat.get_zone_auxdata(1)
-        :Raises:
-            :exc:`IndexError`: If *zone_index* is out of range.
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
+        Raises:
+            IndexError: If ``zone_index`` is out of range.
         """
         if zone_index < 1 or zone_index > self.num_zones:
             raise IndexError(
@@ -898,10 +851,8 @@ class Read:
     def _parse(self) -> None:
         """Read and parse the entire DAT file.
 
-        :Call:
+        Example:
             >>> self._parse()
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
         """
         with open(self._path, encoding="utf-8", errors="replace") as fh:
             lines = fh.readlines()
@@ -934,10 +885,8 @@ class Read:
 
         Stops (without consuming) when a ZONE keyword is seen.
 
-        :Call:
+        Example:
             >>> self._parse_file_header(tokens)
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
         """
         while tokens.has_more():
             line = tokens.peek_stripped()
@@ -1002,10 +951,8 @@ class Read:
     def _parse_zone(self, tokens: _LineBuffer) -> None:
         """Parse one ZONE block (header + data blocks + connectivity).
 
-        :Call:
+        Example:
             >>> self._parse_zone(tokens)
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
         """
         # ------------------------------------------------------------------ #
         # 1. Collect header lines                                             #
@@ -1175,10 +1122,8 @@ class Read:
     def _read_float_block(tokens: _LineBuffer, n_values: int) -> npt.NDArray:
         """Read exactly *n_values* floats from *tokens* into a float64 array.
 
-        :Call:
+        Examples:
             >>> arr = Read._read_float_block(tokens, 100)
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
         """
         values: list[float] = []
         while len(values) < n_values and tokens.has_more():
@@ -1206,10 +1151,8 @@ class Read:
     def _read_int_block(tokens: _LineBuffer, n_values: int) -> npt.NDArray:
         """Read exactly *n_values* integers from *tokens* into an int64 array.
 
-        :Call:
+        Examples
             >>> arr = Read._read_int_block(tokens, 24)
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
         """
         values: list[int] = []
         while len(values) < n_values and tokens.has_more():

@@ -22,18 +22,19 @@ Supported modes mirror Python's built-in :func:`open`:
             data can be inspected while new zones are written.
     ======  ================================================================
 
-Notes:
-    - ``"a"`` and ``"a+"`` work by reading the source file in full and re-writing
-      it zone-by-zone into a temporary sibling file, then leaving the ``Write``
-      handle open for the caller to add further zones.  On close the temporary
-      file is atomically renamed over the original path (POSIX) or replaced
-      (Windows).  This is the only safe approach because PLT and SZL are
-      sequential binary formats with no in-place editing capability.
-    - FEPOLYGON and FEPOLYHEDRON zones are not copied during append operations
-      because the ``Write`` API does not yet expose a poly-zone writer.  A
-      :exc:`NotImplementedError` is raised if such zones are encountered in the
-      source file.
+Note:
+    ``"a"`` and ``"a+"`` work by reading the source file in full and re-writing
+    it zone-by-zone into a temporary sibling file, then leaving the ``Write``
+    handle open for the caller to add further zones.  On close the temporary
+    file is atomically renamed over the original path (POSIX) or replaced
+    (Windows).  This is the only safe approach because PLT and SZL are
+    sequential binary formats with no in-place editing capability.
 
+Note:
+    FEPOLYGON and FEPOLYHEDRON zones are not copied during append operations
+    because the ``Write`` API does not yet expose a poly-zone writer.  A
+    :exc:`NotImplementedError` is raised if such zones are encountered in the
+    source file.
 """
 
 from __future__ import annotations
@@ -129,7 +130,6 @@ def _copy_zones(reader: szl.Read | plt.Read, writer: szl.Write | plt.Write) -> N
     Raises:
         NotImplementedError: If a FEPOLYGON or FEPOLYHEDRON zone is
             encountered, as the ``Write`` API does not yet support them.
-
     """
     for zone in reader.zone:
         zt = zone.zone_type
@@ -535,7 +535,6 @@ def _open_append(
 
     Raises:
         FileNotFoundError: If *path* does not exist (nothing to append to).
-
     """
     src = Path(path)
     if not src.exists():
@@ -622,7 +621,6 @@ def _open_exclusive(
 
     Raises:
         FileExistsError: If *path* already exists.
-
     """
     target = Path(path)
     if target.exists():
@@ -763,16 +761,19 @@ def open(
         >>> with tecio.open("flow.szplt") as r:
         ...     x = r.zone[0].variable["x"].values
 
+    Example:
         Write a new file, deferring variable names to the first zone:
 
         >>> with tecio.open("out.szplt", "w", title="Run 1") as w:
         ...     w.write_ijk_zone(data=[x, y, p], variables=["x", "y", "p"])
 
+    Example:
         Append a new zone to an existing file:
 
         >>> with tecio.open("out.szplt", "a") as w:
         ...     w.write_ijk_zone(data=[x2, y2, p2], solution_time=2.0)
 
+    Example:
         Append and read in the same session:
 
         >>> with tecio.open("out.szplt", "a+") as rw:

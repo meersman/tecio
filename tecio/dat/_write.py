@@ -1,5 +1,4 @@
-r""":mod:`dat`: Tecplot ASCII DAT file reader and writer.
-=====================================================
+r"""Tecplot ASCII DAT file reader and writer.
 
 This module provides :class:`Read` for parsing and :class:`Write` for
 producing Tecplot 360 ASCII data files (``.dat`` / ``.tec``).  Both
@@ -8,52 +7,48 @@ and :class:`plt.Read` / :class:`plt.Write` so that downstream code can
 switch between file formats by changing only the file extension passed to
 :func:`tecio.open`.
 
-Reading
--------
-:class:`Read` parses the entire file on construction and stores all data
-in memory::
+Reading:
+    :class:`Read` parses the entire file on construction and stores all data
+    in memory::
+    
+        dat = tecio.open("result.dat", "r")
+    
+        print(dat.title)
+        print(dat.variables)  # list of variable name strings
+        print(dat.num_zones)
+    
+        zone = dat.zone[0]
+        print(zone.title, zone.zone_type, zone.solution_time)
+    
+        var = zone.variable[0]
+        print(var.name, var.data_type, var.values)
+    
+        if zone.zone_type != ZoneType.ORDERED:
+            print(zone.node_map)  # (num_elements, nodes_per_cell) int64 array
 
-    dat = tecio.open("result.dat", "r")
+Supported read features:
+    * ``FULL``, ``GRID``, and ``SOLUTION`` file types
+    * Ordered and simple FE zones (FELINESEG through FEBRICK)
+    * ``DATAPACKING=BLOCK`` only (POINT packing raises :exc:`ValueError`)
+    * ``VARLOCATION`` (cell-centred variables)
+    * ``PASSIVEVARLIST`` and ``VARSHARELIST``
+    * ``CONNECTIVITYSHAREZONE``
+    * Dataset-level ``DATASETAUXDATA`` and variable-level ``VARAUXDATA``
+    * Zone-level ``AUXDATA``
 
-    print(dat.title)
-    print(dat.variables)  # list of variable name strings
-    print(dat.num_zones)
+Writing:
+    :class:`Write` is a context-manager writer that supports lazy-open,
+    buffered aux data, and atomic (all-or-nothing) zone writes::
+    
+        with tecio.open("result.dat", "w", title="Demo",
+                        variables=["X", "Y", "P"]) as w:
+            w.write_ijk_zone(data=[x, y, p], title="Zone 1")
+    
+    All floating-point variable data is written in scientific notation with a
+    configurable number of significant digits (default 9).
 
-    zone = dat.zone[0]
-    print(zone.title, zone.zone_type, zone.solution_time)
-
-    var = zone.variable[0]
-    print(var.name, var.data_type, var.values)
-
-    if zone.zone_type != ZoneType.ORDERED:
-        print(zone.node_map)  # (num_elements, nodes_per_cell) int64 array
-
-Supported read features
-~~~~~~~~~~~~~~~~~~~~~~~
-* ``FULL``, ``GRID``, and ``SOLUTION`` file types
-* Ordered and simple FE zones (FELINESEG through FEBRICK)
-* ``DATAPACKING=BLOCK`` only (POINT packing raises :exc:`ValueError`)
-* ``VARLOCATION`` (cell-centred variables)
-* ``PASSIVEVARLIST`` and ``VARSHARELIST``
-* ``CONNECTIVITYSHAREZONE``
-* Dataset-level ``DATASETAUXDATA`` and variable-level ``VARAUXDATA``
-* Zone-level ``AUXDATA``
-
-Writing
--------
-:class:`Write` is a context-manager writer that supports lazy-open,
-buffered aux data, and atomic (all-or-nothing) zone writes::
-
-    with tecio.open("result.dat", "w", title="Demo",
-                    variables=["X", "Y", "P"]) as w:
-        w.write_ijk_zone(data=[x, y, p], title="Zone 1")
-
-All floating-point variable data is written in scientific notation with a
-configurable number of significant digits (default 9).
-
-Format specification reference
--------------------------------
-Tecplot 360 Data Format Guide 2025 R2, "ASCII Data" chapter.
+Format specification reference:
+    Tecplot 360 Data Format Guide 2025 R2, "ASCII Data" chapter.
 """
 
 from __future__ import annotations
@@ -162,24 +157,12 @@ _VALUES_PER_LINE: int = 5
 
 
 def _quote(s: str) -> str:
-    """Wrap *s* in double-quotes, escaping embedded double-quotes.
-
-    :Call:
-        >>> q = _quote("hello world")
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
-    """
+    """Wrap *s* in double-quotes, escaping embedded double-quotes."""
     return '"' + str(s).replace('"', '\\"') + '"'
 
 
 def _unquote(s: str) -> str:
-    r"""Remove surrounding double-quotes and unescape internal ``\\"``.
-
-    :Call:
-        >>> s = _unquote('"hello \\"world\\""')
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
-    """
+    r"""Remove surrounding double-quotes and unescape internal ``\\"``."""
     s = s.strip()
     if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
         return s[1:-1].replace('\\"', '"')
@@ -187,25 +170,13 @@ def _unquote(s: str) -> str:
 
 
 def _strip_comment(line: str) -> str:
-    """Remove a Tecplot ``#`` comment and trailing whitespace.
-
-    :Call:
-        >>> clean = _strip_comment(line)
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
-    """
+    """Remove a Tecplot ``#`` comment and trailing whitespace."""
     idx = line.find("#")
     return line[:idx].rstrip() if idx >= 0 else line.rstrip()
 
 
 def _infer_data_type(arr: npt.NDArray) -> DataType:
-    """Return the most appropriate :class:`DataType` for *arr*'s dtype.
-
-    :Call:
-        >>> dt = _infer_data_type(arr)
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
-    """
+    """Return the most appropriate :class:`DataType` for *arr*'s dtype."""
     dtype = arr.dtype
     if dtype.kind == "f":
         return DataType.DOUBLE if dtype.itemsize >= 8 else DataType.FLOAT
@@ -224,24 +195,12 @@ def _infer_data_type(arr: npt.NDArray) -> DataType:
 
 
 def _make_float_fmt(sig_digits: int) -> str:
-    """Return a ``format()``-compatible scientific-notation format string.
-
-    :Call:
-        >>> fmt = _make_float_fmt(9)
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
-    """
+    """Return a ``format()``-compatible scientific-notation format string."""
     return f".{max(sig_digits - 1, 0)}e"
 
 
 def _stage_float_array(buf: io.StringIO, arr: npt.NDArray, fmt: str) -> None:
-    """Write a 1-D float array to *buf* in scientific notation.
-
-    :Call:
-        >>> _stage_float_array(buf, arr, ".8e")
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
-    """
+    """Write a 1-D float array to *buf* in scientific notation."""
     flat = np.asarray(arr).ravel()
     vpl = _VALUES_PER_LINE
     for start in range(0, flat.size, vpl):
@@ -250,13 +209,7 @@ def _stage_float_array(buf: io.StringIO, arr: npt.NDArray, fmt: str) -> None:
 
 
 def _stage_connectivity_row(buf: io.StringIO, row: npt.NDArray) -> None:
-    """Write one element's node indices to *buf* as space-separated ints.
-
-    :Call:
-        >>> _stage_connectivity_row(buf, row)
-    :Versions:
-        * 2025-01-01 ``@user``: Version 1.0
-    """
+    """Write one element's node indices to *buf* as space-separated ints."""
     buf.write(" ".join(str(int(n)) for n in row) + "\n")
 
 
@@ -271,30 +224,27 @@ class Write:
     The public interface is identical to :class:`szl.Write` and
     :class:`plt.Write`.
 
-    Parameters
-    ----------
-    path:
-        Destination file path.
-    title:
-        Dataset title.  Defaults to ``"untitled"``.
-    variables:
-        Variable name list.  ``None`` defers file creation until the first
-        zone-writing call (lazy open).
-    file_type:
-        :class:`FileType` enum.  Defaults to :attr:`FileType.FULL`.
-    sig_digits:
-        Significant digits for scientific-notation float output.  Default
-        is ``9``; use ``17`` for full ``float64`` round-trip fidelity.
+    Parameters:
+        path:
+            Destination file path.
+        title:
+            Dataset title.  Defaults to ``"untitled"``.
+        variables:
+            Variable name list.  ``None`` defers file creation until the first
+            zone-writing call (lazy open).
+        file_type:
+            :class:`FileType` enum.  Defaults to :attr:`FileType.FULL`.
+        sig_digits:
+            Significant digits for scientific-notation float output.  Default
+            is ``9``; use ``17`` for full ``float64`` round-trip fidelity.
 
-    Attributes
-    ----------
-    auxdataset : dict[str, str]
-        Dataset-level auxiliary data buffer.
-    auxvar : dict[int | str, dict[str, str]]
-        Variable-level auxiliary data buffer.
-    current_zone : int
-        Count of successfully written zones.
-
+    Attributes:
+        auxdataset : dict[str, str]
+            Dataset-level auxiliary data buffer.
+        auxvar : dict[int | str, dict[str, str]]
+            Variable-level auxiliary data buffer.
+        current_zone : int
+            Count of successfully written zones.
     """
 
     path: str
@@ -322,13 +272,7 @@ class Write:
         file_type: FileType = FileType.FULL,
         sig_digits: int | None = None,
     ) -> None:
-        """Store configuration; open the file immediately if *variables* given.
-
-        :Call:
-            >>> w = Write(path, title, variables, file_type, sig_digits)
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
-        """
+        """Store configuration; open the file immediately if *variables* given."""
         self.path: str = str(path)
         self.title: str = title
         self.variables: list[str] | None = variables
@@ -366,12 +310,8 @@ class Write:
     def _open(self, var_names: list[str]) -> None:
         """Open the output file and write the dataset header.
 
-        :Call:
-            >>> self._open(var_names)
-        :Raises:
-            :exc:`ValueError`: If *var_names* is empty.
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
+        Raises:
+            ValueError: If ``var_names`` is empty.
         """
         if not var_names:
             raise ValueError("Write requires at least one variable name.")
@@ -381,13 +321,7 @@ class Write:
         self._opened = True
 
     def close(self) -> None:
-        """Flush and close the output file (safe to call more than once).
-
-        :Call:
-            >>> writer.close()
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
-        """
+        """Flush and close the output file (safe to call more than once)."""
         if self._fp is not None:
             self._fp.flush()
             self._fp.close()
@@ -399,12 +333,8 @@ class Write:
 
         Called automatically before the first zone.
 
-        :Call:
-            >>> writer.flush_aux()
-        :Raises:
-            :exc:`IOError`: If the file has not been opened yet.
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
+        Raises:
+            IOError: If the file has not been opened yet.
         """
         if self._fp is None:
             raise OSError("flush_aux() called before the file was opened.")
@@ -463,12 +393,8 @@ class Write:
 
         Zone dimensions are inferred from the shape of the first NODAL array.
 
-        :Call:
-            >>> writer.write_ijk_zone(data, title=None, ...)
-        :Raises:
-            :exc:`ValueError`: On variable-count or array-shape mismatch.
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
+        Raises:
+            ValueError: On variable-count or array-shape mismatch.
         """
         if title is None:
             title = f"IJK_Zone_{self.current_zone + 1}"
@@ -607,13 +533,9 @@ class Write:
 
         ``FEPOLYGON`` and ``FEPOLYHEDRON`` raise :exc:`NotImplementedError`.
 
-        :Call:
-            >>> writer.write_fe_zone(zone_type, data, node_map, ...)
-        :Raises:
-            :exc:`NotImplementedError`: For unsupported zone types.
-            :exc:`ValueError`: On variable-count or array-length mismatch.
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
+        Raises:
+            NotImplementedError: For unsupported zone types.
+            ValueError: On variable-count or array-length mismatch.
         """
         if zone_type in _FE_POLY:
             raise NotImplementedError(
@@ -721,13 +643,7 @@ class Write:
     # -- private helpers ------------------------------------------------------
 
     def _handle_zone_error(self) -> None:
-        """Delete the output file if no zone has been committed yet.
-
-        :Call:
-            >>> self._handle_zone_error()
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
-        """
+        """Delete the output file if no zone has been committed yet."""
         if self.current_zone == 0:
             if self._fp is not None:
                 self._fp.close()
@@ -737,13 +653,7 @@ class Write:
                 os.remove(self.path)
 
     def _write_file_header(self) -> None:
-        """Write TITLE, optional FILETYPE, and VARIABLES lines.
-
-        :Call:
-            >>> self._write_file_header()
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
-        """
+        """Write TITLE, optional FILETYPE, and VARIABLES lines."""
         fp = self._fp
         fp.write(f"TITLE     = {_quote(self.title)}\n")
         if self.file_type in _FILETYPE_STR:
@@ -769,13 +679,7 @@ class Write:
         con_sharing: int = 0,
         aux: dict[str, Any] | None = None,
     ) -> None:
-        """Write a ``ZONE`` header block into the staging buffer *buf*.
-
-        :Call:
-            >>> self._stage_zone_header(buf, title, zone_type, ...)
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
-        """
+        """Write a ``ZONE`` header block into the staging buffer *buf*."""
         zt_str = _ZONETYPE_STR[zone_type]
 
         buf.write(f"ZONE T={_quote(title)}\n")

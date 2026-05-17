@@ -99,11 +99,6 @@ class Write:
     the first :meth:`write_ijk_zone` or :meth:`write_fe_zone` call, at
     which point ``variables`` must be provided to that call).
 
-    .. warning::
-        Unlike the SZL writer, zone data must be written strictly in order:
-        header → variable data → connectivity.  This is enforced internally
-        by the write methods.
-
     Args:
         path:      Output file path (should end in ``.plt``).
         title:     Dataset title string.
@@ -113,20 +108,28 @@ class Write:
         file_type: :class:`~libtecio.FileType` enum.  Defaults to
                    :attr:`~libtecio.FileType.FULL`.
 
-    Example — eager open::
+    Caution:
+        Unlike the SZL writer, zone data must be written strictly in order:
+        header → variable data → connectivity.  This is enforced internally
+        by the write methods.
 
-        with plt.Write("out.plt", variables=["X", "Y", "P"]) as w:
-            w.write_ijk_zone(data=[x, y, p], title="Zone 1")
+    Example:
+        Define file header fields on open.
 
-    Example — lazy open::
+        >>> with plt.Write("out.plt", variables=["X", "Y", "P"]) as w:
+        ...     w.write_ijk_zone(data=[x, y, p], title="Zone 1")
 
-        with plt.Write("out.plt") as w:
-            w.write_ijk_zone(
-                data=[x, y, p],
-                variables=["X", "Y", "P"],
-                title="Zone 1",
-            )
+    Example:
+        If writer handle is opened with just the file name, the
+        variable name list can be provided with the first zone
+        written.
 
+        >>> with plt.Write("out.plt") as w:
+        ...     w.write_ijk_zone(
+        ...         data=[x, y, p],
+        ...         variables=["X", "Y", "P"],
+        ...         title="Zone 1",
+        ...     )
     """
 
     # Class-level annotations so autodoc can discover instance attributes.
@@ -212,7 +215,6 @@ class Write:
 
         Args:
             var_names: Ordered list of variable name strings.
-
         """
         self.variables = var_names
         libtecio.tecini142(
@@ -346,7 +348,6 @@ class Write:
             ValueError: If the number of supplied data arrays does not match
                         the number of active (non-passive, non-shared)
                         variables, or if array shapes are inconsistent.
-
         """
         # Default title
         if title is None:
@@ -519,11 +520,11 @@ class Write:
         The full sequence required by the classic TecIO API is issued
         internally:
 
-        1. ``teczne142`` — zone header.
-        2. ``teczauxstr142`` — zone-level aux data (if any), before data.
-        3. ``tecdat142`` — one call per active variable.
-        4. ``tecnode142`` — node map.
-        5. ``tecface142`` — face-neighbour connections (if provided).
+        1. :func:`~tecio.libtecio.teczne142` — zone header.
+        2. :func:`~tecio.libtecio.teczauxstr142` — zone-level aux data (if any), before data.
+        3. :func:`~tecio.libtecio.tecdat142` — one call per active variable.
+        4. :func:`~tecio.libtecio.tecnode142` — node map.
+        5. :func:`~tecio.libtecio.tecface142` — face-neighbour connections (if provided).
 
         ``FEPOLYGON`` and ``FEPOLYHEDRON`` zone types are not supported
         (they require ``tecpolyface142`` / ``tecpolybconn142``); use the
@@ -564,7 +565,6 @@ class Write:
         Raises:
             NotImplementedError: If *zone_type* is not in :data:`_FE_SIMPLE`.
             ValueError:          On variable count or array length mismatch.
-
         """
         if zone_type not in _FE_SIMPLE:
             raise NotImplementedError(
@@ -717,7 +717,6 @@ def write_data(arr: npt.ArrayLike, dt: np.dtype | DataType | None = None) -> Non
     2. Defaults to double precision for array-like (list, tuple, etc)
     3. Optionally casts to input DataType or numpy dtype.
     4. Assumes data is in the correct shape and order (column major / Fortran order)
-
     """
     # Mappings between C-supported data types and numpy dtypes
     dtype_to_datatype: dict[np.dtype, DataType] = {
@@ -748,7 +747,6 @@ def write_connectivity(
         node_map:       Integer array of shape ``(num_cells, nodes_per_cell)``
                         with 1-based node indices.
         face_neighbors: Optional face-neighbour connection array.
-
     """
     nodes_flat = np.ascontiguousarray(node_map, dtype=np.int32).ravel(order="C")
     libtecio.tecnode142(nodes_flat)

@@ -1,39 +1,35 @@
-r""":mod:`read`: Native binary reader for Tecplot PLT (``.plt``) files.
-======================================================================
+r""" Native binary reader for Tecplot PLT (``.plt``) files.
 
 This module provides a pure-Python / NumPy reader for Tecplot PLT binary
 files (format versions v112 and v191).  It is a **standalone debugging
 module** intended to be integrated into the existing :mod:`plt` module once
 validated.
 
-Design goals
-------------
-* **No byte-swapping boilerplate.**  The INT32 value of ``1`` written
-  immediately after the magic number is used to detect endianness at open
-  time.  All subsequent reads use the correct NumPy byte-order prefix
-  (``"<"`` or ``">"``).
-* **Lazy variable data.**  Zone and variable *metadata* is parsed during
-  ``__init__`` and stored as lightweight dataclass attributes.  Actual
-  numeric data is read from disk only when ``.values`` (or
-  ``.get_values()``) is called, matching the behaviour of
-  :class:`szl.ReadVariable`.
-* **No text / geometry support.**  Header records with markers 399.0
-  (geometry) and 499.0 (text) are detected and skipped without parsing
-  their contents.
-* **v112 and v191 zone headers.**  Zone marker ``299.0`` → v112 header;
-  ``298.0`` → v191 header.  Both are fully supported.
+Design goals:
+    * **No byte-swapping boilerplate.**  The INT32 value of ``1`` written
+      immediately after the magic number is used to detect endianness at open
+      time.  All subsequent reads use the correct NumPy byte-order prefix
+      (``"<"`` or ``">"``).
+    * **Lazy variable data.**  Zone and variable *metadata* is parsed during
+      ``__init__`` and stored as lightweight dataclass attributes.  Actual
+      numeric data is read from disk only when ``.values`` (or
+      ``.get_values()``) is called, matching the behaviour of
+      :class:`szl.ReadVariable`.
+    * **No text / geometry support.**  Header records with markers 399.0
+      (geometry) and 499.0 (text) are detected and skipped without parsing
+      their contents.
+    * **v112 and v191 zone headers.**  Zone marker ``299.0`` → v112 header;
+      ``298.0`` → v191 header.  Both are fully supported.
 
 Limitations
------------
-* FEPOLYGON and FEPOLYHEDRON zones are parsed for metadata but face-map
-  reading is not yet implemented (``node_map`` returns ``None`` for those
-  types).
-* Bit-packed data (``DataType`` 6) is not supported and raises
-  ``NotImplementedError``.
+    * FEPOLYGON and FEPOLYHEDRON zones are parsed for metadata but face-map
+      reading is not yet implemented (``node_map`` returns ``None`` for those
+      types).
+    * Bit-packed data (``DataType`` 6) is not supported and raises
+      ``NotImplementedError``.
 
-Format reference
-----------------
-Tecplot 360 Data Format Guide — Binary PLT v112 / v191.
+Format reference:
+    Tecplot 360 Data Format Guide — Binary PLT ``v112`` / ``v191``.
 """
 
 from __future__ import annotations
@@ -355,7 +351,6 @@ class ReadVariable:
             var_index:  1-based variable index.
             var_names:  All variable names for the dataset.
             byte_order:         NumPy byte-order prefix (``"<"`` or ``">"``).
-
         """
         self._file_path = file_path
         self._meta = zone_meta
@@ -447,7 +442,6 @@ class ReadVariable:
 
         Raises:
             ValueError: On invalid *value_range*.
-
         """
         if self.is_passive() or self.shared_zone is not None:
             return None
@@ -622,10 +616,8 @@ class ReadZone:
     def __getattr__(self, name: str) -> Any:
         """Dynamic attribute access for variable names.
 
-        Example::
-
+        Example:
             zone.pressure  # returns NumPy array for variable "Pressure"
-
         """
         for var in self.variable:
             if var.name.lower() == name.lower():
@@ -686,14 +678,17 @@ class _PltParser:
     Called once from :class:`Read.__init__`.  After construction the
     following attributes are available:
 
-    * ``title`` — dataset title string
-    * ``file_type`` — :class:`FileType` enum
-    * ``var_names`` — list of variable name strings
-    * ``zones`` — list of :class:`_ZoneMeta` objects
-    * ``dataset_auxdata`` — ``{name: value}``
-    * ``var_auxdata`` — ``{var_index_0based: {name: value}}``
-    * ``byte_order`` — byte-order prefix for NumPy (``"<"`` or ``">"`)
-
+        ===================   ===============================================
+        Attribute             Description
+        ===================   ===============================================
+        ``title``             dataset title string
+        ``file_type``         :class:`FileType` enum
+        ``var_names``         list of variable name strings
+        ``zones``             list of :class:`_ZoneMeta` objects
+        ``dataset_auxdata``   ``{name: value}``
+        ``var_auxdata``       ``{var_index_0based: {name: value}}``
+        ``byte_order``         byte-order prefix for NumPy (``"<"`` or ``">"`)
+        ===================   ===============================================
     """
 
     def __init__(self, file_path: str | os.PathLike) -> None:
@@ -1198,17 +1193,15 @@ class Read:
     Raises:
         PltReadError: If the file cannot be parsed as a valid PLT binary.
 
-    Example::
+    Example:
+        from tecio import plt
 
-        import pltread
-
-        r = pltread.Read("flow.plt")
+        r = plt.Read("flow.plt")
         print(r.title)
         print(r.num_vars)
 
         zone = r.zone[0]
         pressure = zone.variable[2].values  # NumPy array, read from disk now
-
     """
 
     def __init__(self, file_name: str | os.PathLike) -> None:
@@ -1310,7 +1303,6 @@ class Read:
 
         Raises:
             IndexError: If *var_index* is outside ``[1, num_vars]``.
-
         """
         if var_index < 1 or var_index > self.num_vars:
             raise IndexError(
@@ -1323,7 +1315,6 @@ class Read:
 
         Raises:
             IndexError: If *zone_index* is outside ``[1, num_zones]``.
-
         """
         if zone_index < 1 or zone_index > self.num_zones:
             raise IndexError(

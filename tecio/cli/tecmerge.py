@@ -4,19 +4,17 @@ r"""Command line interface to merge zones from multiple Tecplot files into one.
 Input files may be any mix of supported formats (.szplt, .plt, .dat).  The
 output format is controlled by the ``-o`` extension.
 
-Variable reconciliation
------------------------
-All input files must share at least one common variable name.  The output
-variable list is the union of all variable names found across all files,
-preserving the order in which names are first encountered.  For any zone
-where a variable from the union list was not present in the source file, that
-variable is written as **passive**.
+Variable reconciliation:
+    All input files must share at least one common variable name.  The output
+    variable list is the union of all variable names found across all files,
+    preserving the order in which names are first encountered.  For any zone
+    where a variable from the union list was not present in the source file, that
+    variable is written as **passive**.
 
-Time / strand assignment (``--assign-time-strands``)
------------------------------------------------------
-When ``--assign-time-strands`` is given, all zones written to the output are
-assigned a strand ID and evenly-spaced solution times.  Each *input file*
-maps to one time step; zones within a file all receive that file's time value.
+Time / strand assignment (``--assign-time-strands``):
+    When ``--assign-time-strands`` is given, all zones written to the output are
+    assigned a strand ID and evenly-spaced solution times.  Each *input file*
+    maps to one time step; zones within a file all receive that file's time value.
 
 Required sub-options:
 

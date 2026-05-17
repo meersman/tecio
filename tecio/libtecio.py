@@ -380,7 +380,6 @@ def _prepare_array_for_ctypes(
     - Caller should keep the returned backing_array alive until the native call
       completes.
     - This function enforces dtype and C-contiguity.
-
     """
     arr = np.ascontiguousarray(values, dtype=np_dtype)
     count = int(arr.size)
@@ -1064,7 +1063,6 @@ def tec_file_reader_open(file_name: str) -> ctypes.c_void_p:
 
     Raises:
         TecioError: If the file cannot be opened.
-
     """
     handle = ctypes.c_void_p(0)
 
@@ -1088,7 +1086,6 @@ def tec_file_reader_close(handle: ctypes.c_void_p) -> None:
 
     Raises:
         TecioError: On C library error.
-
     """
     ret = lib.tecFileReaderClose(ctypes.byref(handle))
     if ret != 0:
@@ -1108,7 +1105,6 @@ def tec_file_get_type(handle: ctypes.c_void_p) -> FileType:
 
     Raises:
         TecioError: On C library error.
-
     """
     file_type = ctypes.c_int32(0)
 
@@ -1130,7 +1126,6 @@ def tec_data_set_get_title(handle: ctypes.c_void_p) -> str:
 
     Raises:
         TecioError: On C library error.
-
     """
     title = ctypes.c_char_p(0)
 
@@ -1154,7 +1149,6 @@ def tec_data_set_get_num_vars(handle: ctypes.c_void_p) -> int:
 
     Raises:
         TecioError: On C library error.
-
     """
     num_vars = ctypes.c_int32(0)
 
@@ -1178,7 +1172,6 @@ def tec_data_set_get_num_zones(handle: ctypes.c_void_p) -> int:
 
     Raises:
         TecioError: On C library error.
-
     """
     num_zones = ctypes.c_int32(0)
 
@@ -1205,7 +1198,6 @@ def tec_zone_get_ijk(handle: ctypes.c_void_p, zone_index: int) -> tuple[int, int
 
     Raises:
         TecioError: On C library error.
-
     """
     imax = ctypes.c_int64(0)
     jmax = ctypes.c_int64(0)
@@ -1239,7 +1231,6 @@ def tec_zone_get_title(handle: ctypes.c_void_p, zone_index: int) -> str:
 
     Raises:
         TecioError: On C library error.
-
     """
     zone_title = ctypes.c_char_p(0)
 
@@ -1267,7 +1258,6 @@ def tec_zone_get_type(handle: ctypes.c_void_p, zone_index: int) -> ZoneType:
 
     Raises:
         TecioError: On C library error.
-
     """
     zone_type = ctypes.c_int32(0)
 
@@ -1295,7 +1285,6 @@ def tec_zone_is_enabled(handle: ctypes.c_void_p, zone_index: int) -> bool:
 
     Raises:
         TecioError: On C library error.
-
     """
     is_enabled = ctypes.c_int32(0)
 
@@ -1323,7 +1312,6 @@ def tec_zone_get_solution_time(handle: ctypes.c_void_p, zone_index: int) -> floa
 
     Raises:
         TecioError: On C library error.
-
     """
     solution_time = ctypes.c_double(0)
 
@@ -1353,7 +1341,6 @@ def tec_zone_get_strand_id(handle: ctypes.c_void_p, zone_index: int) -> int:
 
     Raises:
         TecioError: On C library error.
-
     """
     strand_id = ctypes.c_int32(0)
 
@@ -1381,7 +1368,6 @@ def is_64bit(handle: ctypes.c_void_p, zone_index: int) -> bool:
 
     Raises:
         TecioError: On C library error.
-
     """
     is64bit = ctypes.c_int32(0)
     ret = lib.tecZoneNodeMapIs64Bit(
@@ -1415,7 +1401,6 @@ def tec_zone_node_map_get_64(
 
     Raises:
         TecioError: On C library error.
-
     """
     size_of_array = num_elements * nodes_per_cell
     nodemap = (ctypes.c_int64 * size_of_array)()
@@ -1459,7 +1444,6 @@ def tec_zone_node_map_get(
 
     Raises:
         TecioError: On C library error.
-
     """
     size_of_array = num_elements * nodes_per_cell
     nodemap = (ctypes.c_int32 * size_of_array)()
@@ -1497,7 +1481,6 @@ def tec_var_get_name(handle: ctypes.c_void_p, var_index: int) -> str:
 
     Raises:
         TecioError: On C library error.
-
     """
     var_name = ctypes.c_char_p(0)
 
@@ -1523,7 +1506,6 @@ def tec_var_is_enabled(handle: ctypes.c_void_p, var_index: int) -> bool:
 
     Raises:
         TecioError: On C library error.
-
     """
     is_enabled = ctypes.c_int32(0)
 
@@ -1554,7 +1536,6 @@ def tec_zone_var_get_type(
 
     Raises:
         TecioError: On C library error.
-
     """
     var_type = ctypes.c_int32(0)
 
@@ -1588,7 +1569,6 @@ def tec_zone_var_get_value_location(
 
     Raises:
         TecioError: On C library error.
-
     """
     value_location = ctypes.c_int32(0)
 
@@ -1622,7 +1602,6 @@ def tec_zone_var_is_passive(
 
     Raises:
         TecioError: On C library error.
-
     """
     is_passive = ctypes.c_int32(0)
 
@@ -1656,7 +1635,6 @@ def tec_zone_var_get_shared_zone(
 
     Raises:
         TecioError: On C library error.
-
     """
     shared_zone = ctypes.c_int32(0)
 
@@ -1690,7 +1668,6 @@ def tec_zone_var_get_num_values(
 
     Raises:
         TecioError: On C library error.
-
     """
     num_values = ctypes.c_int32(0)
 
@@ -1730,7 +1707,6 @@ def tec_zone_var_get_float_values(
 
     Raises:
         TecioError: On C library error.
-
     """
     values = (ctypes.c_float * num_values)()
 
@@ -1776,7 +1752,6 @@ def tec_zone_var_get_double_values(
 
     Raises:
         TecioError: On C library error.
-
     """
     values = (ctypes.c_double * num_values)()
 
@@ -1822,7 +1797,6 @@ def tec_zone_var_get_int32_values(
 
     Raises:
         TecioError: On C library error.
-
     """
     values = (ctypes.c_int32 * num_values)()
 
@@ -1868,7 +1842,6 @@ def tec_zone_var_get_int16_values(
 
     Raises:
         TecioError: On C library error.
-
     """
     values = (ctypes.c_int16 * num_values)()
 
@@ -1914,7 +1887,6 @@ def tec_zone_var_get_uint8_values(
 
     Raises:
         TecioError: On C library error.
-
     """
     values = (ctypes.c_uint8 * num_values)()
 
@@ -1951,7 +1923,6 @@ def tec_data_set_aux_data_get_num_items(handle: ctypes.c_void_p) -> int:
 
     Raises:
         TecioError: On C library error.
-
     """
     num_auxdata_items = ctypes.c_int32(0)
 
@@ -1978,7 +1949,6 @@ def tec_data_set_aux_data_get_item(
 
     Raises:
         TecioError: On C library error.
-
     """
     name = ctypes.c_char_p(0)
     value = ctypes.c_char_p(0)
@@ -2010,7 +1980,6 @@ def tec_var_aux_data_get_num_items(handle: ctypes.c_void_p, var_index: int) -> i
 
     Raises:
         TecioError: On C library error.
-
     """
     num_items = ctypes.c_int32(0)
 
@@ -2041,7 +2010,6 @@ def tec_var_aux_data_get_item(
 
     Raises:
         TecioError: On C library error.
-
     """
     name = ctypes.c_char_p(0)
     value = ctypes.c_char_p(0)
@@ -2074,7 +2042,6 @@ def tec_zone_aux_data_get_num_items(handle: ctypes.c_void_p, zone_index: int) ->
 
     Raises:
         TecioError: On C library error.
-
     """
     num_items = ctypes.c_int32(0)
 
@@ -2105,7 +2072,6 @@ def tec_zone_aux_data_get_item(
 
     Raises:
         TecioError: On C library error.
-
     """
     name = ctypes.c_char_p(0)
     value = ctypes.c_char_p(0)
@@ -2165,7 +2131,6 @@ def tec_file_writer_open(
 
     Raises:
         TecioError: On C library error.
-
     """
     if not isinstance(file_type, FileType):
         raise TypeError("file_type must be a libtecio.FileType enum")
@@ -2201,7 +2166,6 @@ def tec_file_writer_close(handle: ctypes.c_void_p) -> None:
 
     Raises:
         TecioError: On C library error.
-
     """
     ret = lib.tecFileWriterClose(ctypes.byref(handle))
     if ret != 0:
@@ -2251,7 +2215,6 @@ def tec_zone_create_ijk(
 
     Raises:
         TecioError: On C library error.
-
     """
     zone_out = ctypes.c_int32()
 
@@ -2349,7 +2312,6 @@ def tec_zone_create_fe(
 
     Raises:
         TecioError: On C library error.
-
     """
     zone_out = ctypes.c_int32()
 
@@ -2418,7 +2380,6 @@ def tec_zone_set_unsteady_options(
 
     Raises:
         TecioError: On C library error.
-
     """
     ret = lib.tecZoneSetUnsteadyOptions(
         handle,
@@ -2447,7 +2408,6 @@ def tec_data_set_add_aux_data(
 
     Raises:
         TecioError: On C library error.
-
     """
     ret = lib.tecDataSetAddAuxData(
         handle,
@@ -2477,7 +2437,6 @@ def tec_var_add_aux_data(
 
     Raises:
         TecioError: On C library error.
-
     """
     ret = lib.tecVarAddAuxData(
         handle,
@@ -2508,7 +2467,6 @@ def tec_zone_add_aux_data(
 
     Raises:
         TecioError: On C library error.
-
     """
     ret = lib.tecZoneAddAuxData(
         handle,
@@ -2537,7 +2495,6 @@ def tec_zone_var_write_double_values(
 
     Raises:
         TecioError: On C library error.
-
     """
     ptr, count, _backing = _prepare_array_for_ctypes(
         values, np.float64, ctypes.c_double
@@ -2571,7 +2528,6 @@ def tec_zone_var_write_float_values(
 
     Raises:
         TecioError: On C library error.
-
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.float32, ctypes.c_float)
 
@@ -2603,7 +2559,6 @@ def tec_zone_var_write_int32_values(
 
     Raises:
         TecioError: On C library error.
-
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.int32, ctypes.c_int32)
 
@@ -2635,7 +2590,6 @@ def tec_zone_var_write_int16_values(
 
     Raises:
         TecioError: On C library error.
-
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.int16, ctypes.c_int16)
 
@@ -2667,7 +2621,6 @@ def tec_zone_var_write_uint8_values(
 
     Raises:
         TecioError: On C library error.
-
     """
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.uint8, ctypes.c_uint8)
 
@@ -2706,12 +2659,15 @@ def tec_zone_node_map_write32(
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - Use for zones with fewer than ~2 billion node map entries.
-        - Can be called multiple times per zone; total entries must match zone
-          definition.
-        - Node indices are 1-based by convention in Tecplot.
+    Note:
+        Use for zones with fewer than ~2 billion node map entries.
 
+    Note:
+        Can be called multiple times per zone; total entries must match zone
+        definition.
+
+    Note:
+        Node indices are 1-based by convention in Tecplot.
     """
     ptr, count, _backing = _prepare_array_for_ctypes(nodes, np.int32, ctypes.c_int32)
 
@@ -2749,12 +2705,15 @@ def tec_zone_node_map_write64(
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - Use for zones with more than ~2 billion node map entries.
-        - Can be called multiple times per zone; total entries must match zone
-          definition.
-        - Node indices are 1-based by convention in Tecplot.
+    Note:
+        Use for zones with fewer than ~2 billion node map entries.
 
+    Note:
+        Can be called multiple times per zone; total entries must match zone
+        definition.
+
+    Note:
+        Node indices are 1-based by convention in Tecplot.
     """
     ptr, count, _backing = _prepare_array_for_ctypes(nodes, np.int64, ctypes.c_int64)
 
@@ -2789,15 +2748,20 @@ def tec_zone_face_nbr_write_connections32(
         TecioError: On C library error.
 
     Notes:
-        - num_face_cons and face_nbr_mode must be set when creating the zone via
-          tec_zone_create_ijk or tec_zone_create_fe.
-        - Use for zones with fewer than ~2 billion face neighbor entries.
-        - Can be called multiple times; total entries must match num_face_cons
-          declared at zone creation.
-        - Face neighbors have expensive performance implications. Use face neighbors
-          only to manually specify connections that are not defined via the connectivity
-          list.
+        ``num_face_cons`` and ``face_nbr_mode`` must be set when creating the zone via
+        :func:`tec_zone_create_ijk` or :func:`tec_zone_create_fe`.
 
+    Note:
+        Use for zones with fewer than ~2 billion face neighbor entries.
+
+    Note:
+        Can be called multiple times. Total entries must match num_face_cons
+        declared at zone creation.
+
+    Note:
+        Face neighbors have expensive performance implications. Use face neighbors
+        only to manually specify connections that are not defined via the connectivity
+        list.
     """
     ptr, count, _backing = _prepare_array_for_ctypes(
         face_neighbors, np.int32, ctypes.c_int32
@@ -2830,15 +2794,20 @@ def tec_zone_face_nbr_write_connections64(
         TecioError: On C library error.
 
     Notes:
-        - num_face_cons and face_nbr_mode must be set when creating the zone via
-          tec_zone_create_ijk or tec_zone_create_fe.
-        - Use for zones with more than ~2 billion face neighbor entries.
-        - Can be called multiple times; total entries must match num_face_cons
-          declared at zone creation.
-        - Face neighbors have expensive performance implications. Use face neighbors
-          only to manually specify connections that are not defined via the connectivity
-          list.
+        ``num_face_cons`` and ``face_nbr_mode`` must be set when creating the zone via
+        :func:`tec_zone_create_ijk` or :func:`tec_zone_create_fe`.
 
+    Note:
+        Use for zones with more than ~2 billion face neighbor entries.
+
+    Note:
+        Can be called multiple times. Total entries must match num_face_cons
+        declared at zone creation.
+
+    Note:
+        Face neighbors have expensive performance implications. Use face neighbors
+        only to manually specify connections that are not defined via the connectivity
+        list.
     """
     ptr, count, _backing = _prepare_array_for_ctypes(
         face_neighbors, np.int64, ctypes.c_int64
@@ -2897,10 +2866,11 @@ def tecini142(
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - Must be called before any zone or data operations
-        - Call tecend142() to finalize the file
+    Note:
+        Must be called before any zone or data operations
 
+    Note:
+        Call :func:`tecend142()` to finalize the file
     """
     if not isinstance(file_type, FileType):
         raise TypeError("file_type must be a libtecio.FileType enum")
@@ -2931,10 +2901,11 @@ def tecend142() -> None:
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - Must be called after all data has been written
-        - Flushes all pending data and closes the file
+    Note:
+        Must be called after all data has been written
 
+    Note:
+        Flushes all pending data and closes the file
     """
     ret = lib.tecend142()
     if ret != 0:
@@ -2954,11 +2925,14 @@ def tecflush142(
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - SZL ONLY!
-        - Used to reduce memory usage for large files
-        - Retained zones can still be modified
+    Important:
+        SZL Only!
 
+    Note:
+        Used to reduce memory usage for large files.
+
+    Note:
+        Retained zones can still be modified.
     """
     num_zones_c = ctypes.c_int32(num_zones_to_retain)
 
@@ -2986,9 +2960,8 @@ def tecfil142() -> int:
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - Used for advanced file operations
-
+    Note:
+        Used for advanced file operations.
     """
     output_file_handle = ctypes.c_int32(0)
 
@@ -3007,7 +2980,6 @@ def tecforeign142(output_foreign_byte_order: int) -> None:
 
     Raises:
         TecioError: On C library error.
-
     """
     foreign_c = ctypes.c_int32(output_foreign_byte_order)
 
@@ -3068,11 +3040,12 @@ def teczne142(
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - For ORDERED zones: imx, jmx, kmx are dimensions
-        - For FE zones: imax=NumNodes, jmax=NumElements, kmax=0 (unless higher order
-          element)
+    Hint:
+        For ORDERED zones: imx, jmx, kmx are dimensions.
 
+    Note:
+        For FE zones: imax=NumNodes, jmax=NumElements, kmax=0 (unless higher order
+        element)
     """
     # Create C array for passive variable flags
     pas_vars_ptr = None
@@ -3164,7 +3137,6 @@ def tecpolyzne142(
 
     Raises:
         TecioError: On C library error.
-
     """
     # Create C array for passive variable flags
     pas_vars_ptr = None
@@ -3250,7 +3222,6 @@ def tecznefemixed142(
 
     Raises:
         TecioError: On C library error.
-
     """
     num_nodes_c = ctypes.c_int32(num_nodes)
     num_elements_c = ctypes.c_int32(num_elements)
@@ -3321,15 +3292,20 @@ def tecdat142(
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - Data must be written in the order specified by dataset variables and zone
-          definition
-        - If variable is shared or passive, skip writing data for that variable
-        - For ORDERED zones: data should be ordered with the I dimension varying
-          fastest, then J, then K
-        - For FE zones: data should be ordered by node index for nodal variables, and by
-          element index for cell-centered variables
+    Important:
+        Data must be written in the order specified by dataset variables and zone
+        definition
 
+    Hint:
+        If variable is shared or passive, skip writing data for that variable
+
+    Note:
+        For ORDERED zones: data should be ordered with the I dimension varying
+        fastest, then J, then K
+
+    Note:
+        For FE zones: data should be ordered by node index for nodal variables, and by
+        element index for cell-centered variables
     """
     # Convert to appropriate numpy array
     if is_double:
@@ -3362,12 +3338,12 @@ def tecnode142(nodes: npt.ArrayLike) -> None:
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - Node indices are 1-based (Fortran convention)
-        - For FEBRICK elements: 8 nodes per element
-        - For FETETRAHEDRON elements: 4 nodes per element
-        - etc.
+    Important:
+        Node indices are 1-based (Fortran convention)
 
+    Hint:
+        - For FEBRICK elements: 8 nodes per element.
+        - For FETETRAHEDRON elements: 4 nodes per element.
     """
     nodes_array = np.ascontiguousarray(nodes, dtype=np.int32)
     n = ctypes.c_int32(nodes_array.size)
@@ -3392,9 +3368,8 @@ def tecface142(face_connections: npt.ArrayLike) -> None:
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - Used to specify face-to-face connectivity between zones
-
+    Note:
+        Used to specify face-to-face connectivity between zones.
     """
     face_conn_array = np.ascontiguousarray(face_connections, dtype=np.int32)
     face_conn_ptr = face_conn_array.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
@@ -3421,11 +3396,14 @@ def tecpolyface142(
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - face_node_counts has one entry per face
-        - face_nodes is concatenated list of all face node indices
-        - Element indices are 1-based; 0 indicates boundary
+    Note:
+        ``face_node_counts`` has one entry per face.
 
+    Note:
+        ``face_nodes`` is a concatenated list of all face node indices.
+
+    Hint:
+        Element indices are 1-based; 0 indicates boundary.
     """
     face_node_counts_array = np.ascontiguousarray(face_node_counts, dtype=np.int32)
     face_nodes_array = np.ascontiguousarray(face_nodes, dtype=np.int32)
@@ -3474,9 +3452,8 @@ def tecpolybconn142(
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - Used to specify connectivity to neighboring zones at boundaries
-
+    Note:
+        Used to specify connectivity to neighboring zones at boundaries.
     """
     bconn_counts_array = np.ascontiguousarray(
         boundary_connection_counts, dtype=np.int32
@@ -3521,9 +3498,8 @@ def tecauxstr142(name: str, value: str) -> None:
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - Must be called after ``tecini142`` but before first ``teczne142``.
-
+    Note:
+        Must be called after ``tecini142`` but before first ``teczne142``.
     """
     ret = lib.tecauxstr142(
         ctypes.c_char_p(name.encode("utf-8")),
@@ -3546,9 +3522,8 @@ def tecvauxstr142(var: int, name: str, value: str) -> None:
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - Must be called after ``tecini142`` but before first ``teczne142``.
-
+    Note:
+        Must be called after ``tecini142`` but before first ``teczne142``.
     """
     var_c = ctypes.c_int32(var)
 
@@ -3574,9 +3549,8 @@ def teczauxstr142(name: str, value: str) -> None:
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - Must be called after ``teczne142`` for the current zone
-
+    Note:
+        Must be called after ``teczne142`` for the current zone.
     """
     ret = lib.teczauxstr142(
         ctypes.c_char_p(name.encode("utf-8")),
@@ -3598,10 +3572,9 @@ def tecusr142(user_rec: str) -> None:
     Raises:
         TecioError: On C library error.
 
-    Notes:
-        - Used to write custom data records into the file
-        - Data is preserved but not interpreted by Tecplot
-
+    Note:
+        Used to write custom data records into the file.
+        Data is preserved but not interpreted by Tecplot
     """
     ret = lib.tecusr142(ctypes.c_char_p(user_rec.encode("utf-8")))
     if ret != 0:

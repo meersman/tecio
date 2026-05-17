@@ -17,7 +17,6 @@ Notes:
             - if var list already defined for whole dataset, do not require, but if not
               defined, throw error
     - write_fe_zone():
-
 """
 
 from __future__ import annotations
@@ -107,7 +106,6 @@ class Write:
         current_zone: 1-based index of the most recently created zone.
         auxdataset: Buffered dataset-level auxiliary data.
         auxvar: Buffered variable-level auxiliary data.
-
     """
 
     # Class-level annotations so autodoc can discover instance attributes.
@@ -296,15 +294,17 @@ class Write:
             strand_id: Strand ID for transient data.  Use ``0`` for static zones.
             aux: Zone-level auxiliary data as ``{name: value}`` string pairs.
 
-        Notes:
+        Note:
             If the file is already open, ``data`` and ``variables`` may be
             omitted to write a zone header only.  If the file has not been
             opened yet, ``variables`` must be provided on this call.
 
+        Note:
             Data arrays are written as DOUBLE precision by default.  To write
             other types, cast the NumPy arrays before calling (e.g.
             ``arr.astype(np.float32)``).
 
+        Note:
             Separate grid files (where all variables are cell-centred) are not
             handled automatically; use the low-level API for that case.
         """
@@ -531,12 +531,11 @@ class Write:
             NotImplementedError: For FEPOLYGON or FEPOLYHEDRON zones.
             ValueError: On variable count or array length mismatch.
 
-        Notes:
+        Note:
             FE variable arrays are 1-D and node-ordered — no axis-ordering
             considerations apply (unlike IJK zones).  ``write_data`` handles
             dtype inference and F-order ravel internally; 1-D arrays are
             unaffected by memory order.
-
         """
         if zone_type not in _FE_SIMPLE:
             raise NotImplementedError(
@@ -708,11 +707,10 @@ def write_data(
         dt (np.dtype | DataType | None): Optional explicit data type override.
 
     Output defaults:
-    1. Inferrs data_typeype for nummpy arrays
-    2. Defaults to double precision for array-like (list, tuple, etc)
-    3. Optionally casts to input DataType or numpy dtype.
-    4. Assumes data is in the correct shape and order (column major / Fortran order)
-
+        1. Inferrs data_typeype for nummpy arrays
+        2. Defaults to double precision for array-like (list, tuple, etc)
+        3. Optionally casts to input DataType or numpy dtype.
+        4. Assumes data is in the correct shape and order (column major / Fortran order)
     """
     # Mappings between C-supported data types and numpy dtypes
     dtype_to_datatype: dict[np.dtype, DataType] = {
@@ -771,15 +769,15 @@ def write_connectivity(
         face_neighbors (npt.ArrayLike | None): Optional face-neighbor
             connection array.
 
-    Notes:
+    Note:
         Both arrays are written using the minimum integer width capable of
         representing the maximum index value present in each array.  No copy
         is made for C-contiguous input arrays — ravel(order="C") returns a flat
         view of the node_map or face_neighbors without making a copy
 
+    Note:
         Node and face-neighbor integer widths are chosen independently based
         on the maximum value in each respective array.
-
     """
     # Node map
     node_map_flat = np.ascontiguousarray(node_map).ravel(order="C")
@@ -811,9 +809,8 @@ def write_zone_aux_data(
         aux (dict[int, dict[str, Any]]): Mapping of
             ``{zone_index: {name: value}}``.
 
-    Notes:
+    Note:
         Aux data should be structured as {zone_idx: {name, value}}
-
     """
     for zone_idx, subdict in aux.items():
         for name, value in subdict.items():
@@ -830,9 +827,8 @@ def write_variable_aux_data(
         aux (dict[int, dict[str, Any]]): Mapping of
             ``{var_index: {name: value}}``.
 
-    Notes:
-        Aux data should be structured as {var_idx: {name, value}}
-
+    Hint:
+        Aux data should be structured as ``{var_idx: {name, value}}``
     """
     for var_idx, subdict in aux.items():
         for name, value in subdict.items():
@@ -846,9 +842,8 @@ def write_dataset_aux_data(handle: ctypes.c_void_p, aux: dict[str, Any]) -> None
         handle (ctypes.c_void_p): C library file handle.
         aux (dict[str, Any]): Mapping of ``{name: value}``.
 
-    Notes:
-        Aux data should be structured as {var_idx: {name, value}}
-
+    Hint:
+        Aux data should be structured as ``{var_idx: {name, value}}``
     """
     for name, value in aux.items():
         libtecio.tec_data_set_add_aux_data(handle, str(name), str(value))
@@ -864,25 +859,22 @@ def write_aux_data(handle: ctypes.c_void_p, aux: dict[str, dict[Any]]) -> None:
             nested structure.
 
     Example:
-    ```
-    {
-        "AUXDATASET":
-            {name1: value1}
-            {name2: value2}
-        "AUXVAR": {
-                    1:
-                       {name1: value1}
-                    2:
-                       {name1: value1}
-                },
-        "AUXZONE": {
-                    1:
-                        {name1: value1}
-                        {name2: value2}
-                }
-    }
-    ```
-
+        {
+            "AUXDATASET":
+                {name1: value1}
+                {name2: value2}
+            "AUXVAR": {
+                        1:
+                           {name1: value1}
+                        2:
+                           {name1: value1}
+                    },
+            "AUXZONE": {
+                        1:
+                            {name1: value1}
+                            {name2: value2}
+                    }
+        }
     """
     for auxtype, auxdict in aux.items():
         if auxtype.lower() == "auxdata":

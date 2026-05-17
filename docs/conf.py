@@ -47,18 +47,9 @@ napoleon_use_admonition_for_notes = True
 
 autodoc_default_options = {
     "show-inheritance": True,
-    # "bysource" requires accurate __module__ for source lookup; our __module__
-    # overrides (e.g. Write.__module__ = "tecio.szl") point to __init__.py,
-    # not the actual _write.py, so bysource silently fails.  Use alphabetical.
-    "member-order": "alphabetical",
+    "member-order": "bysource",
 }
 
-# "description" calls typing.get_type_hints() on every member.  With our
-# __module__ overrides, get_type_hints() evaluates annotations against
-# __init__.py's namespace, which does not import ValueLocation, Sequence,
-# npt, Any, etc.  This raises NameError and Sphinx silently skips the member.
-# "none" bypasses get_type_hints() entirely.  Types are still documented via
-# Napoleon's Args/Returns sections from the Google-style docstrings.
 autodoc_typehints = "none"
 autodoc_class_signature = "separated"
 

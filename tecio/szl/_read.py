@@ -5,7 +5,6 @@ read lazily when :attr:`ReadVariable.values` is accessed.
 
 Todo:
     Fix ReadAuxData to separate out dataset, variable, and zone aux data functions
-
 """
 
 from __future__ import annotations
@@ -31,7 +30,6 @@ class Read:
 
     Args:
         file_name: Path to the ``.szplt`` file.
-
     """
 
     def __init__(self, file_name):
@@ -117,7 +115,6 @@ class Read:
 
         Raises:
             IndexError: If *var_index* is out of range.
-
         """
         if var_index < 1 or var_index > self.num_vars:
             raise IndexError(
@@ -239,7 +236,6 @@ class ReadZone:
 
         Raises:
             ValueError: If ZoneType not known.
-
         """
         if self.zone_type == ZoneType.FELINESEG:
             return 2
@@ -275,7 +271,6 @@ class ReadZone:
 
         Returns:
             (n x m) node map array for n-cells and m-nodes per cell.
-
         """
         is64bit = libtecio.is_64bit(self._handle, self.zone_index)
         if self.zone_type == ZoneType.ORDERED:
@@ -314,7 +309,6 @@ class ReadVariable:
         _handle (ctypes.c_void_p): C library file handle.
         zone_index (int): 1-based zone index.
         var_index (int): 1-based variable index.
-
     """
 
     _handle: ctypes.c_void_p
@@ -406,7 +400,6 @@ class ReadVariable:
 
         Raises:
             ValueError: If only one of start/end is specified.
-
         """
         # First check if variable is passive or shared (no data to return)
         if self.is_passive() or (self.shared_zone is not None):
@@ -483,7 +476,6 @@ class ReadAuxData:
         aux_type (str): One of ``'dataset'``, ``'var'``, or ``'zone'``.
         index (int | None): 1-based variable or zone index (not needed
             for dataset).
-
     """
 
     def __init__(
@@ -498,7 +490,6 @@ class ReadAuxData:
             handle: File handle C pointer
             aux_type: Type of auxiliary data ('dataset', 'var', or 'zone')
             index: Variable or zone index (1-based), not needed for dataset
-
         """
         self._handle = handle
         self._aux_type = aux_type
@@ -594,7 +585,6 @@ class ReadAuxData:
 
         Returns:
             Integer value or default
-
         """
         try:
             return int(self[key])
@@ -610,7 +600,6 @@ class ReadAuxData:
 
         Returns:
             Float value or default
-
         """
         try:
             return float(self[key])
@@ -630,7 +619,6 @@ class ReadAuxData:
 
         Returns:
             Boolean value or default
-
         """
         try:
             value = self[key].lower().strip()

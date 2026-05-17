@@ -1,4 +1,4 @@
-"""Command line interface to fix Tecplot files that contain NaN or Inf values.
+"""Command line interface to fix Tecplot files that contain ``NaN`` or ``Inf`` values.
 
 For each zone, any variable whose array contains ``NaN`` or ``Inf`` is marked
 **passive** in the output file.  A zone-level auxiliary data record is also
@@ -24,16 +24,14 @@ Example usage::
     # Overwrite an existing output file
     $ tecfix --force flow.szplt
 
-Notes
------
-- Only floating-point variables (``FLOAT`` and ``DOUBLE``) are inspected;
-  integer variables cannot represent NaN / Inf and are always copied as-is.
-- Variables that are already passive or shared in the source file are
-  forwarded unchanged (they remain passive / shared).
-- If a zone has no bad variables its aux data is not modified beyond what
-  was already present in the source file.
-- The output format matches the input format (extension is preserved).
-
+Note:
+    - Only floating-point variables (``FLOAT`` and ``DOUBLE``) are inspected;
+      integer variables cannot represent NaN / Inf and are always copied as-is.
+    - Variables that are already passive or shared in the source file are
+      forwarded unchanged (they remain passive / shared).
+    - If a zone has no bad variables its aux data is not modified beyond what
+      was already present in the source file.
+    - The output format matches the input format (extension is preserved).
 """
 
 from __future__ import annotations
