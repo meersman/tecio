@@ -1,10 +1,10 @@
 # tecio
 
-Python interface for reading and writing Tecplot data files.
+A Python interface for reading and writing Tecplot data files.
 
 This package wraps Tecplot's TecIO C library for reading and writing
-binary SZL (`.szplt`) and PLT (`.plt`) formats as well as providing
-read/write utilities for ASCII DAT (`.dat`) files.
+binary SZL (`.szplt`) and PLT (`.plt`, `.bin`) formats as well as
+providing read/write utilities for ASCII DAT (`.dat`, `.tec`) files.
 
 The Tecplot data format is organised around *zones*, a flexible object
 that can represent a structured or unstructured block, subdomain, or
@@ -60,6 +60,7 @@ unstructured meshes.
        - [`dat.Read`](api/dat_read.md)
        - [`dat.Write`](api/dat_write.md)
      - [`tecio.libtecio`](api/libtecio.md) — low-level C library bindings and enums
+       - [Enums](api/libtecio_enums.md)
        - [SZL Read Functions](api/libtecio_szl_read.md)
        - [SZL Write Functions](api/libtecio_szl_write.md)
        - [Classic API Functions](api/libtecio_classic.md)
@@ -80,8 +81,8 @@ unstructured meshes.
 
 quickstart
 api/index
-api/submodules
 api/cli
+genindex
 ```
 
 ```{toctree}

@@ -33,5 +33,4 @@ plt
 dat
 libtecio
 utils
-cli
 ```

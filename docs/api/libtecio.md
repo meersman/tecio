@@ -4,18 +4,27 @@
 .. automodule:: tecio.libtecio
 ```
 
-Low-level Python wrappers around the TecIO C library. Most users interact
-with the higher-level :mod:`tecio.szl`, :mod:`tecio.plt`, and
-:mod:`tecio.dat` APIs.
+The {mod}`libtecio` module provides the direct interface with the
+TecIO C library functions. Each are wrapped in an equivalent Python
+function which also handles conversions from Python data objects to C
+compatible objects, and vis versa for the read functions.
+
+These are the basis of the {mod}`tecio` Python package, and each
+submodule provides a higher level interface with these
+functions. However, the the Python wrapper functions in this submodule
+are kept in the public API to allow users directly call the TecIO
+library if desired.
 
 ## Enums
+
+See {doc}`libtecio_enums` for full documentation.
 
 ```{eval-rst}
 .. currentmodule:: tecio.libtecio
 
 .. autosummary::
    :nosignatures:
-
+   
    FileFormat
    FileType
    ZoneType
@@ -27,6 +36,8 @@ with the higher-level :mod:`tecio.szl`, :mod:`tecio.plt`, and
    VarStatus
    Boolean
 ```
+
+
 
 ## Exceptions
 
@@ -140,6 +151,7 @@ See {doc}`libtecio_classic` for full documentation.
 ```{toctree}
 :hidden:
 
+libtecio_enums
 libtecio_szl_read
 libtecio_szl_write
 libtecio_classic

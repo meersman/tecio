@@ -1,8 +1,8 @@
 # Classic API Functions
 
-The classic ``tec*142`` API uses a single implicit global file context.
+The classic `tec*142` API uses a single implicit global file context.
 Only one file may be active at a time; call :func:`tecini142` to open it
-and :func:`tecend142` to close it. Both PLT and SZL formats are supported.
+and {func}`tecend142` to close it. Both PLT and SZL formats are supported.
 
 ```{eval-rst}
 .. currentmodule:: tecio.libtecio

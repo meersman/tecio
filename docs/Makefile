@@ -20,7 +20,7 @@ html:
 	@echo "Build finished. HTML pages are in $(BUILDDIR)/html."
 
 clean:
-	rm -rf $(BUILDDIR) _demos/ _autosummary/
+	rm -rf $(BUILDDIR) _demos/ _autosummary/ api/cli/
 
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS)

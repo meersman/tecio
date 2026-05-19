@@ -4,65 +4,17 @@
 .. automodule:: tecio.cli
 ```
 
-## tecdump
-
 ```{eval-rst}
-.. automodule:: tecio.cli.tecdump
-   :members: main
-```
+.. autosummary::
+   :toctree: cli
 
-## tecextract
-
-```{eval-rst}
-.. automodule:: tecio.cli.tecextract
-   :members: main
-```
-
-## tecfix
-
-```{eval-rst}
-.. automodule:: tecio.cli.tecfix
-   :members: main
-```
-
-## tecmerge
-
-```{eval-rst}
-.. automodule:: tecio.cli.tecmerge
-   :members: main
-```
-
-## teconvert
-
-```{eval-rst}
-.. automodule:: tecio.cli.teconvert
-   :members: main
-```
-
-## tecscale
-
-```{eval-rst}
-.. automodule:: tecio.cli.tecscale
-   :members: main
-```
-
-## tecslice
-
-```{eval-rst}
-.. automodule:: tecio.cli.tecslice
-   :members: main
-```
-
-## tecstats
-
-```{eval-rst}
-.. automodule:: tecio.cli.tecstats
-   :members: main
-```
-
-## tecsplit
-
-```{eval-rst}
-.. automodule:: tecio.cli.tecsplit
-   :members: main
+   tecio.cli.tecdump
+   tecio.cli.tecextract
+   tecio.cli.tecfix
+   tecio.cli.tecmerge
+   tecio.cli.teconvert
+   tecio.cli.tecscale
+   tecio.cli.tecslice
+   tecio.cli.tecstats
+   tecio.cli.tecsplit
 ```
