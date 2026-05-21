@@ -1,18 +1,19 @@
-"""Command-line interface tools for the :mod:`tecio` package.
+"""Command-line tools for common Tecplot data file operations.
 
-Each module in this subpackage implements a standalone console script that is
-registered as an entry point in ``pyproject.toml``.  After installation the
-scripts are available directly from the shell:
+Binary data formats such as ``.plt`` and ``.szplt`` are opaque to standard shell
+utilities, meaning any inspection or manipulation of their contents typically requires
+either dedicated post-processing software or a non-trivial amount of scripting.  For
+routine tasks encountered in CFD and related workflows, verifying zone extents,
+extracting a subset of variables, computing summary statistics, this overhead is
+disproportionate to the complexity of the task itself.
 
-.. code-block:: console
+The tools collected here address this by exposing the most common file-level operations
+as console scripts, executable directly from the terminal and composable with standard
+shell pipelines.  Each tool is intentionally narrow in scope: it does one thing and
+surfaces its result without requiring the user to open a GUI or write any Python.
 
-    $ tecdump flow.szplt
-    $ tecfix flow.szplt
-    $ tecslice -i ::2 -o thinned.szplt flow.szplt
-    $ tecplit --pop-all flow.szplt
-    $ tecmerge -o combined.szplt "step_*.szplt"
-    $ teconvert -dat flow.szplt
-    $ tecextract -zones 1,2 -o subset.szplt flow.szplt
-    $ tecscale -variable Pressure -scale 1e-3 flow.szplt
-    $ tecstat flow.szplt
+All scripts are installed automatically alongside the :mod:`tecio` package and are
+available on ``PATH`` immediately after installation.  Every tool accepts ``--help`` for
+a full description of its arguments.
+
 """

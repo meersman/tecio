@@ -1,7 +1,70 @@
-#!/usr/bin/env python3
-"""Command line interface to dump all contents of any Tecplot formatted data file.
+r"""Dump the full contents of a Tecplot data file to standard output.
 
-(like a super verbose szlpltview)
+Inspecting the contents of a binary Tecplot file (variable names, zone metadata,
+auxiliary data, and raw nodal or element values) ordinarily requires either opening the
+file in Tecplot itself or writing a dedicated script against the TecIO API.  For a quick
+sanity check during a simulation or post-processing workflow, ``tecdump`` serializes
+every record in the file to plain text, providing a complete and human-readable
+representation of the file contents directly in the terminal.  The output is structured
+hierarchically: file header and auxiliary data first, followed by per-zone headers and,
+optionally, the underlying variable and connectivity arrays.
+
+By default all zones and variables are printed. However, the scope can be narrowed to a
+single zone or variable using the ``-zone`` and ``-variable`` flags, or the variable
+arrays can be suppressed entirely to focus on structural metadata.
+
+:Positional Arguments:
+    ``filename``
+        Path to the Tecplot binary file (``.plt`` or ``.szplt``)
+        to inspect.
+
+:Options:
+    ``--ignore-zones``
+        Print only the file-level header and auxiliary data, then exit.  Zone records
+        and variable arrays are suppressed entirely. Useful for confirming file-level
+        metadata such as solver, strand IDs, or global auxiliary entries without the
+        overhead of parsing zone data.
+
+    ``--ignore-vars``
+        Print the file header and all zone headers, then exit. Variable arrays and
+        connectivity tables are suppressed. Use this to survey zone names, types, and
+        dimensions across a large file without printing any data.
+
+    ``-zone INDEX``
+        Restrict output to the zone at the given one-based index. All other zones are
+        skipped. If omitted, every zone is printed.
+
+    ``-variable INDEX``
+        Restrict variable array output to the variable at the given one-based index. All
+        other variable arrays are skipped. If omitted, every variable is printed.
+
+    ``-maxvals INT``
+        Maximum number of values to print from any variable or connectivity array before
+        truncating with a summary line.  Defaults to a small number suitable for a quick
+        preview; set to a large value (e.g. ``1000000``) to print an array in full.
+
+:Returns:
+    Output is written to standard output. Exit code is ``0`` on success and non-zero if
+    the file cannot be read or an invalid index is supplied.
+
+Examples:
+    Print the complete contents of a file, truncating long arrays at the default limit::
+
+        $ tecdump flow.plt
+
+    Print only file and zone headers with no variable data::
+
+        $ tecdump --ignore-vars flow.szplt
+
+    Inspect a single zone/variable combination in full::
+
+        $ tecdump -zone 1 -variable 3 -maxvals 1000000 flow.plt
+
+See Also:
+    * :mod:`tecio.cli.tecstats` - Compute per-zone min, max, and mean statistics without
+      printing raw values.
+    * :mod:`tecio.cli.tecfix`: Rewrite a file with invalid variable
+      arrays set to passive once bad values have been identified.
 """
 
 import argparse

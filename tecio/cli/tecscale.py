@@ -1,33 +1,81 @@
-"""Command line interface to scale and/or offset variables in a Tecplot file.
+r"""Scale and/or offset variable arrays in a Tecplot data file.
 
-Variables can be identified by 1-based index or by name.  The transformation
-applied to each selected value is::
+CFD solvers and experimental data sources frequently produce output in differing unit
+systems, and converting between them (e.g.pressure in Pa to kPa, temperature in Kelvin
+to Celsius or lengths in meters to feet) is a routine step before visualisation or
+comparison.  Performing these transformations would otherwise require loading the file
+in Tecplot or writing a dedicated script. ``tecscale`` applies the linear transformation
 
-    new_value = old_value * scale + offset
+.. math::
 
-Both ``-scale`` and ``-offset`` default to 1.0 and 0.0 respectively, so
-either can be omitted.  Use ``-zone`` to restrict the operation to a single
-zone; without it all zones are processed.
+    v' = v \cdot s + b
 
-The output file is written to ``<stem>_scaled<ext>`` unless ``-o`` is given.
-The output format is controlled by the ``-o`` extension, allowing format
-conversion at the same time.
+to every value in a selected variable array, where :math:`s` is the scale factor and
+:math:`b` is the additive offset.  The transformation can be restricted to a single zone
+and the output format is controlled by the output file extension, allowing unit
+conversion and format conversion to be performed in a single step.
 
-Example usage::
+:Positional Arguments:
+    ``filename``
+        Path to the input Tecplot binary file (``.plt`` or ``.szplt``) to transform.
 
-    # Convert pressure (var 4) from Pa to kPa across all zones
-    $ tecscale -variable 4 -scale 1e-3 flow.szplt
+:Options:
+    ``-variable INDEX_OR_NAME``
+        Variable to transform, specified as either a one-based integer index or a name
+        string (case-insensitive). Required.
 
-    # Same using variable name
-    $ tecscale -variable Pressure -scale 1e-3 flow.szplt
+    ``-scale FLOAT``
+        Multiplicative scale factor :math:`s`. Defaults to ``1.0``.
 
-    # Shift temperature by -273.15 (K -> degC), zone 2 only
-    $ tecscale -variable Temperature -offset -273.15 -zone 2 flow.szplt
+    ``-offset FLOAT``
+        Additive offset :math:`b` applied after scaling. Defaults to ``0.0``.
 
-    # Scale and offset, write to DAT
-    $ tecscale -variable 3 -scale 0.3048 -o flow_ft.dat flow.szplt
+    ``-zone INDEX``
+        One-based zone index to restrict the transformation to. If omitted, all zones
+        are processed.
+
+    ``-o, --output PATH``
+        Output file path. The extension controls the output format: ``.szplt``,
+        ``.plt``, or ``.dat``. Defaults to ``<stem>_scaled<ext>`` in the same directory
+        as the input file.
+
+    ``-f, --force``
+        Overwrite the output file if it already exists. Without this flag the command
+        exits with an error rather than silently clobbering an existing file.
+
+:Returns:
+    A new Tecplot file written to the output path with the selected variable transformed
+    in all processed zones. Exit code is ``0`` on success and non-zero if the input file
+    cannot be read, the variable cannot be resolved, or the output file already exists
+    and ``--force`` is not set.
+
+Examples:
+    Convert pressure from Pa to kPa by index::
+
+        $ tecscale -variable 4 -scale 1e-3 flow.szplt
+
+    Same conversion using the variable name::
+
+        $ tecscale -variable Pressure -scale 1e-3 flow.szplt
+
+    Shift temperature from Kelvin to Celsius in zone 2 only::
+
+        $ tecscale -variable Temperature -offset -273.15 -zone 2 flow.szplt
+
+    Scale and offset in one step, writing to ASCII DAT::
+
+        $ tecscale -variable 3 -scale 0.3048 flow.szplt -o flow_ft.dat
+
+    Call directly from a Python session::
+
+        import tecio.cli.tecscale.main as tecscale
+        tecscale(["-variable", "Pressure", "-scale", "1e-3", "flow.szplt"])
+
+See Also:
+    :mod:`tecio.cli.teconvert`: Convert between Tecplot file formats without applying
+    any variable transformation.
+
 """
-
 from __future__ import annotations
 
 import argparse
@@ -105,8 +153,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--output",
-        "-o",
+        "-o", "--output",
         type=str,
         default=None,
         metavar="PATH",
@@ -116,7 +163,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--force",
+        "-f", "--force",
         action="store_true",
         default=False,
         help="Overwrite the output file if it already exists.",

@@ -26,6 +26,7 @@ Returned by :func:`tecio.open` when using ``'a'`` or ``'a+'`` mode.
 ```{toctree}
 :hidden:
 
+tecio.open
 append_write
 append_read_write
 szl

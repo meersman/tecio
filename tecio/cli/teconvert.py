@@ -1,29 +1,72 @@
-"""Command line interface to convert between Tecplot file formats.
+r"""Convert between Tecplot data file formats.
 
-Supports conversions between:
-    - SZL  (``.szplt``)
-    - PLT  (``.plt``)
-    - DAT  (``.dat``)
+The three Tecplot file formats, SZL binary (``.szplt``), PLT binary (``.plt``), and
+ASCII DAT (``.dat``), are not always interchangeable in practice.  Tecplot itself
+stores all data internally in binary form and provides license-free command-line
+utilities (``preplot``, ``tec360 -convert``) for converting from lower-level formats
+upward to SZL, but no supported path exists for the reverse without a active license.
+This is a practical limitation when working with visualisation tools such as ParaView
+that support PLT and DAT but not SZL, or when direct inspection of file contents in a
+text editor is required.  ``teconvert`` fills this gap by supporting conversion in any
+direction between all three formats without requiring a Tecplot installation.
 
-The output format is selected with a format flag.  The output file is written
-to the same directory as the input file with the appropriate extension, unless
-an explicit path is given with ``-o``.
+:Positional Arguments:
+    ``filename``
+        Path to the input Tecplot file (``.plt``, ``.szplt``, or ``.dat``) to convert.
 
-Example usage::
+:Options:
+    ``-szplt``
+        Convert to Tecplot SZL binary format (``.szplt``). Exactly one format flag is
+        required.
 
-    # SZL → DAT
-    $ teconvert -dat flow.szplt
+    ``-plt``
+        Convert to Tecplot PLT binary format (``.plt``). Exactly one format flag is
+        required.
 
-    # PLT → SZL
-    $ teconvert -szplt flow.plt
+    ``-dat``
+        Convert to Tecplot ASCII DAT format (``.dat``). Exactly one format flag is
+        required.
 
-    # DAT → PLT, explicit output path
-    $ teconvert -plt -o /tmp/flow.plt flow.dat
+    ``-o, --output PATH``
+        Explicit output file path. Defaults to the input file stem with the new
+        extension in the same directory as the input file.
 
-    # Force overwrite of an existing output file
-    $ teconvert --force -dat flow.szplt
+    ``-f, --force``
+        Overwrite the output file if it already exists. Without this flag the command
+        exits with an error rather than silently clobbering an existing file.
+
+:Returns:
+    A new Tecplot file written to the output path in the requested format. Exit code is
+    ``0`` on success and non-zero if the input file cannot be read, no format flag is
+    supplied, or the output file already exists and ``--force`` is not set.
+
+Examples:
+    Convert SZL to ASCII DAT::
+
+        $ teconvert -dat flow.szplt
+
+    Convert PLT to SZL::
+
+        $ teconvert -szplt flow.plt
+
+    Convert to PLT with an explicit output path::
+
+        $ teconvert -plt -o /tmp/out.plt flow.dat
+
+    Overwrite an existing output file::
+
+        $ teconvert --force -dat flow.szplt
+
+    Call directly from a Python session::
+
+        import tecio.cli.teconvert.main as teconvert
+        teconvert(["-dat", "-o", "flow.dat", "flow.szplt"])
+
+See Also:
+    :mod:`tecio.cli.tecextract`: Extract a zone/variable subset while simultaneously
+    converting format via the output file extension.
+
 """
-
 from __future__ import annotations
 
 import argparse
@@ -113,14 +156,13 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--force",
+        "-f", "--force",
         action="store_true",
         default=False,
         help="Overwrite the output file if it already exists.",
     )
     parser.add_argument(
-        "--output",
-        "-o",
+        "-o", "--output",
         type=str,
         default=None,
         metavar="PATH",

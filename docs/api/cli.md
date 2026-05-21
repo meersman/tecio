@@ -5,16 +5,18 @@
 ```
 
 ```{eval-rst}
+.. currentmodule:: tecio.cli
+
 .. autosummary::
    :toctree: cli
 
-   tecio.cli.tecdump
-   tecio.cli.tecextract
-   tecio.cli.tecfix
-   tecio.cli.tecmerge
-   tecio.cli.teconvert
-   tecio.cli.tecscale
-   tecio.cli.tecslice
-   tecio.cli.tecstats
-   tecio.cli.tecsplit
+   tecdump
+   tecextract
+   tecfix
+   tecmerge
+   teconvert
+   tecscale
+   tecslice
+   tecstats
+   tecsplit
 ```

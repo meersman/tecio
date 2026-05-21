@@ -1,27 +1,71 @@
-#!/usr/bin/env python3
-"""Command line interface to extract a subset of zones and/or variables
-from a Tecplot file.
+r"""Extract a subset of zones and/or variables from a Tecplot data file.
 
-Zones and variables are specified by 1-based index.  Multiple values are
-given as comma-separated lists (no spaces).  The output format is inferred
-from the output file extension, so passing ``-o result.dat`` produces an
-ASCII DAT file regardless of the input format.
+Large Tecplot files produced by CFD solvers frequently contain many zones and variables,
+only a fraction of which are relevant to a given analysis.  Loading the full file into
+Tecplot or writing a dedicated extraction script is impractical when the goal is simply
+to isolate a surface zone or a handful of flow variables for downstream processing.
+``tecextract`` addresses this by writing a new Tecplot file containing only the
+requested subset, with the output format determined by the file extension of the output
+path.  This makes it straightforward to reduce file size, change format, or prepare a
+subset for use with another tool in a single command.
 
-Example usage::
+:Positional Arguments:
+    ``filename``
+        Path to the input Tecplot binary file (``.plt`` or ``.szplt``).
 
-    # Extract zones 1 and 3, all variables
-    $ tecextract -zones 1,3 flow.szplt
+:Options:
+    ``-zones LIST``
+        Comma-separated list of one-based zone indices to extract (e.g. ``-zones
+        1,3,5``). If omitted, all zones are written to the output.
 
-    # Extract variables 1, 2, 5, all zones
-    $ tecextract -variables 1,2,5 flow.szplt
+    ``-variables LIST``
+        Comma-separated list of one-based variable indices to extract (e.g. ``-variables
+        1,2,5``). If omitted, all variables are written to the output.
 
-    # Extract zone 2, variables 1-3, write to PLT
-    $ tecextract -zones 2 -variables 1,2,3 -o subset.plt flow.szplt
+    ``-o, --output PATH``
+        Output file path. The extension controls the output format: ``.szplt``,
+        ``.plt``, or ``.dat``. Defaults to ``<stem>_extract<ext>`` in the same directory
+        as the input file.
 
-    # Convert format while extracting (SZL -> DAT)
-    $ tecextract -o flow_subset.dat flow.szplt
+    ``-f, --force``
+        Overwrite the output file if it already exists. Without this flag the command
+        exits with an error rather than silently clobbering an existing file.
+
+:Returns:
+    A new Tecplot file written to the output path containing only the requested zones
+    and variables. Exit code is ``0`` on success and non-zero if the input file cannot
+    be read, an invalid index is supplied, or the output file already exists and
+    ``--force`` is not set.
+
+Examples:
+    Extract zones 1 and 3::
+
+        $ tecextract -zones 1,3 solution.szplt
+
+    Extract variables 1, 2, and 5::
+
+        $ tecextract -variables 1,2,5 solution.szplt
+
+    Extract a zone subset and convert to ASCII in one step::
+
+        $ tecextract -zones 1,2 -o subset.dat solution.szplt
+
+    Call directly from a Tecplot macro or Python session, passing arguments as a list of strings::
+
+        import tecio.cli.tecextract.main as tecextract
+        tecextract([
+            "-zones", "1,2", "-variables", "1,2,5", "-o", "subset.szplt", "solution.szplt"
+        ])
+
+See Also:
+    * :mod:`tecio.cli.tecsplit` - Split a file into separate grid and solution files
+      rather than extracting a subset into a single output.
+    * :mod:`tecio.cli.tecslice` - Slice a Tecplot file containing structured data along
+      IJK indices and/or solution time.
+    * :mod:`tecio.cli.tecmerge` - Merge zones from multiple files into a single output —
+      the inverse operation to ``tecextract``.
+
 """
-
 from __future__ import annotations
 
 import argparse
@@ -112,8 +156,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--output",
-        "-o",
+        "-o", "--output",
         type=str,
         default=None,
         metavar="PATH",
@@ -124,7 +167,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--force",
+        "-f", "--force",
         action="store_true",
         default=False,
         help="Overwrite the output file if it already exists.",

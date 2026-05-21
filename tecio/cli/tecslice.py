@@ -1,49 +1,115 @@
-"""Command line interface to slice Tecplot data along IJK indices and/or
-solution time.
+r"""Slice a Tecplot data file along IJK indices and/or solution time.
 
-This tool uses a compact colon-notation for all slice arguments, mirroring
-Python slice syntax::
+Structured CFD datasets frequently contain more spatial resolution or time steps than
+are necessary for a given analysis.  Reducing the data to a relevant subset (like every
+other grid point, a specific index range along one axis, or a window of solution times)
+would otherwise require loading the full file in Tecplot or writing a dedicated script.
+``tecslice`` applies these reductions directly to the file using a compact
+colon-notation that mirrors Python slice syntax, supporting both structured (ordered)
+zone thinning along IJK axes and time-step windowing across all zone types.
 
-    start:end:skip
+All slice arguments use the form ``start:end:skip``, where any component may be omitted.
+IJK indices are one-based and inclusive at both ends; solution-time ``start`` and
+``end`` are float values, and ``skip`` is an integer stride applied after the time
+window is filtered.
 
-Any component may be omitted; the colon separators determine which part is
-which:
+.. list-table:: Slice notation reference
+   :header-rows: 1
+   :widths: 20 25 55
 
-    ==========  ================  =============================
-    Input       Equivalent        Meaning
-    ==========  ================  =============================
-    ``5``       ``[5:]``          From index 5 to end
-    ``:10``     ``[:10]``         From start to index 10
-    ``::2``     ``[::2]``         Every 2nd point/step
-    ``2:10``    ``[2:10]``        Index 2 through 10
-    ``2:10:3``  ``[2:10:3]``      Every 3rd from 2 through 10
-    ``::-1``    ``[::-1]``        Reverse (e.g. mirror an axis)
-    ==========  ================  =============================
+   * - Input
+     - Equivalent
+     - Meaning
+   * - ``5``
+     - ``[5:]``
+     - From index 5 to end
+   * - ``:10``
+     - ``[:10]``
+     - From start to index 10
+   * - ``::2``
+     - ``[::2]``
+     - Every 2nd point or step
+   * - ``2:10``
+     - ``[2:10]``
+     - Index 2 through 10 inclusive
+   * - ``2:10:3``
+     - ``[2:10:3]``
+     - Every 3rd point from index 2 through 10
+   * - ``::-1``
+     - ``[::-1]``
+     - Reverse the axis (e.g. mirror)
 
-IJK indices are **1-based and inclusive** at both ends.
-Solution-time ``start`` and ``end`` are **float values** (not indices);
-``skip`` is an integer stride applied after the time window is filtered.
-Strand-0 zones are always written unchanged.
+:Positional Arguments:
+    ``filename``
+        Path to the input Tecplot file (``.plt``, ``.szplt``, or ``.dat``) to slice.
 
-Example usage::
+:Options:
+    ``-o, --output PATH``
+        Output file path. Required. The extension controls the output format:
+        ``.szplt``, ``.plt``, or ``.dat``.
 
-    # Every other I point
-    $ tecslice -i ::2 -o thinned.szplt flow.szplt
+    ``-f, --force``
+        Overwrite the output file if it already exists. Without this flag the command
+        exits with an error rather than silently clobbering an existing file.
 
-    # I=2..10, J up to 5
-    $ tecslice -i 2:10 -j :5 -o sub.szplt flow.szplt
+    ``-i [start]:[end]:[skip]``
+        Slice along the I axis of ordered zones. Any component may be omitted. ``skip``
+        may be negative to reverse the axis.
 
-    # Reverse I axis (mirror)
-    $ tecslice -i ::-1 -o mirrored.szplt flow.szplt
+    ``-j [start]:[end]:[skip]``
+        Slice along the J axis of ordered zones. Any component may be omitted. ``skip``
+        may be negative to reverse the axis.
 
-    # Keep solution times 0.5 to 2.0
-    $ tecslice -t 0.5:2.0 -o window.szplt transient.szplt
+    ``-k [start]:[end]:[skip]``
+        Slice along the K axis of ordered zones. Any component may be omitted. ``skip``
+        may be negative to reverse the axis.
 
-    # Every 3rd time step of strand 1
-    $ tecslice -t ::3 --strand-id 1 -o sparse.szplt transient.szplt
+    ``-t [start]:[end]:[skip]``
+        Slice solution times. ``start`` and ``end`` are float time values (inclusive);
+        ``skip`` is an integer stride applied after the time window is
+        filtered. Strand-0 zones are always written unchanged.
 
-    # Thin grid AND slice time window
-    $ tecslice -i ::2 -j ::2 -t 1.0:5.0 -o result.szplt flow.szplt
+    ``--strand-id ID``
+        Restrict time slicing to a single strand ID. Defaults to all strands with ID
+        greater than zero.
+
+:Returns:
+    A new Tecplot file written to the output path containing only the requested subset
+    of grid points and/or time steps. Exit code is ``0`` on success and non-zero if the
+    input file cannot be read, an invalid slice is supplied, or the output file already
+    exists and ``--force`` is not set.
+
+Examples:
+    Thin a structured grid to every other I point::
+
+        $ tecslice -i ::2 -o thinned.szplt flow.szplt
+
+    Extract a sub-block: I=2..10, J up to 5::
+
+        $ tecslice -i 2:10 -j :5 -o sub.szplt flow.szplt
+
+    Reverse the I axis::
+
+        $ tecslice -i ::-1 -o mirrored.szplt flow.szplt
+
+    Extract a solution time window::
+
+        $ tecslice -t 0.5:2.0 -o window.szplt transient.szplt
+
+    Keep every 3rd time step of strand 1 only::
+
+        $ tecslice -t ::3 --strand-id 1 -o sparse.szplt transient.szplt
+
+    Call directly from a Python session::
+
+        import tecio.cli.tecslice.main as tecslice
+        tecslice(["-i", "::2", "-o", "thinned.szplt", "flow.szplt"])
+
+See Also:
+    * :mod:`tecio.cli.tecextract`: Extract a subset of zones or variables by index
+      rather than by positional slice.
+    * :mod:`tecio.cli.tecsplit`: Split a file into separate grid and solution files.
+    * :mod:`tecio.cli.tecmerge`: Merge zones from multiple files into a single output.
 """
 
 from __future__ import annotations
@@ -231,8 +297,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Input Tecplot file.",
     )
     parser.add_argument(
-        "--output",
-        "-o",
+        "-o", "--output",
         type=str,
         required=True,
         metavar="PATH",
@@ -242,7 +307,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--force",
+        "-f", "--force",
         action="store_true",
         default=False,
         help="Overwrite the output file if it already exists.",

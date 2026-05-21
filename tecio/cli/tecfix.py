@@ -1,37 +1,84 @@
-"""Command line interface to fix Tecplot files that contain ``NaN`` or ``Inf`` values.
+r"""Rewrite a Tecplot data file with invalid variable arrays set to passive.
 
-For each zone, any variable whose array contains ``NaN`` or ``Inf`` is marked
-**passive** in the output file.  A zone-level auxiliary data record is also
-written that documents exactly which variables were affected and why, using
-the naming convention::
+Numerical solvers occasionally produce output containing ``NaN`` or ``Inf`` values,
+whether due to localised solver divergence, incomplete initialisation, or variables that
+are formally undefined in certain zones. These invalid values propagate silently
+through post-processing pipelines and can cause unexpected behaviour in Tecplot and
+downstream tools. ``tecfix`` addresses this by scanning every variable array in a file
+and rewriting any array containing invalid values as passive, recording the affected
+variable names in zone-level auxiliary data for traceability. A dry-run mode is
+available to produce a diagnostic report without writing any output, making the tool
+useful as a validation step before committing to a fix.
 
-    Variable<N>  →  "NaN" | "Inf" | "NaN and Inf"
+:Positional Arguments:
+    ``filename``
+        Path to the input Tecplot binary file (``.plt`` or ``.szplt``) to inspect and
+        fix.
 
-where ``<N>`` is the 1-based variable index.
+:Options:
+    ``-o, --output PATH``
+        Output file path. Defaults to ``<stem>_fixed<ext>`` in the same directory as the
+        input file.
 
-The fixed file is written alongside the original with the suffix ``_fixed``
-appended to the stem (e.g. ``flow.szplt`` → ``flow_fixed.szplt``), unless an
-explicit output path is given with ``--output``.
+    ``-f``, ``--force``
+        Overwrite the output file if it already exists. Without this flag the command
+        exits with an error rather than silently clobbering an existing file.
 
-Example usage::
+    ``--dry-run``
+        Scan all variable arrays for invalid values and print a report without writing
+        any output file. Useful for diagnosing whether a file requires fixing before
+        modifying it.
 
-    # Fix a blown-up SZL file
-    $ tecfix flow.szplt
+:Returns:
+    A new Tecplot file written to the output path with all invalid variable arrays set
+    to passive. Affected variables are recorded in zone-level auxiliary data. If
+    ``--dry-run`` is set, output is written to standard output only and no file is
+    produced. Exit code is ``0`` on success and non-zero if the input file cannot be
+    read or the output file already exists and ``--force`` is not set.
 
-    # Write to an explicit path
-    $ tecfix --output clean.szplt flow.szplt
+Examples:
+    Fix a file with the default output naming::
 
-    # Overwrite an existing output file
-    $ tecfix --force flow.szplt
+        $ tecfix flow.szplt
+
+    Write the fixed file to an explicit path::
+
+        $ tecfix flow.szplt --output clean.szplt
+
+    Overwrite an existing fixed file::
+
+        $ tecfix --force flow.szplt
+
+    Report bad variables without writing any output::
+
+        $ tecfix --dry-run flow.szplt
+
+    Call directly from a Python session::
+
+        import tecio.cli.tecfix.main as tecfix
+        tecfix(["flow.szplt", "--output", "clean.szplt"])
+
+See Also:
+    * :mod:`tecio.cli.tecdump`: Inspect file contents and metadata to
+      identify zones or variables that may require fixing.
+    * :mod:`tecio.cli.tecstats`: Compute per-zone min, max, and mean
+      statistics without printing raw values.
 
 Note:
-    - Only floating-point variables (``FLOAT`` and ``DOUBLE``) are inspected;
-      integer variables cannot represent NaN / Inf and are always copied as-is.
-    - Variables that are already passive or shared in the source file are
-      forwarded unchanged (they remain passive / shared).
-    - If a zone has no bad variables its aux data is not modified beyond what
-      was already present in the source file.
-    - The output format matches the input format (extension is preserved).
+    Only floating-point variables (``FLOAT`` and ``DOUBLE``) are inspected;
+    integer variables cannot represent NaN / Inf and are always copied as-is.
+
+Note:
+    Variables that are already passive or shared in the source file are
+    forwarded unchanged (they remain passive / shared).
+
+Note:
+    If a zone has no bad variables its aux data is not modified beyond what
+    was already present in the source file.
+
+Note:
+    The output format matches the input format (extension is preserved).
+
 """
 
 from __future__ import annotations
@@ -89,8 +136,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Input Tecplot file to inspect and fix.",
     )
     parser.add_argument(
-        "--output",
-        "-o",
+        "-o", "--output",
         type=str,
         default=None,
         metavar="PATH",
@@ -100,7 +146,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--force",
+        "-f", "--force",
         action="store_true",
         default=False,
         help="Overwrite the output file if it already exists.",

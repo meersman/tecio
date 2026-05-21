@@ -1,51 +1,86 @@
-#!/usr/bin/env python3
-r"""Command line interface to merge zones from multiple Tecplot files into one.
+r"""Merge zones from multiple Tecplot data files into a single output file.
 
-Input files may be any mix of supported formats (.szplt, .plt, .dat).  The
-output format is controlled by the ``-o`` extension.
+Post-processing workflows commonly produce results distributed across multiple files.
+``tecmerge`` collects all zones from an arbitrary number of input files into a single
+output, reconciling variable lists across sources by taking their union and writing any
+variable absent from a given source as passive.  Input files may be specified explicitly
+or via a quoted glob pattern and may be any mix of supported formats.  When merging
+time-step sequences, solution times and strand IDs can be assigned automatically from a
+start time and either a fixed interval or an end time.
 
-Variable reconciliation:
-    All input files must share at least one common variable name.  The output
-    variable list is the union of all variable names found across all files,
-    preserving the order in which names are first encountered.  For any zone
-    where a variable from the union list was not present in the source file, that
-    variable is written as **passive**.
+:Positional Arguments:
+    ``FILE [FILE ...]``
+        One or more input Tecplot files (``.plt``, ``.szplt``, or ``.dat``). Glob
+        patterns are expanded by the tool — quote the pattern to prevent premature shell
+        expansion (e.g.  ``"step_*.szplt"``). Files are merged in the order given or
+        matched.
 
-Time / strand assignment (``--assign-time-strands``):
-    When ``--assign-time-strands`` is given, all zones written to the output are
-    assigned a strand ID and evenly-spaced solution times.  Each *input file*
-    maps to one time step; zones within a file all receive that file's time value.
+:Options:
+    ``-o, --output PATH``
+        Output file path. Required. The extension controls the output format:
+        ``.szplt``, ``.plt``, or ``.dat``.
 
-Required sub-options:
+    ``--force``
+        Overwrite the output file if it already exists. Without this flag the command
+        exits with an error rather than silently clobbering an existing file.
 
-    ``-start VALUE``    Solution time of the first file.
-    ``-strand ID``      Strand ID to assign to all zones (default: 1).
+    ``--title STRING``
+        Dataset title to write to the output file. Defaults to the title of the first
+        input file.
 
-Exactly one of the following to define the step interval:
+    ``--assign-time-strands``
+        Assign evenly-spaced solution times and a strand ID to all zones, treating each
+        input file as one time step. Requires ``-start`` and either ``-delta`` or
+        ``-end``.
 
-    ``-delta VALUE``    Constant time step between files.
-    ``-end VALUE``      End time; step is computed as (end - start) / (N - 1).
+    ``-start VALUE``
+        Solution time of the first input file. Used with ``--assign-time-strands``.
 
-Example usage::
+    ``-delta VALUE``
+        Constant time increment between successive input files.  Mutually exclusive with
+        ``-end``.
 
-    # Merge three explicit files into a single SZL file
-    $ tecmerge -o combined.szplt part1.szplt part2.szplt part3.szplt
+    ``-end VALUE``
+        Solution time of the last input file. The time step is computed as ``(end -
+        start) / (N - 1)`` where ``N`` is the number of input files. Mutually exclusive
+        with ``-delta``.
 
-    # Merge using a glob pattern
-    $ tecmerge -o combined.szplt "results_*.szplt"
+    ``-strand ID``
+        Strand ID to assign to all zones when using ``--assign-time-strands``. Defaults
+        to ``1``.
 
-    # Mix formats
-    $ tecmerge -o combined.szplt run1.plt run2.dat run3.szplt
+:Returns:
+    A new Tecplot file written to the output path containing all zones from every input
+    file. Variables absent from a source file are written as passive. Exit code is ``0``
+    on success and non-zero if any input file cannot be read, the output file already
+    exists and ``--force`` is not set, or conflicting time-strand options are supplied.
 
-    # Merge a time series and assign strand/time metadata
-    $ tecmerge --assign-time-strands -start 0.0 -delta 0.1 -strand 1 \\
-               -o transient.szplt "step_*.szplt"
+Examples:
+    Merge two files explicitly::
 
-    # Using -end instead of -delta
-    $ tecmerge --assign-time-strands -start 0.0 -end 1.0 -strand 1 \\
-               -o transient.szplt "step_*.szplt"
+        $ tecmerge part1.szplt part2.szplt -o combined.szplt
+
+    Merge a sequence matched by a glob pattern::
+
+        $ tecmerg "results_*.szplt" -o combined.szplt
+
+    Merge a time series and assign solution time metadata::
+
+        $ tecmerge --assign-time-strands -start 0.0 -delta 0.1 \\
+                   "step_*.szplt" -o transient.szplt
+
+    Call directly from a Python session::
+
+        import tecio.cli.tecmerge.main as tecmerge
+        tecmerge(["part1.szplt", "part2.szplt", "--output", "combined.szplt"])
+
+See Also:
+    * :mod:`tecio.cli.tecextract`: Extract a zone/variable subset from a single file —
+      the inverse of merging.
+    * :mod:`tecio.cli.tecsplit`: Split a file into separate grid and solution files.
+    * :mod:`tecio.cli.tecslice`: Extract planar slices from volumetric zone data.
+
 """
-
 from __future__ import annotations
 
 import argparse

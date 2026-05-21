@@ -1,89 +1,114 @@
-#!/usr/bin/env python3
-"""Command line interface to split a full Tecplot file into grid and solution parts.
+"""Split a Tecplot data file into separate grid and solution files.
 
-A *full* Tecplot file (``FileType.FULL``) contains both spatial coordinates and
-solution variables.  ``tecsplit`` separates these into:
+Solvers that produce full Tecplot files containing both spatial coordinates and solution
+variables in a single file can create workflows where the grid geometry is redundantly
+stored across every time step. Separating the coordinate and solution data into distinct
+files with the appropriate ``FileType`` metadata allows Tecplot to load a shared grid
+once and associate multiple solution files with it, reducing storage overhead and
+enabling more efficient transient data management. ``tecsplit`` performs this separation
+automatically, detecting coordinate variables by name or accepting an explicit list, and
+supports three operating modes depending on how finely the solution variables should be
+distributed across output files.
 
-* A **grid** file (``FileType.GRID``) containing only the coordinate variables,
-  with all solution variables marked passive.
-* One or more **solution** files (``FileType.SOLUTION``) containing the chosen
-  solution variables, with all coordinate variables marked passive.
+.. list-table:: Operating modes
+   :header-rows: 1
+   :widths: 25 75
 
-Three operating modes are available:
+   * - Mode
+     - Output
+   * - Default
+     - One grid file and one combined solution file containing all non-coordinate
+       variables.
+   * - ``--pop VAR[,VAR2,...]``
+     - One grid file and one solution file per listed variable. Each named variable is
+       the sole active variable in its output file; all others are passive.
+   * - ``--pop-all``
+     - One grid file and one solution file per non-coordinate variable.  Equivalent to
+       listing every non-coordinate variable with ``--pop``.
 
-``split`` (default)
-    One grid file + one solution file holding all non-coordinate variables.
+Output files are written to the same directory as the input unless ``-o`` specifies an
+output directory.  Filenames are always auto-derived: ``<stem>_grid<ext>`` for the grid
+file, ``<stem>_solution<ext>`` in default mode, and ``<stem>_<varname><ext>`` for each
+popped variable.  Variable names are sanitised for use in filenames; if two variables
+sanitise to the same name the command exits without writing any files.
 
-``--pop VAR[,VAR2,...]``
-    One grid file + one solution file *per listed variable*.  Each named
-    variable is written as the sole active variable in its own solution file;
-    all other variables are passive.  Names are matched case-insensitively;
-    1-based integer indices are also accepted.
+:Positional Arguments:
+    ``filename``
+        Path to the input Tecplot file (``.plt``, ``.szplt``, or ``.dat``) to split.
 
-``--pop-all``
-    One grid file + one solution file *per non-coordinate variable*.
-    Equivalent to ``--pop`` with every non-coordinate variable listed.
-    Useful for producing minimal single-variable solution sets that Tecplot
-    360 can load alongside the shared grid file.
+:Options:
+    ``-o, --output DIR``
+        Output directory for all generated files. Defaults to the same directory as the
+        input file. The directory is created if it does not already exist.
 
-Coordinate detection
---------------------
-Variables whose names are exactly ``x``, ``y``, or ``z`` (case-insensitive)
-are auto-detected as spatial coordinates.  Use ``--coords`` to override with
-an explicit comma-separated list of names or 1-based indices — for example
-when coordinates are named ``X [m]``, ``CoordX``, or ``node_x``.
+    ``-f, --force``
+        Overwrite output files that already exist. Without this flag the command exits
+        with an error rather than silently clobbering existing files.
 
-Output naming
--------------
-All output files are written to the same directory as the input unless
-``--output`` / ``-o`` is given.  That flag specifies an *output directory*;
-filenames are always auto-derived:
+    ``--coords VARS``
+        Comma-separated coordinate variable names or one-based indices. Defaults to
+        auto-detection of variables named ``x``, ``y``, or ``z`` (case-insensitive,
+        exact match). Override this when coordinates carry units or non-standard names,
+        e.g.  ``--coords "X [m],Y [m],Z [m]"``.
 
-    ``<stem>_grid<ext>``              — grid file (all modes)
-    ``<stem>_solution<ext>``          — split-mode solution file
-    ``<stem>_<varname><ext>``         — pop-mode solution file per variable
+    ``--pop VARS``
+        Comma-separated variable names or one-based indices to write into individual
+        solution files. Mutually exclusive with ``--pop-all``.
 
-Variable names are sanitised for use in filenames (non-alphanumeric characters
-replaced with underscores).  If two popped variables sanitise to the same name,
-``tecsplit`` reports the collision and exits without writing any files.
+    ``--pop-all``
+        Write every non-coordinate variable into its own solution file. Mutually
+        exclusive with ``--pop``. When many variables are present, note that the source
+        file is read once per output file; for large files with many variables ``--pop``
+        with an explicit list may be preferable.
 
-FEPOLYGON and FEPOLYHEDRON zones are not supported by the write API and are
-skipped with a warning.  All other zone types (ORDERED and simple FE) are
-copied in full, including zone-level and dataset-level auxiliary data, solution
-time, strand ID, variable sharing, and passive-variable flags.
+:Returns:
+    Two or more Tecplot files written to the output directory: one grid file and one or
+    more solution files depending on the operating mode.  All zone types are copied in
+    full, including auxiliary data, solution time, and strand IDs. ``FEPOLYGON`` and
+    ``FEPOLYHEDRON`` zones are not supported and are skipped with a warning. Exit code
+    is ``0`` on success and non-zero if the input file cannot be read, a variable cannot
+    be resolved, a filename collision is detected, or an output file already exists and
+    ``--force`` is not set.
 
-Performance note
-----------------
-When ``--pop-all`` produces N solution files, the source file is read N + 1
-times (once per output file).  Variable data is read lazily per zone access, so
-peak memory usage is bounded by one zone at a time.  For very large files with
-many variables, consider splitting into a modest batch with ``--pop`` instead.
+Examples:
+    Split into grid and combined solution files::
 
-Example usage::
+        $ tecsplit flow.szplt
 
-    # Split into grid + solution (default)
-    $ tecsplit flow.szplt
+    Write output files to a specific directory::
 
-    # Write to a different directory
-    $ tecsplit -o /tmp/split flow.szplt
+        $ tecsplit -o /tmp/split flow.szplt
 
-    # Pop Pressure into its own solution file
-    $ tecsplit --pop Pressure flow.szplt
+    Pop a single variable into its own solution file::
 
-    # Pop multiple variables (each gets its own file)
-    $ tecsplit --pop Pressure,Temperature flow.szplt
+        $ tecsplit --pop Pressure flow.szplt
 
-    # Pop every non-coordinate variable
-    $ tecsplit --pop-all flow.szplt
+    Pop every non-coordinate variable::
 
-    # Override coordinate detection (variables 1, 2, 3 by index)
-    $ tecsplit --coords 1,2,3 flow.szplt
+        $ tecsplit --pop-all flow.szplt
 
-    # Override by name when coords aren't called x/y/z
-    $ tecsplit --coords "X [m],Y [m],Z [m]" flow.szplt
+    Override coordinate detection by name::
 
-    # Force overwrite of existing output files
-    $ tecsplit --force flow.szplt
+        $ tecsplit --coords "X [m],Y [m],Z [m]" flow.szplt
+
+    Call directly from a Python session::
+
+        import tecio.cli.tecsplit.main as tecplit
+        tecsplit(["--pop-all", "-o", "/tmp/split", "flow.szplt"])
+
+See Also:
+    * :mod:`tecio.cli.tecmerge`: Merge zones from multiple files into a single output —
+      the inverse of splitting.
+    * :mod:`tecio.cli.tecextract`: Extract a subset of zones or variables into a single
+      output file.
+    * :mod:`tecio.cli.tecslice`: Reduce structured zones along IJK axes or filter by
+      solution time.
+
+Note:
+    When ``--pop-all`` produces N solution files, the source file is read N + 1 times
+    (once per output file).  Variable data is read lazily per zone access, so peak
+    memory usage is bounded by one zone at a time. For very large files with many
+    variables, consider splitting into a modest batch with ``--pop`` instead.
 """
 
 from __future__ import annotations
@@ -126,9 +151,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
         epilog=(
             "Operating modes\n"
-            "  Default (split)       one grid file + one combined solution file\n"
-            "  --pop VAR[,VAR2,...]  one grid file + one solution per listed var\n"
-            "  --pop-all             one grid file + one solution per non-coord var\n\n"
+            "  Default (split)   one grid file + one combined solution file\n"
+            "  --pop [VAR, ...]  one grid file + one solution per listed var\n"
+            "  --pop-all         one grid file + one solution per non-coord var\n\n"
             "Examples\n"
             "  Split into grid + solution\n"
             "    $ tecsplit flow.szplt\n"
@@ -152,8 +177,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Input Tecplot file to split.",
     )
     parser.add_argument(
-        "--output",
-        "-o",
+        "-o", "--output",
         type=str,
         default=None,
         metavar="DIR",
@@ -164,8 +188,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--force",
-        "-f",
+        "-f", "--force",
         action="store_true",
         default=False,
         help="Overwrite output files that already exist.",

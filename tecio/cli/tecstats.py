@@ -1,45 +1,89 @@
-#!/usr/bin/env python3
-"""Command line interface to print per-variable statistics for a Tecplot file.
+r"""Print per-variable statistics for a Tecplot data file.
 
-For each zone and each variable, prints the minimum, maximum, mean, and
-standard deviation of the data array.  Passive and shared variables are
-noted but skipped.
+Verifying that simulation output is physically reasonable, falls within expected bounds,
+or that a variable has not collapsed to a constant is a routine step in CFD
+post-processing. Extracting these figures from a binary file would otherwise require
+opening it in Tecplot or writing a dedicated script. ``tecstats`` reports the minimum,
+maximum, mean, and standard deviation for every variable in every zone directly to the
+terminal, with optional CSV output for further analysis or archival. Passive and shared
+variables are noted but skipped. Used alongside ``tecfix``, this tool provides a
+lightweight diagnostic layer for validating file contents before and after any
+corrective operation.
 
-The output CSV filename is derived automatically from the input file stem
-with a ``_stats`` suffix always appended, preceded by optional ``_zone_N``
-and ``_var_N`` segments when the corresponding filter flags are active.
-Examples::
+:Positional Arguments:
+    ``filename``
+        Path to the input Tecplot file (``.plt``, ``.szplt``, or ``.dat``) to analyse.
 
-    tecstats flow.szplt                           # console only
-    tecstats -csv flow.szplt                      # flow_stats.csv
-    tecstats -csv -zone 2 flow.szplt              # flow_zone_2_stats.csv
-    tecstats -csv -variable 3 flow.szplt          # flow_var_3_stats.csv
-    tecstats -csv -zone 2 -variable 3 flow.szplt  # flow_zone_2_var_3_stats.csv
+:Options:
+    ``-zone INDEX``
+        Restrict output to the zone at the given one-based index. If omitted, all zones
+        are reported.
 
-Example usage::
+    ``-variable INDEX``
+        Restrict output to the variable at the given one-based index.  If omitted, all
+        variables are reported.
 
-    # Print stats for all zones and variables
-    $ tecstats flow.szplt
+    ``-csv``
+        Write statistics to a CSV file in addition to the terminal output. The filename
+        is derived automatically from the input file stem with a ``_stats`` suffix,
+        preceded by optional ``_zone_N`` and ``_var_N`` segments when the corresponding
+        filters are active. For example:
 
-    # Stats for zone 2 only
-    $ tecstats -zone 2 flow.szplt
+        .. list-table::
+           :header-rows: 1
+           :widths: 50 50
 
-    # Stats for variable 3 only, all zones
-    $ tecstats -variable 3 flow.szplt
+           * - Command
+             - Output filename
+           * - ``tecstats -csv flow.szplt``
+             - ``flow_stats.csv``
+           * - ``tecstats -csv -zone 2 flow.szplt``
+             - ``flow_zone_2_stats.csv``
+           * - ``tecstats -csv -variable 3 flow.szplt``
+             - ``flow_var_3_stats.csv``
+           * - ``tecstats -csv -zone 2 -variable 3 flow.szplt``
+             - ``flow_zone_2_var_3_stats.csv``
 
-    # Stats for zone 1, variable 2
-    $ tecstats -zone 1 -variable 2 flow.szplt
+    ``-f, --force``
+        Overwrite the output CSV file if it already exists. Without this flag the
+        command exits with an error rather than silently clobbering an existing file.
 
-    # Write results to a CSV file (auto-named from input stem)
-    $ tecstats -csv flow.szplt
+:Returns:
+    Statistics are written to standard output. If ``-csv`` is set, a CSV file is also
+    written to the same directory as the input file with an automatically derived
+    name. Exit code is ``0`` on success and non-zero if the input file cannot be read,
+    an invalid index is supplied, or the CSV file already exists and ``--force`` is not
+    set.
 
-    # CSV with zone filter; output is flow_zone_2.csv
-    $ tecstats -csv -zone 2 flow.szplt
+Examples:
+    Print statistics for all zones and variables::
 
-    # Force overwrite of an existing CSV
-    $ tecstats -csv --force flow.szplt
+        $ tecstats flow.szplt
+
+    Restrict to zone 2 only::
+
+        $ tecstats -zone 2 flow.szplt
+
+    Restrict to variable 3 across all zones::
+
+        $ tecstats -variable 3 flow.szplt
+
+    Write results to a CSV file::
+
+        $ tecstats -csv flow.szplt
+
+    Call directly from a Python session::
+
+        import tecio.cli.tecstats.main as tecstats
+        tecstats(["-zone", "2", "-variable", "3", "flow.szplt"])
+
+See Also:
+    * :mod:`tecio.cli.tecdump`: Inspect the full contents and metadata of a file,
+      including auxiliary data and raw variable arrays.
+    * :mod:`tecio.cli.tecfix`: Rewrite a file with invalid variable arrays set to
+       passive once bad values have been identified via statistics.
+
 """
-
 from __future__ import annotations
 
 import argparse
@@ -125,8 +169,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--force",
-        "-f",
+        "-f", "--force",
         action="store_true",
         default=False,
         help="Overwrite the output CSV file if it already exists.",
