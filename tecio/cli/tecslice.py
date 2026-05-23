@@ -44,11 +44,11 @@ window is filtered.
         Path to the input Tecplot file (``.plt``, ``.szplt``, or ``.dat``) to slice.
 
 :Options:
-    ``-o, --output PATH``
+    ``-o PATH``, ``--output PATH``
         Output file path. Required. The extension controls the output format:
         ``.szplt``, ``.plt``, or ``.dat``.
 
-    ``-f, --force``
+    ``-f``, ``--force``
         Overwrite the output file if it already exists. Without this flag the command
         exits with an error rather than silently clobbering an existing file.
 
@@ -69,7 +69,7 @@ window is filtered.
         ``skip`` is an integer stride applied after the time window is
         filtered. Strand-0 zones are always written unchanged.
 
-    ``--strand-id ID``
+    ``--strand-id INT``
         Restrict time slicing to a single strand ID. Defaults to all strands with ID
         greater than zero.
 
@@ -103,6 +103,7 @@ Examples:
     Call directly from a Python session::
 
         import tecio.cli.tecslice.main as tecslice
+
         tecslice(["-i", "::2", "-o", "thinned.szplt", "flow.szplt"])
 
 See Also:

@@ -37,11 +37,11 @@ sanitise to the same name the command exits without writing any files.
         Path to the input Tecplot file (``.plt``, ``.szplt``, or ``.dat``) to split.
 
 :Options:
-    ``-o, --output DIR``
+    ``-o DIR``, ``--output DIR``
         Output directory for all generated files. Defaults to the same directory as the
         input file. The directory is created if it does not already exist.
 
-    ``-f, --force``
+    ``-f``, ``--force``
         Overwrite output files that already exist. Without this flag the command exits
         with an error rather than silently clobbering existing files.
 
@@ -94,6 +94,7 @@ Examples:
     Call directly from a Python session::
 
         import tecio.cli.tecsplit.main as tecplit
+
         tecsplit(["--pop-all", "-o", "/tmp/split", "flow.szplt"])
 
 See Also:

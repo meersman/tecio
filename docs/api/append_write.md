@@ -1,7 +1,7 @@
 # tecio.AppendWrite
 
 ```{eval-rst}
-.. currentmodule:: tecio._io
+.. currentmodule:: tecio
 
 .. autoclass:: AppendWrite
    :members:

@@ -16,11 +16,11 @@ start time and either a fixed interval or an end time.
         matched.
 
 :Options:
-    ``-o, --output PATH``
+    ``-o PATH``, ``--output PATH``
         Output file path. Required. The extension controls the output format:
         ``.szplt``, ``.plt``, or ``.dat``.
 
-    ``--force``
+    ``-f``, ``--force``
         Overwrite the output file if it already exists. Without this flag the command
         exits with an error rather than silently clobbering an existing file.
 
@@ -45,7 +45,7 @@ start time and either a fixed interval or an end time.
         start) / (N - 1)`` where ``N`` is the number of input files. Mutually exclusive
         with ``-delta``.
 
-    ``-strand ID``
+    ``-strand INT``
         Strand ID to assign to all zones when using ``--assign-time-strands``. Defaults
         to ``1``.
 
@@ -72,6 +72,7 @@ Examples:
     Call directly from a Python session::
 
         import tecio.cli.tecmerge.main as tecmerge
+
         tecmerge(["part1.szplt", "part2.szplt", "--output", "combined.szplt"])
 
 See Also:

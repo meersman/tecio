@@ -34,12 +34,12 @@ conversion and format conversion to be performed in a single step.
         One-based zone index to restrict the transformation to. If omitted, all zones
         are processed.
 
-    ``-o, --output PATH``
+    ``-o PATH``, ``--output PATH``
         Output file path. The extension controls the output format: ``.szplt``,
         ``.plt``, or ``.dat``. Defaults to ``<stem>_scaled<ext>`` in the same directory
         as the input file.
 
-    ``-f, --force``
+    ``-f``, ``--force``
         Overwrite the output file if it already exists. Without this flag the command
         exits with an error rather than silently clobbering an existing file.
 
@@ -50,13 +50,13 @@ conversion and format conversion to be performed in a single step.
     and ``--force`` is not set.
 
 Examples:
-    Convert pressure from Pa to kPa by index::
+    Convert pressure from kPa to psi by index::
 
-        $ tecscale -variable 4 -scale 1e-3 flow.szplt
+        $ tecscale -variable 4 -scale 0.145038 flow.szplt
 
     Same conversion using the variable name::
 
-        $ tecscale -variable Pressure -scale 1e-3 flow.szplt
+        $ tecscale -variable Pressure -scale 0.145038 flow.szplt
 
     Shift temperature from Kelvin to Celsius in zone 2 only::
 
@@ -69,6 +69,7 @@ Examples:
     Call directly from a Python session::
 
         import tecio.cli.tecscale.main as tecscale
+
         tecscale(["-variable", "Pressure", "-scale", "1e-3", "flow.szplt"])
 
 See Also:

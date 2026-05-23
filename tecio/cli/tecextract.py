@@ -22,12 +22,12 @@ subset for use with another tool in a single command.
         Comma-separated list of one-based variable indices to extract (e.g. ``-variables
         1,2,5``). If omitted, all variables are written to the output.
 
-    ``-o, --output PATH``
+    ``-o PATH``, ``--output PATH``
         Output file path. The extension controls the output format: ``.szplt``,
         ``.plt``, or ``.dat``. Defaults to ``<stem>_extract<ext>`` in the same directory
         as the input file.
 
-    ``-f, --force``
+    ``-f``, ``--force``
         Overwrite the output file if it already exists. Without this flag the command
         exits with an error rather than silently clobbering an existing file.
 
@@ -53,6 +53,7 @@ Examples:
     Call directly from a Tecplot macro or Python session, passing arguments as a list of strings::
 
         import tecio.cli.tecextract.main as tecextract
+
         tecextract([
             "-zones", "1,2", "-variables", "1,2,5", "-o", "subset.szplt", "solution.szplt"
         ])

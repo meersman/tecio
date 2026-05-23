@@ -11,7 +11,7 @@ lightweight diagnostic layer for validating file contents before and after any
 corrective operation.
 
 :Positional Arguments:
-    ``filename``
+    ``PATH``
         Path to the input Tecplot file (``.plt``, ``.szplt``, or ``.dat``) to analyse.
 
 :Options:
@@ -44,7 +44,7 @@ corrective operation.
            * - ``tecstats -csv -zone 2 -variable 3 flow.szplt``
              - ``flow_zone_2_var_3_stats.csv``
 
-    ``-f, --force``
+    ``-f``, ``--force``
         Overwrite the output CSV file if it already exists. Without this flag the
         command exits with an error rather than silently clobbering an existing file.
 
@@ -75,6 +75,7 @@ Examples:
     Call directly from a Python session::
 
         import tecio.cli.tecstats.main as tecstats
+
         tecstats(["-zone", "2", "-variable", "3", "flow.szplt"])
 
 See Also:

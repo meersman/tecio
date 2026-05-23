@@ -16,7 +16,7 @@ useful as a validation step before committing to a fix.
         fix.
 
 :Options:
-    ``-o, --output PATH``
+    ``-o PATH``, ``--output PATH``
         Output file path. Defaults to ``<stem>_fixed<ext>`` in the same directory as the
         input file.
 
@@ -56,6 +56,7 @@ Examples:
     Call directly from a Python session::
 
         import tecio.cli.tecfix.main as tecfix
+
         tecfix(["flow.szplt", "--output", "clean.szplt"])
 
 See Also:

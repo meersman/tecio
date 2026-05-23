@@ -1,230 +1,302 @@
+(quickstart)=
 # Quickstart
 
-(installation)=
-## Installation
-
-**Requirements:** Python 3.10+, NumPy, Tecplot 360
-
-Install from the repository root:
-
-```bash
-pip install .
-```
-
-On import, `tecio` will attempt to locate the TecIO shared library
-from your Tecplot 360 installation. However, if errors are occuring at
-this step, or multiple versions of Tec360 are installed and youi wish
-so specify a version, an environment variable, `TECIO_LIB` may be set
-to override the search paths. See below for more info.
-
-### Configuration
-
-### `TECIO_LIB` environment variable
-
-By default `tecio` searches for the TecIO shared library by locating the
-Tecplot executable on `PATH` and resolving the library path relative to it.
-Set `TECIO_LIB` to override this — useful when multiple Tecplot versions are
-installed and you want to pin a specific one, or if automatic detection fails.
-
-```bash
-# Linux
-export TECIO_LIB=/opt/tecplot/360ex_2025r1/bin/libtecio.so
-
-# macOS
-export TECIO_LIB=/Applications/Tecplot\ 360\ EX\ 2025\ R1.app/Contents/Frameworks/libtecio.dylib
-
-# Windows (PowerShell)
-$env:TECIO_LIB = "C:\Program Files\Tecplot\Tec360EX 2025 R1\bin\tecio.dll"
-```
-
-You can make this permanent by adding the export to your shell profile
-(`~/.bashrc`, `~/.zshrc`, etc.) or to your project's `.env` file.
-
-To verify which library `tecio` has resolved at runtime:
-
-```python
-from tecio import utils
-print(utils.get_tecio_lib())
-```
+This page introduces the `tecio` API with four self-contained examples.  For
+installation and system requirements see {ref}`Installation <installation>`.
 
 ---
 
-(example-usage)=
-## Example Usage
+(qs-examples)=
+## Examples
 
-### Reading a file
+## 1. Structured IJK Zone (1-D Line)
 
-`tecio.open` returns a reader whose format is determined by the file
-extension. Zone metadata is available immediately; variable data is read
-lazily from disk on first access.
-
-```python
-import tecio
-
-with tecio.open("flow.szplt", "r") as r:
-    print(r.title)       # dataset title
-    print(r.variables)   # ['x', 'y', 'z', 'pressure', 'velocity']
-    print(r.num_zones)
-
-    zone = r.zone[0]
-    print(zone.title)
-    print(zone.zone_type)
-    print(zone.solution_time)
-
-    # Variable data — loaded from disk here
-    x = zone.variable[0].values   # NumPy array, shape (I, J, K)
-    p = zone.variable[3].values
-
-    # Dataset-level and zone-level auxiliary data
-    print(r.auxdata)
-    print(zone.auxdata)
-```
-
-The same interface works for `.plt` and `.dat` files — only the file
-extension needs to change.
-
----
-
-### Writing a file
-
-Pass variable names and data arrays to `write_ijk_zone`. Dimensions are
-inferred from the array shape; 1-D, 2-D, and 3-D arrays are all accepted.
+The simplest possible file: a single ordered zone containing two variables
+plotted against each other as a line.  Dimensions are inferred from the array
+shape — a 1-D array of length *N* produces an ``(N, 1, 1)`` zone.
 
 ```python
 import numpy as np
 import tecio
 
-x = np.linspace(0, 1, 64)
-y = np.linspace(0, 1, 32)
-X, Y = np.meshgrid(x, y, indexing="ij")
-P = np.sin(2 * np.pi * X) * np.cos(2 * np.pi * Y)
+x = np.linspace(0.0, 2.0 * np.pi, 256)
+y = np.sin(x)
 
-with tecio.open("output.szplt", "w", title="My Dataset") as w:
+with tecio.open("line.szplt", "w", title="Sine Curve") as w:
     w.write_ijk_zone(
-        data=[X, Y, P],
-        variables=["x", "y", "pressure"],
-        title="Zone 1",
+        title="sin(x)",
+        variables=["x", "y"],
+        data=[x, y],
     )
 ```
 
-For time-dependent data, assign a `strand_id` and `solution_time` to each
-zone. Share coordinate arrays across time steps with `var_sharing` to avoid
-writing redundant grid data:
+Reading the file back follows the same pattern:
 
 ```python
-times = np.linspace(0.0, 1.0, 50)
+with tecio.open("line.szplt", "r") as r:
+    print(r.title)       # 'Sine Curve'
+    print(r.variables)   # ['x', 'y']
 
-with tecio.open("transient.szplt", "w", title="Transient Flow") as w:
-    for i, t in enumerate(times):
-        P = compute_pressure(X, Y, t)
-        w.write_ijk_zone(
-            variables=["x", "y", "pressure"],
-            data=[X, Y, P] if w.current_zone == 0 else [P],
-            var_sharing=None if w.current_zone == 0 else [1, 1, 0],
-            strand_id=1,
-            solution_time=t,
-        )
+    zone = r.zone[0]
+    x_read = zone.variable[0].values   # NumPy array, shape (256, 1, 1)
+    y_read = zone.variable[1].values
 ```
 
-Unstructured finite-element zones use `write_fe_zone` and require a
-`node_map` connectivity array:
+:::{note}
+**Python objects are 0-indexed.** The `zone` list and `variable` list on a
+reader both use standard Python (zero-based) indexing: `r.zone[0]` is the
+first zone, `zone.variable[1]` is the second variable.
+
+**TecIO inputs and outputs are 1-indexed.** Whenever a function in
+`tecio.libtecio` accepts a zone or variable index as an integer argument — for
+example `tec_zone_var_write_float_values(handle, zone=1, var=2, ...)` — those
+indices follow Tecplot's Fortran-style one-based convention.  The high-level
+`tecio.open` API handles this translation automatically.
+:::
+
+---
+
+## 2. Unstructured Finite-Element Zones
+
+All five simple finite-element cell types supported by Tecplot are shown below
+in a single file, one zone per element type.  The `node_map` argument is a
+``(num_cells, nodes_per_cell)`` integer array of **1-based** node indices.
 
 ```python
-with tecio.open("mesh.szplt", "w") as w:
+import numpy as np
+import tecio
+from tecio.libtecio import ZoneType
+
+# -- FELINESEG ---------------------------------------------------------------
+# 4-node polyline: (0,0) → (1,0) → (2,1) → (3,0)
+x_ls = np.array([0.0, 1.0, 2.0, 3.0], dtype=np.float32)
+y_ls = np.array([0.0, 0.0, 1.0, 0.0], dtype=np.float32)
+nm_ls = np.array([[1, 2], [2, 3], [3, 4]], dtype=np.int32)  # 3 segments
+
+# --- FETRIANGLE -------------------------------------------------------------
+x_tri = np.array([0.0, 1.0, 0.5], dtype=np.float32)
+y_tri = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+nm_tri = np.array([[1, 2, 3]], dtype=np.int32)              # 1 triangle
+
+# --- FEQUADRILATERAL --------------------------------------------------------
+x_q = np.array([0.0, 1.0, 1.0, 0.0], dtype=np.float32)
+y_q = np.array([0.0, 0.0, 1.0, 1.0], dtype=np.float32)
+nm_q = np.array([[1, 2, 3, 4]], dtype=np.int32)             # 1 quad
+
+# --- FETETRAHEDRON ----------------------------------------------------------
+x_tet = np.array([0.0, 1.0, 0.5, 0.5], dtype=np.float32)
+y_tet = np.array([0.0, 0.0, 1.0, 0.0], dtype=np.float32)
+z_tet = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
+nm_tet = np.array([[1, 2, 3, 4]], dtype=np.int32)           # 1 tet
+
+# --- FEBRICK ----------------------------------------------------------------
+x_b = np.array([0,1,1,0,0,1,1,0], dtype=np.float32)
+y_b = np.array([0,0,1,1,0,0,1,1], dtype=np.float32)
+z_b = np.array([0,0,0,0,1,1,1,1], dtype=np.float32)
+nm_b = np.array([[1,2,3,4,5,6,7,8]], dtype=np.int32)        # 1 hex brick
+
+
+with tecio.open("fe_zones.szplt", "w", title="FE Zone Types") as w:
+
     w.write_fe_zone(
-        zone_type=tecio.libtecio.ZoneType.FETRIANGLE,
-        data=[nodes_x, nodes_y, pressure],
-        variables=["x", "y", "pressure"],
-        node_map=triangles,   # shape (num_cells, 3), 1-based
+        zone_type=ZoneType.FELINESEG,
+        title="LineSeg",
+        variables=["x", "y"],
+        data=[x_ls, y_ls],
+        node_map=nm_ls,
+    )
+    w.write_fe_zone(
+        zone_type=ZoneType.FETRIANGLE,
+        title="Triangle",
+        data=[x_tri, y_tri],
+        node_map=nm_tri,
+    )
+    w.write_fe_zone(
+        zone_type=ZoneType.FEQUADRILATERAL,
+        title="Quad",
+        data=[x_q, y_q],
+        node_map=nm_q,
+    )
+    w.write_fe_zone(
+        zone_type=ZoneType.FETETRAHEDRON,
+        title="Tet",
+        variables=["x", "y", "z"],
+        data=[x_tet, y_tet, z_tet],
+        node_map=nm_tet,
+    )
+    w.write_fe_zone(
+        zone_type=ZoneType.FEBRICK,
+        title="Brick",
+        data=[x_b, y_b, z_b],
+        node_map=nm_b,
     )
 ```
 
-Dataset-level auxiliary data (used by Tecplot to auto-configure axis
-variables, velocity vectors, etc.) can be written before the first zone:
+:::{note}
+After the first `write_fe_zone` call the variable list is locked in. Subsequent
+zones must supply the same set of variables (or a subset via `passive_vars`).
+The `variables` keyword only needs to be passed once — on the first write call,
+or at `tecio.open` time.
+:::
+
+---
+
+## 3. Time-Dependent 2-D Field
+
+Transient datasets are written by assigning each zone a `strand_id` and
+`solution_time`.  Zones on the same strand animate together in Tecplot 360.
+Grid coordinates that do not change between time steps can be **shared** from
+the first zone to avoid writing duplicate arrays, which substantially reduces
+file size for large grids.
 
 ```python
-with tecio.open("flow.szplt", "w") as w:
+import numpy as np
+import tecio
+
+# 2-D grid
+nx, ny = 128, 128
+x = np.linspace(0.0, 1.0, nx)
+y = np.linspace(0.0, 1.0, ny)
+X, Y = np.meshgrid(x, y, indexing="ij")   # shape (nx, ny)
+
+times = np.linspace(0.0, 4.0 * np.pi, 60)
+
+with tecio.open("transient.szplt", "w", title="Travelling Wave") as w:
+
+    # Set dataset auxiliary data before the first zone
     w.add_auxdataset_dict({
         "Common.XVar": 1,
         "Common.YVar": 2,
-        "Common.UVar": 3,
-        "Common.VVar": 4,
+        "Common.CVar": 3,
     })
-    w.write_ijk_zone(...)
+
+    for i, t in enumerate(times):
+        phi = np.sin(2.0 * np.pi * X - t) * np.cos(2.0 * np.pi * Y)
+
+        if i == 0:
+            # First zone: write grid coordinates and solution
+            w.write_ijk_zone(
+                title=f"t = {t:.3f}",
+                variables=["x", "y", "phi"],
+                data=[X, Y, phi],
+                strand_id=1,
+                solution_time=t,
+            )
+        else:
+            # Subsequent zones: share x and y from zone 1, write phi only
+            w.write_ijk_zone(
+                title=f"t = {t:.3f}",
+                data=[phi],
+                var_sharing=[1, 1, 0],   # x←zone1, y←zone1, phi=new
+                strand_id=1,
+                solution_time=t,
+            )
+```
+
+Reading a transient file works identically to a steady file — the zones are
+listed in the order they were written:
+
+```python
+with tecio.open("transient.szplt", "r") as r:
+    print(r.num_zones)           # 60
+
+    # Solution times across all zones
+    times_read = [r.zone[i].solution_time for i in range(r.num_zones)]
+
+    # Grid is only stored in zone 0; later zones return None for shared vars
+    phi_t0 = r.zone[0].variable[2].values    # shape (128, 128, 1)
+    phi_t1 = r.zone[1].variable[2].values    # shape (128, 128, 1)
+    x_shared = r.zone[1].variable[0].values  # None — shared from zone 0
 ```
 
 ---
 
-### Appending to an existing file
+## 4. Low-Level `libtecio` API
 
-`mode='a'` streams the existing file into a temporary copy, then leaves the
-write handle open for new zones. On close the temporary file atomically
-replaces the original.
-
-```python
-with tecio.open("flow.szplt", "a") as w:
-    print(w.variables)      # variable list from the existing file
-    print(w.current_zone)   # number of zones already copied
-
-    w.write_ijk_zone(
-        data=[x_new, y_new, p_new],
-        solution_time=10.0,
-        strand_id=1,
-    )
-```
-
-`mode='a+'` additionally exposes the full read interface populated from the
-original file, useful when new zones depend on existing data:
+The `tecio.libtecio` module exposes the TecIO C functions directly.  Using it
+gives full control over data types, zone creation options, and the write
+ordering required by the SZL API.  This example reproduces the 1-D sine curve
+from Example 1 using the low-level SZL write functions.
 
 ```python
-with tecio.open("flow.szplt", "a+") as rw:
-    # Read from the original zones
-    p_avg = sum(
-        rw.zone[i].variable["pressure"].values
-        for i in range(rw.num_zones)
-    ) / rw.num_zones
+import numpy as np
+from tecio import libtecio
+from tecio.libtecio import DataType, FileType, ValueLocation, ZoneType
 
-    # Append a new zone using the computed average
-    x = rw.zone[0].variable[0].values
-    y = rw.zone[0].variable[1].values
-    rw.write_ijk_zone(
-        data=[x, y, p_avg],
-        title="Time-average",
-        solution_time=rw.zone[-1].solution_time + 1.0,
-        strand_id=2,
-    )
+x = np.linspace(0.0, 2.0 * np.pi, 256, dtype=np.float32)
+y = np.sin(x)
+
+# 1. Open a writer handle (returns an opaque C pointer)
+handle = libtecio.tec_file_writer_open(
+    filename="line_lowlevel.szplt",
+    variables=["x", "y"],
+    title="Sine Curve (low-level)",
+    file_type=FileType.FULL,
+)
+
+# 2. Create a zone and get its 1-based index
+izone = libtecio.tec_zone_create_ijk(
+    handle,
+    zone_title="sin(x)",
+    imax=256,
+    jmax=1,
+    kmax=1,
+    var_types=[DataType.FLOAT, DataType.FLOAT],
+    value_locations=[ValueLocation.NODAL, ValueLocation.NODAL],
+)
+
+# 3. Write each variable by 1-based index (zone=1, var=1 / var=2)
+libtecio.tec_zone_var_write_float_values(handle, izone, 1, x)
+libtecio.tec_zone_var_write_float_values(handle, izone, 2, y.astype(np.float32))
+
+# 4. Close and flush
+libtecio.tec_file_writer_close(handle)
 ```
+
+:::{note}
+**SZL vs. classic API.** The SZL functions (`tec_file_writer_open`,
+`tec_zone_create_ijk`, `tec_zone_var_write_*`) return an explicit file handle
+and allow variables to be written in any order after zone creation.  Multiple
+files can be open simultaneously.
+
+The classic PLT functions (`tecini142`, `teczne142`, `tecdat142`, `tecend142`)
+maintain a single implicit global context: only one file is active at a time
+and data must be written in strict zone → variable order.  Use the SZL API for
+new code unless PLT format is specifically required.
+:::
 
 ---
 
-## Command-Line Tools
+(qs-index-convention)=
+## Indexing Conventions
 
-After installation the following scripts are available directly from the shell.
-See [Console Scripts](api/cli.md) for full documentation of each tool.
+| Context | Indexing | Example |
+|---------|----------|---------|
+| Python reader objects (`zone`, `variable`) | **0-based** | `r.zone[0]`, `zone.variable[2]` |
+| `libtecio` function arguments (zone, var) | **1-based** | `tec_zone_var_write_float_values(h, 1, 3, arr)` |
+| `var_sharing` list entries | **1-based** zone number | `var_sharing=[1, 1, 0]` → share from zone 1 |
+| `node_map` connectivity arrays | **1-based** node indices | `np.array([[1, 2, 3]])` |
 
-```bash
-# Print all metadata and variable arrays for a file
-tecdump flow.szplt
+The high-level `tecio.open` API handles the translation between Python
+zero-based indexing and TecIO one-based indexing automatically.  You only need
+to think about one-based indices when calling `libtecio` functions directly or
+when constructing `var_sharing` / `node_map` arrays.
 
-# Print per-variable statistics (min, max, mean, std)
-tecstats flow.szplt
+---
 
-# Convert between formats
-teconvert -szplt flow.plt
-teconvert -dat flow.szplt
+(qs-getting-help)=
+## Getting Help
 
-# Set NaN / Inf variable arrays to passive
-tecfix blown_up.szplt
+All public classes and functions have docstrings accessible via Python's
+built-in `help()` function:
 
-# Merge multiple files into one
-tecmerge -o combined.szplt step_001.szplt step_002.szplt step_003.szplt
+```python
+import tecio
 
-# Extract zones 1 and 3, variables 1–3
-tecextract -zones 1,3 -variables 1,2,3 flow.szplt
-
-# Thin a structured grid (every other point in I and J)
-tecslice -i ::2 -j ::2 -o thinned.szplt flow.szplt
-
-# Scale pressure variable from Pa to kPa
-tecscale -variable pressure -scale 1e-3 flow.szplt
+help(tecio.open)               # top-level open function
+help(tecio.szl.Write)          # SZL writer class and all its methods
+help(tecio.libtecio.ZoneType)  # enum values and descriptions
 ```
+
+Full API documentation is available in the {doc}`API Reference </api/index>`,
+and runnable demos are provided in the `demos/` directory of the repository.

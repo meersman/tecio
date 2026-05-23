@@ -27,11 +27,11 @@ direction between all three formats without requiring a Tecplot installation.
         Convert to Tecplot ASCII DAT format (``.dat``). Exactly one format flag is
         required.
 
-    ``-o, --output PATH``
+    ``-o PATH``, ``--output PATH``
         Explicit output file path. Defaults to the input file stem with the new
         extension in the same directory as the input file.
 
-    ``-f, --force``
+    ``-f``, ``--force``
         Overwrite the output file if it already exists. Without this flag the command
         exits with an error rather than silently clobbering an existing file.
 
@@ -60,6 +60,7 @@ Examples:
     Call directly from a Python session::
 
         import tecio.cli.teconvert.main as teconvert
+
         teconvert(["-dat", "-o", "flow.dat", "flow.szplt"])
 
 See Also:

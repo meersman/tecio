@@ -17,7 +17,7 @@ project_info = data["project"]
 project = project_info["name"]
 release = project_info["version"]
 copyright = "2026, John Meesman"
-author = "John Meesman"
+author = "John Meersman"
 
 # -- General configuration ---------------------------------------------------
 
@@ -85,15 +85,19 @@ source_suffix = {
 html_theme = "sphinx_book_theme"
 html_title = "tecio"
 html_static_path = ["_static"]
+html_last_updated_fmt = "%m-%d-%Y"
 
 html_theme_options = {
     "repository_url": "https://github.com/meersman/tecio",
     "use_repository_button": True,
-    "use_download_button": False,
+    "repository_branch": "main",
+    "use_download_button": True,
     "show_toc_level": 2,
     "navigation_with_keys": True,
+    "back_to_top_button": True,
+    "pygments_light_style": "github-light",
+    "pygments_dark_style": "paraiso-dark",
 }
-
 
 # -- Demo auto-copy ----------------------------------------------------------
 
