@@ -10,8 +10,15 @@ that support PLT and DAT but not SZL, or when direct inspection of file contents
 text editor is required.  ``teconvert`` fills this gap by supporting conversion in any
 direction between all three formats without requiring a Tecplot installation.
 
+:Usage:
+
+.. code:: bash
+
+    teconvert [-h] (-szplt | -plt | -dat) [-f] [-o PATH] FILE
+
+
 :Positional Arguments:
-    ``filename``
+    ``FILE``
         Path to the input Tecplot file (``.plt``, ``.szplt``, or ``.dat``) to convert.
 
 :Options:

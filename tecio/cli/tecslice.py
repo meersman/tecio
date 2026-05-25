@@ -39,8 +39,15 @@ window is filtered.
      - ``[::-1]``
      - Reverse the axis (e.g. mirror)
 
+:Usage:
+
+.. code:: bash
+
+    tecslice [-h] -o PATH [-f] [-i [start]:[end]:[skip]] [-j [start]:[end]:[skip]] [-k
+             [start]:[end]:[skip]] [-t [start]:[end]:[skip]] [--strand-id ID] FILE
+
 :Positional Arguments:
-    ``filename``
+    ``FILE``
         Path to the input Tecplot file (``.plt``, ``.szplt``, or ``.dat``) to slice.
 
 :Options:

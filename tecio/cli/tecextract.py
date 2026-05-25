@@ -9,8 +9,14 @@ requested subset, with the output format determined by the file extension of the
 path.  This makes it straightforward to reduce file size, change format, or prepare a
 subset for use with another tool in a single command.
 
+:Usage:
+
+.. code:: bash
+
+    tecextract [-h] [-zones LIST] [-variables LIST] [-o PATH] [-f] PATH
+
 :Positional Arguments:
-    ``filename``
+    ``PATH``
         Path to the input Tecplot binary file (``.plt`` or ``.szplt``).
 
 :Options:

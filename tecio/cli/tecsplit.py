@@ -32,8 +32,16 @@ file, ``<stem>_solution<ext>`` in default mode, and ``<stem>_<varname><ext>`` fo
 popped variable.  Variable names are sanitised for use in filenames; if two variables
 sanitise to the same name the command exits without writing any files.
 
+
+:Usage:
+
+.. code:: bash
+
+    tecsplit [-h] [-o DIR] [-f] [--coords VARS] [--pop VARS | --pop-all] PATH
+
+
 :Positional Arguments:
-    ``filename``
+    ``PATH``
         Path to the input Tecplot file (``.plt``, ``.szplt``, or ``.dat``) to split.
 
 :Options:

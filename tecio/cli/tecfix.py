@@ -10,6 +10,12 @@ variable names in zone-level auxiliary data for traceability. A dry-run mode is
 available to produce a diagnostic report without writing any output, making the tool
 useful as a validation step before committing to a fix.
 
+:Usage:
+
+.. code:: bash
+
+    tecfix [-h] [-o PATH] [-f] [--dry-run] PATH
+
 :Positional Arguments:
     ``filename``
         Path to the input Tecplot binary file (``.plt`` or ``.szplt``) to inspect and

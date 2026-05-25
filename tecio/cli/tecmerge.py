@@ -8,6 +8,13 @@ or via a quoted glob pattern and may be any mix of supported formats.  When merg
 time-step sequences, solution times and strand IDs can be assigned automatically from a
 start time and either a fixed interval or an end time.
 
+:Usage:
+
+.. code:: bash
+
+    tecmerge [-h] --output PATH [--force] [--title STRING] [--assign-time-strands]
+             [-start VALUE] [-delta VALUE | -end VALUE] [-strand ID] FILE [FILE ...]
+
 :Positional Arguments:
     ``FILE [FILE ...]``
         One or more input Tecplot files (``.plt``, ``.szplt``, or ``.dat``). Glob

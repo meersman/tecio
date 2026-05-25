@@ -365,21 +365,22 @@ def _prepare_array_for_ctypes(
 ) -> tuple[ctypes.POINTER, int, npt.NDArray]:
     """Convert an input array to contiguous numpy array and return a ctypes pointer.
 
-    Inputs:
-    - values: array-like (list, tuple, numpy array)
-    - np_dtype: numpy dtype object or type (e.g. np.float32)
-    - ctype: corresponding ctypes scalar type (e.g. ctypes.c_float)
+    Args:
+        values: array-like (list, tuple, numpy array)
+        np_dtype: numpy dtype object or type (e.g. np.float32)
+        ctype: corresponding ctypes scalar type (e.g. ctypes.c_float)
 
     Returns:
-    - (ptr, count, backing_array)
-      * ptr: ctypes pointer suitable for passing to the C API
-      * count: int number of elements
-      * backing_array: the numpy array object (returned to keep it alive)
+        ptr: ctypes pointer suitable for passing to the C API
+        count: int number of elements
+        backing_array: the numpy array object (returned to keep it alive)
 
-    Notes:
-    - Caller should keep the returned backing_array alive until the native call
-      completes.
-    - This function enforces dtype and C-contiguity.
+    Note:
+        Caller should keep the returned backing_array alive until the native call
+        completes.
+
+    Note:
+        This function enforces dtype and C-contiguity.
     """
     arr = np.ascontiguousarray(values, dtype=np_dtype)
     count = int(arr.size)
@@ -2747,7 +2748,7 @@ def tec_zone_face_nbr_write_connections32(
     Raises:
         TecioError: On C library error.
 
-    Notes:
+    Note:
         ``num_face_cons`` and ``face_nbr_mode`` must be set when creating the zone via
         :func:`tec_zone_create_ijk` or :func:`tec_zone_create_fe`.
 
@@ -2793,7 +2794,7 @@ def tec_zone_face_nbr_write_connections64(
     Raises:
         TecioError: On C library error.
 
-    Notes:
+    Note:
         ``num_face_cons`` and ``face_nbr_mode`` must be set when creating the zone via
         :func:`tec_zone_create_ijk` or :func:`tec_zone_create_fe`.
 

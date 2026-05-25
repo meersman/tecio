@@ -13,8 +13,15 @@ By default all zones and variables are printed. However, the scope can be narrow
 single zone or variable using the ``-zone`` and ``-variable`` flags, or the variable
 arrays can be suppressed entirely to focus on structural metadata.
 
+:Usage:
+
+.. code:: bash
+
+    tecdump [-h] [--ignore-zones] [--ignore-vars] [-zone INDEX] [-variable INDEX]
+            [-maxvals INT] PATH
+
 :Positional Arguments:
-    ``filename``
+    ``PATH``
         Path to the Tecplot binary file (``.plt`` or ``.szplt``)
         to inspect.
 

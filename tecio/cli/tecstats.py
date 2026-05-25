@@ -10,6 +10,12 @@ variables are noted but skipped. Used alongside ``tecfix``, this tool provides a
 lightweight diagnostic layer for validating file contents before and after any
 corrective operation.
 
+:Usage:
+
+.. code:: bash
+
+    tecstats [-h] [-zone INDEX] [-variable INDEX] [-csv] [-f] PATH
+
 :Positional Arguments:
     ``PATH``
         Path to the input Tecplot file (``.plt``, ``.szplt``, or ``.dat``) to analyse.

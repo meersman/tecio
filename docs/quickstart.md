@@ -9,7 +9,7 @@ installation and system requirements see {ref}`Installation <installation>`.
 (qs-examples)=
 ## Examples
 
-## 1. Structured IJK Zone (1-D Line)
+### 1. Structured IJK Zone (1-D Line)
 
 The simplest possible file: a single ordered zone containing two variables
 plotted against each other as a line.  Dimensions are inferred from the array
@@ -56,7 +56,7 @@ indices follow Tecplot's Fortran-style one-based convention.  The high-level
 
 ---
 
-## 2. Unstructured Finite-Element Zones
+### 2. Unstructured Finite-Element Zones
 
 All five simple finite-element cell types supported by Tecplot are shown below
 in a single file, one zone per element type.  The `node_map` argument is a
@@ -67,68 +67,105 @@ import numpy as np
 import tecio
 from tecio.libtecio import ZoneType
 
-# -- FELINESEG ---------------------------------------------------------------
-# 4-node polyline: (0,0) → (1,0) → (2,1) → (3,0)
-x_ls = np.array([0.0, 1.0, 2.0, 3.0], dtype=np.float32)
-y_ls = np.array([0.0, 0.0, 1.0, 0.0], dtype=np.float32)
-nm_ls = np.array([[1, 2], [2, 3], [3, 4]], dtype=np.int32)  # 3 segments
+with tecio.open("fe_cells.szplt", "w") as szlfile:
 
-# --- FETRIANGLE -------------------------------------------------------------
-x_tri = np.array([0.0, 1.0, 0.5], dtype=np.float32)
-y_tri = np.array([0.0, 0.0, 1.0], dtype=np.float32)
-nm_tri = np.array([[1, 2, 3]], dtype=np.int32)              # 1 triangle
+    # -- Write a FE line segment ---------------------------------------------
+    x = np.array([0, 0.5, 1])
+    y = np.array([0, 1, 0])
+    nodes = np.array([[1, 2], [2, 3]])
+    c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
 
-# --- FEQUADRILATERAL --------------------------------------------------------
-x_q = np.array([0.0, 1.0, 1.0, 0.0], dtype=np.float32)
-y_q = np.array([0.0, 0.0, 1.0, 1.0], dtype=np.float32)
-nm_q = np.array([[1, 2, 3, 4]], dtype=np.int32)             # 1 quad
-
-# --- FETETRAHEDRON ----------------------------------------------------------
-x_tet = np.array([0.0, 1.0, 0.5, 0.5], dtype=np.float32)
-y_tet = np.array([0.0, 0.0, 1.0, 0.0], dtype=np.float32)
-z_tet = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
-nm_tet = np.array([[1, 2, 3, 4]], dtype=np.int32)           # 1 tet
-
-# --- FEBRICK ----------------------------------------------------------------
-x_b = np.array([0,1,1,0,0,1,1,0], dtype=np.float32)
-y_b = np.array([0,0,1,1,0,0,1,1], dtype=np.float32)
-z_b = np.array([0,0,0,0,1,1,1,1], dtype=np.float32)
-nm_b = np.array([[1,2,3,4,5,6,7,8]], dtype=np.int32)        # 1 hex brick
-
-
-with tecio.open("fe_zones.szplt", "w", title="FE Zone Types") as w:
-
-    w.write_fe_zone(
+    szlfile.write_fe_zone(
         zone_type=ZoneType.FELINESEG,
-        title="LineSeg",
-        variables=["x", "y"],
-        data=[x_ls, y_ls],
-        node_map=nm_ls,
+        data=[x, y, c],
+        node_map=nodes,
+        title="FE_LineSeg",
+        variables=["x", "y", "z", "c"],
+        passive_vars=[False, False, True, False],
     )
-    w.write_fe_zone(
+
+    # --  Write a FE triangle ------------------------------------------------
+    x = np.array([0, 1, 0, 1]) + 2
+    y = np.array([0, 0, 1, 1])
+    nodes = np.array([[1, 2, 3], [2, 4, 3]])
+    c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
+    szlfile.write_fe_zone(
         zone_type=ZoneType.FETRIANGLE,
-        title="Triangle",
-        data=[x_tri, y_tri],
-        node_map=nm_tri,
+        data=[x, y, c],
+        node_map=nodes,
+        title="FE_Tri",
+        variables=["x", "y", "z", "c"],
+        passive_vars=[False, False, True, False],
     )
-    w.write_fe_zone(
+
+    #  -- Write a FE quadrilateral -------------------------------------------
+    x = np.array([0, 0.5, 1, 0, 0.5, 1]) + 4
+    y = np.array([0, 0, 0, 1, 1, 1])
+    nodes = np.array([[1, 2, 5, 4], [2, 3, 6, 5]])
+    c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
+    szlfile.write_fe_zone(
         zone_type=ZoneType.FEQUADRILATERAL,
-        title="Quad",
-        data=[x_q, y_q],
-        node_map=nm_q,
+        data=[x, y, c],
+        node_map=nodes,
+        title="FE_Quad",
+        variables=["x", "y", "z", "c"],
+        passive_vars=[False, False, True, False],
     )
-    w.write_fe_zone(
+
+    # -- Write a FE tetrahedron ----------------------------------------------
+    x = np.array([0, 1, 0.5, 0.5, 0.5]) + 6
+    y = np.array([0, 0, 1, 0.5, 0.5])
+    z = np.array([0, 0, 0, 1, -1])
+    nodes = np.array([[1, 2, 3, 4], [1, 3, 2, 5]])
+    c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y) * (1.0 + 0.1 * z)
+    szlfile.write_fe_zone(
         zone_type=ZoneType.FETETRAHEDRON,
-        title="Tet",
-        variables=["x", "y", "z"],
-        data=[x_tet, y_tet, z_tet],
-        node_map=nm_tet,
+        data=[x, y, z, c],
+        node_map=nodes,
+        title="FE_Tet",
+        variables=["x", "y", "z", "c"],
     )
-    w.write_fe_zone(
+
+    # --  Write a FE pyramid as degenerate FEBRICK ---------------------------
+    x = np.array([0, 1, 1, 0, 0.5, 0.5]) + 8
+    y = np.array([0, 0, 1, 1, 0.5, 0.5])
+    z = np.array([0, 0, 0, 0, 1, -1])
+    nodes = np.array([[1, 2, 3, 4, 5, 5, 5, 5], [1, 4, 3, 2, 6, 6, 6, 6]])
+    c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y) * (1.0 + 0.1 * z)
+    szlfile.write_fe_zone(
         zone_type=ZoneType.FEBRICK,
-        title="Brick",
-        data=[x_b, y_b, z_b],
-        node_map=nm_b,
+        data=[x, y, z, c],
+        node_map=nodes,
+        title="FE_Pyramid",
+        variables=["x", "y", "z", "c"],
+    )
+
+    # -- Write a FE prism as degenerate FEBRICK ------------------------------
+    x = np.array([0, 1, 0.5, 0, 1, 0.5, 0, 1, 0.5]) + 10
+    y = np.array([0, 0, 1, 0, 0, 1, 0, 0, 1])
+    z = np.array([0, 0, 0, 1, 1, 1, -1, -1, -1])
+    nodes = np.array([[1, 2, 3, 3, 4, 5, 6, 6], [1, 3, 2, 2, 7, 9, 8, 8]])
+    c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y) * (1.0 + 0.1 * z)
+    szlfile.write_fe_zone(
+        zone_type=ZoneType.FEBRICK,
+        data=[x, y, z, c],
+        node_map=nodes,
+        title="FE_Prism",
+        variables=["x", "y", "z", "c"],
+    )
+
+    # -- Write a FEBRICK -----------------------------------------------------
+    x = np.array([0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0]) + 12
+    y = np.array([0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1])
+    z = np.array([0, 0, 0, 0, 1, 1, 1, 1, -1, -1, -1, -1])
+    nodes = np.array([[1, 2, 3, 4, 5, 6, 7, 8], [1, 4, 3, 2, 9, 12, 11, 10]])
+    c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y) * (1.0 + 0.1 * z)
+    szlfile.write_fe_zone(
+        zone_type=ZoneType.FEBRICK,
+        data=[x, y, z, c],
+        node_map=nodes,
+        title="FE_Brick",
+        variables=["x", "y", "z", "c"],
     )
 ```
 
@@ -139,9 +176,31 @@ The `variables` keyword only needs to be passed once — on the first write call
 or at `tecio.open` time.
 :::
 
+The seven finite-element zone types supported by `tecio` are shown below, from
+left to right: `FELINESEG`, `FETRIANGLE`, `FEQUADRILATERAL`, `FETETRAHEDRON`,
+pyramid (degenerate `FEBRICK`), prism (degenerate `FEBRICK`), and `FEBRICK`.
+Each zone contains two cells.
+
+```{figure} _static/fe_nodes.png
+:alt: Node numbering for all supported FE zone types
+:width: 100%
+
+Node numbering (red) for each FE zone type. Node indices are 1-based and are
+used directly in the `node_map` connectivity array passed to
+{meth}`~tecio.szl.Write.write_fe_zone`.
+```
+
+```{figure} _static/fe_cells.png
+:alt: Cell numbering for all supported FE zone types
+:width: 100%
+
+Cell numbering (blue) for each FE zone type. Cell indices correspond to rows
+in the `node_map` array.
+```
+
 ---
 
-## 3. Time-Dependent 2-D Field
+### 3. Time-Dependent 2-D Field
 
 Transient datasets are written by assigning each zone a `strand_id` and
 `solution_time`.  Zones on the same strand animate together in Tecplot 360.
@@ -211,7 +270,7 @@ with tecio.open("transient.szplt", "r") as r:
 
 ---
 
-## 4. Low-Level `libtecio` API
+### 4. Low-Level `libtecio` API
 
 The `tecio.libtecio` module exposes the TecIO C functions directly.  Using it
 gives full control over data types, zone creation options, and the write

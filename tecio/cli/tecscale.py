@@ -15,8 +15,15 @@ to every value in a selected variable array, where :math:`s` is the scale factor
 and the output format is controlled by the output file extension, allowing unit
 conversion and format conversion to be performed in a single step.
 
+:Usage:
+
+.. code:: bash
+
+    tecscale [-h] -variable INDEX_OR_NAME [-scale FLOAT] [-offset FLOAT] [-zone INDEX]
+             [-o PATH] [-f] PATH
+
 :Positional Arguments:
-    ``filename``
+    ``PATH``
         Path to the input Tecplot binary file (``.plt`` or ``.szplt``) to transform.
 
 :Options:

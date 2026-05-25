@@ -27,11 +27,14 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
+    "sphinx_copybutton",
     "myst_parser",
 ]
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+copybutton_prompt_text = r">>> |\.\.\. "
+copybutton_prompt_is_regexp = True
 
 # -- Napoleon settings (Google-style docstrings) -----------------------------
 

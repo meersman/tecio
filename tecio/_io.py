@@ -755,25 +755,22 @@ def open(
         NotImplementedError: Append mode on a file containing FEPOLYGON
             or FEPOLYHEDRON zones.
 
-    Example:
+    Examples:
         Read a file:
 
         >>> with tecio.open("flow.szplt") as r:
         ...     x = r.zone[0].variable["x"].values
 
-    Example:
         Write a new file, deferring variable names to the first zone:
 
         >>> with tecio.open("out.szplt", "w", title="Run 1") as w:
         ...     w.write_ijk_zone(data=[x, y, p], variables=["x", "y", "p"])
 
-    Example:
         Append a new zone to an existing file:
 
         >>> with tecio.open("out.szplt", "a") as w:
         ...     w.write_ijk_zone(data=[x2, y2, p2], solution_time=2.0)
 
-    Example:
         Append and read in the same session:
 
         >>> with tecio.open("out.szplt", "a+") as rw:
