@@ -43,8 +43,8 @@ Returned by {func}`tecio.open` when using ``'a'`` or ``'a+'`` mode.
 
 | Class | Mode | Description |
 |---|---|---|
-| {class}`~tecio._io.AppendWrite` | ``'a'`` | Append zones to an existing SZL file |
-| {class}`~tecio._io.AppendReadWrite` | ``'a+'`` | Append zones and read existing zones |
+| {class}`~tecio.AppendWrite` | ``'a'`` | Append zones to an existing SZL file |
+| {class}`~tecio.AppendReadWrite` | ``'a+'`` | Append zones and read existing zones |
 
 ## Submodules
 

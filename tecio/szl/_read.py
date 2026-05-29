@@ -19,7 +19,7 @@ import numpy as np
 import numpy.typing as npt
 
 from .. import libtecio
-from ..libtecio import DataType, FileType, ValueLocation, ZoneType
+from ..libtecio import DataPacking, DataType, FileType, ValueLocation, ZoneType
 
 
 class Read:
@@ -228,6 +228,17 @@ class ReadZone:
     @property
     def dimensions(self) -> tuple[int, int, int]:
         """``(I, J, K)`` dimensions for current zone."""
+
+    @property
+    def datapacking(self) -> DataPacking:
+        """Always :attr:`~tecio.libtecio.DataPacking.BLOCK` for binary SZL files.
+
+        Binary files have no on-disk row-vs-column layout distinction; this
+        property exists so that code reading SZL zones can check
+        ``zone.datapacking`` the same way it would for a DAT zone, and switch
+        behaviour on the result without special-casing the file format.
+        """
+        return DataPacking.BLOCK
         return (self.I, self.J, self.K)
 
     @property

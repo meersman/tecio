@@ -27,14 +27,13 @@ Keep output files for Tecplot 360 inspection:
     $ python tests/test_dat_write.py -v --keep-files
 """
 
+# ruff: noqa: E501, SIM117
+
 import sys
-from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 import pytest
-
-import tecio
 from create_test_data import (
     create_FE_brick,
     create_FE_lineseg,
@@ -47,7 +46,15 @@ from create_test_data import (
     create_ordered,
     scalar_field,
 )
-from tecio.libtecio import FaceNeighborMode, FileType, ValueLocation, ZoneType
+
+import tecio
+from tecio.libtecio import (
+    DataPacking,
+    FaceNeighborMode,
+    FileType,
+    ValueLocation,
+    ZoneType,
+)
 
 # DAT reads everything back as float64; tolerance allows for 9-digit ASCII formatting
 _RTOL_DAT = 1e-7
@@ -287,6 +294,154 @@ class TestWriteIJKZone:
         with tecio.open(str(path), "r") as r:
             assert r.file_type == FileType.SOLUTION
 
+    def test_write_ijk_point_basic(self, output_path: Callable) -> None:
+        """1-D ordered zone written and read back in POINT format.
+
+        Demonstrates:
+        - ``datapacking=DataPacking.POINT`` on ``write_ijk_zone``: emits one row of all
+          variable values per node instead of one full variable block per variable
+        - Data layout is equivalent to CSV with a Tecplot header; useful for
+          third-party tools that expect row-major ASCII data
+        - Values survive the POINT ASCII round-trip within DAT precision
+        - Zone metadata (type, dimensions) are identical to a BLOCK-packed zone
+        """
+        n = 20
+        x = np.linspace(0.0, 2 * np.pi, n, dtype=np.float64)
+        y = np.sin(x).astype(np.float64)
+        c = np.cos(x).astype(np.float64)
+
+        path = output_path("test_dat_write_ijk_point_basic.dat")
+        with tecio.open(str(path), "w") as datfile:
+            datfile.write_ijk_zone(
+                data=[x, y, c],
+                variables=["x", "sin_x", "cos_x"],
+                title="point_1d",
+                datapacking=DataPacking.POINT,
+            )
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            assert r.num_zones == 1
+            assert r.num_vars == 3
+            zone = r.zone[0]
+            assert zone.zone_type == ZoneType.ORDERED
+            assert zone.dimensions == (n, 1, 1)
+            np.testing.assert_allclose(zone.variable[0].values.ravel(), x, rtol=_RTOL_DAT)
+            np.testing.assert_allclose(zone.variable[1].values.ravel(), y, rtol=_RTOL_DAT)
+            np.testing.assert_allclose(zone.variable[2].values.ravel(), c, rtol=_RTOL_DAT)
+
+    def test_write_ijk_point_3d(self, output_path: Callable) -> None:
+        """3-D IJK zone in POINT format — values and dimensions verified.
+
+        Demonstrates:
+        - POINT packing is valid for multi-dimensional ordered zones; Tecplot
+          360 reads the rows in I-J-K (Fortran-column-major) index order
+        - Coordinates and a scalar field survive the round-trip within
+          DAT ASCII precision (rtol=1e-7)
+        - Reshaped (I, J, K) arrays are ravelled column-major before writing
+          to match the expected node ordering
+        """
+        i, j, k = 3, 4, 5
+        x, y, z = create_ordered((i, j, k))
+
+        path = output_path("test_dat_write_ijk_point_3d.dat")
+        with tecio.open(str(path), "w") as datfile:
+            datfile.write_ijk_zone(
+                data=[x, y, z],
+                variables=["x", "y", "z"],
+                title="point_3d",
+                datapacking=DataPacking.POINT,
+            )
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            zone = r.zone[0]
+            assert zone.dimensions == (i, j, k)
+            np.testing.assert_allclose(zone.variable[0].values.ravel(), x.ravel(), rtol=_RTOL_DAT)
+            np.testing.assert_allclose(zone.variable[1].values.ravel(), y.ravel(), rtol=_RTOL_DAT)
+            np.testing.assert_allclose(zone.variable[2].values.ravel(), z.ravel(), rtol=_RTOL_DAT)
+
+    def test_write_ijk_point_matches_block(self, output_path: Callable) -> None:
+        """POINT and BLOCK produce identical read-back values for the same data.
+
+        Demonstrates:
+        - The two packing modes are semantically equivalent; the only
+          difference is the on-disk layout
+        - Verifies that the POINT reader correctly transposes rows into
+          per-variable arrays matching the BLOCK output
+        """
+        i, j = 6, 7
+        x, y, _ = create_ordered((i, j, 1))
+        c = scalar_field(x.squeeze(-1), y.squeeze(-1)).astype(np.float64)
+        x = x.squeeze(-1)
+        y = y.squeeze(-1)
+
+        path_block = output_path("test_dat_ijk_packing_block.dat")
+        path_point = output_path("test_dat_ijk_packing_point.dat")
+
+        for path, packing in ((path_block, "BLOCK"), (path_point, "POINT")):
+            with tecio.open(str(path), "w") as datfile:
+                datfile.write_ijk_zone(
+                    data=[x, y, c],
+                    variables=["x", "y", "c"],
+                    datapacking=packing,
+                )
+
+        with tecio.open(str(path_block), "r") as rb, tecio.open(str(path_point), "r") as rp:
+            for vi in range(3):
+                np.testing.assert_allclose(
+                    rb.zone[0].variable[vi].values.ravel(),
+                    rp.zone[0].variable[vi].values.ravel(),
+                    rtol=_RTOL_DAT,
+                )
+
+    def test_write_ijk_point_cell_centered(self, output_path: Callable) -> None:
+        """POINT packing with a cell-centred variable — nodal rows then CC rows.
+
+        Demonstrates:
+        - Mixed nodal + CC variables in POINT format: the spec places nodal
+          variable rows first (one row per node) followed by a separate CC
+          section (one row per cell)
+        - ``VARLOCATION`` keyword is still emitted in the zone header
+        - CC values survive the two-section POINT round-trip correctly
+        """
+        i, j, k = 4, 5, 3
+        x, y, z = create_ordered((i, j, k))
+        cc = np.random.default_rng(7).random((i - 1, j - 1, k - 1)).astype(np.float64)
+
+        path = output_path("test_dat_write_ijk_point_cc.dat")
+        with tecio.open(str(path), "w") as datfile:
+            datfile.write_ijk_zone(
+                data=[x, y, z, cc],
+                variables=["x", "y", "z", "cc"],
+                value_locations=[
+                    ValueLocation.NODAL,
+                    ValueLocation.NODAL,
+                    ValueLocation.NODAL,
+                    ValueLocation.CELL_CENTERED,
+                ],
+                datapacking=DataPacking.POINT,
+            )
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            zone = r.zone[0]
+            cc_var = zone.variable[3]
+            assert cc_var.value_location == ValueLocation.CELL_CENTERED
+            assert cc_var.values.size == (i - 1) * (j - 1) * (k - 1)
+            np.testing.assert_allclose(cc_var.values.ravel(), cc.ravel(), rtol=_RTOL_DAT)
+
+    def test_write_ijk_point_invalid_datapacking_raises(
+        self, output_path: Callable
+    ) -> None:
+        """Unrecognised datapacking string raises ValueError immediately."""
+        x = np.linspace(0.0, 1.0, 5, dtype=np.float64)
+        path = output_path("test_dat_write_ijk_bad_packing.dat")
+
+        with pytest.raises(ValueError, match="datapacking"):
+            with tecio.open(str(path), "w") as datfile:
+                datfile.write_ijk_zone(data=[x], variables=["x"], datapacking="CSV")
+
     # ------------------------------------------------------------------
     # Error paths
     # ------------------------------------------------------------------
@@ -309,9 +464,8 @@ class TestWriteIJKZone:
         y_bad = y.squeeze(-1)[:-1, :]
         path = output_path("test_dat_write_ijk_shape.dat")
 
-        with pytest.raises(ValueError):
-            with tecio.open(str(path), "w") as datfile:
-                datfile.write_ijk_zone(data=[x, y_bad], variables=["x", "y"])
+        with pytest.raises(ValueError), tecio.open(str(path), "w") as datfile:
+            datfile.write_ijk_zone(data=[x, y_bad], variables=["x", "y"])
 
 
 # ===========================================================================
@@ -616,6 +770,170 @@ class TestWriteFEZone:
             assert r.zone[0].solution_time == pytest.approx(0.0)
             assert r.zone[99].solution_time == pytest.approx(solution_times[-1])
 
+    def test_write_fe_point_tri(self, output_path: Callable) -> None:
+        """FETRIANGLE in POINT format — nodal rows verified on read-back.
+
+        Demonstrates:
+        - ``datapacking=DataPacking.POINT`` on ``write_fe_zone``: one row per node
+          containing all nodal variable values
+        - Connectivity block always follows the data section regardless of
+          packing mode
+        - Node map, coordinates, and scalar field all survive the round-trip
+        """
+        x, y, nodes = create_FE_tri()
+        x = x.astype(np.float64)
+        y = y.astype(np.float64)
+        c = scalar_field(x, y).astype(np.float64)
+
+        path = output_path("test_dat_write_fe_point_tri.dat")
+        with tecio.open(str(path), "w") as datfile:
+            datfile.write_fe_zone(
+                zone_type=ZoneType.FETRIANGLE,
+                data=[x, y, c],
+                node_map=nodes,
+                variables=["x", "y", "c"],
+                title="FE_Tri_Point",
+                datapacking=DataPacking.POINT,
+            )
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            zone = r.zone[0]
+            assert zone.zone_type == ZoneType.FETRIANGLE
+            assert zone.num_nodes == 4
+            assert zone.num_elements == 2
+            np.testing.assert_allclose(zone.variable[0].values, x, rtol=_RTOL_DAT)
+            np.testing.assert_allclose(zone.variable[1].values, y, rtol=_RTOL_DAT)
+            np.testing.assert_allclose(zone.variable[2].values, c, rtol=_RTOL_DAT)
+            np.testing.assert_array_equal(zone.node_map, nodes.astype(np.int64))
+
+    def test_write_fe_point_tet(self, output_path: Callable) -> None:
+        """FETETRAHEDRON in POINT format — float32 coords, float64 scalar.
+
+        Demonstrates:
+        - POINT packing with a 3-D FE zone; the common CFD pattern of
+          float32 grid + float64 solution works identically in POINT mode
+        - Scalar values verified within DAT ASCII precision
+        """
+        x, y, z, nodes = create_FE_tet()
+        x = x.astype(np.float32)
+        y = y.astype(np.float32)
+        z = z.astype(np.float32)
+        c = scalar_field(x, y).astype(np.float64)
+
+        path = output_path("test_dat_write_fe_point_tet.dat")
+        with tecio.open(str(path), "w") as datfile:
+            datfile.write_fe_zone(
+                zone_type=ZoneType.FETETRAHEDRON,
+                data=[x, y, z, c],
+                node_map=nodes,
+                variables=["x", "y", "z", "c"],
+                title="FE_Tet_Point",
+                datapacking=DataPacking.POINT,
+            )
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            zone = r.zone[0]
+            assert zone.zone_type == ZoneType.FETETRAHEDRON
+            assert zone.num_nodes == 5
+            assert zone.num_elements == 2
+            np.testing.assert_allclose(zone.variable[2].values, z, rtol=_RTOL_DAT)
+            np.testing.assert_allclose(zone.variable[3].values, c, rtol=_RTOL_DAT)
+
+    def test_write_fe_point_matches_block(self, output_path: Callable) -> None:
+        """POINT and BLOCK produce identical read-back values for an FE zone.
+
+        Demonstrates:
+        - Packing mode does not affect the values returned by the reader;
+          only the on-disk layout differs
+        - FE connectivity is written and read back identically in both modes
+        """
+        x, y, nodes = create_FE_quad()
+        x = x.astype(np.float64)
+        y = y.astype(np.float64)
+        c = scalar_field(x, y).astype(np.float64)
+
+        path_block = output_path("test_dat_fe_packing_block.dat")
+        path_point = output_path("test_dat_fe_packing_point.dat")
+
+        for path, packing in ((path_block, "BLOCK"), (path_point, "POINT")):
+            with tecio.open(str(path), "w") as datfile:
+                datfile.write_fe_zone(
+                    zone_type=ZoneType.FEQUADRILATERAL,
+                    data=[x, y, c],
+                    node_map=nodes,
+                    variables=["x", "y", "c"],
+                    datapacking=packing,
+                )
+
+        with tecio.open(str(path_block), "r") as rb, tecio.open(str(path_point), "r") as rp:
+            for vi in range(3):
+                np.testing.assert_allclose(
+                    rb.zone[0].variable[vi].values.ravel(),
+                    rp.zone[0].variable[vi].values.ravel(),
+                    rtol=_RTOL_DAT,
+                )
+            np.testing.assert_array_equal(
+                rb.zone[0].node_map, rp.zone[0].node_map
+            )
+
+    def test_write_fe_point_cell_centered(self, output_path: Callable) -> None:
+        """FE zone in POINT format with a cell-centred variable.
+
+        Demonstrates:
+        - Mixed nodal + CC in POINT mode for an FE zone: nodal rows first,
+          then one CC row per element
+        - ``VARLOCATION`` is still emitted in the zone header
+        - CC values survive the two-section POINT round-trip
+        """
+        x, y, z, nodes, _ = create_FE_two_bricks()
+        x = x.astype(np.float64)
+        y = y.astype(np.float64)
+        z = z.astype(np.float64)
+        c = np.array([1.5, 2.5], dtype=np.float64)
+
+        path = output_path("test_dat_write_fe_point_cc.dat")
+        with tecio.open(str(path), "w") as datfile:
+            datfile.write_fe_zone(
+                zone_type=ZoneType.FEBRICK,
+                data=[x, y, z, c],
+                node_map=nodes,
+                variables=["x", "y", "z", "c"],
+                title="FE_2Bricks_Point",
+                value_locations=[
+                    ValueLocation.NODAL,
+                    ValueLocation.NODAL,
+                    ValueLocation.NODAL,
+                    ValueLocation.CELL_CENTERED,
+                ],
+                datapacking=DataPacking.POINT,
+            )
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            zone = r.zone[0]
+            cc_var = zone.variable[3]
+            assert cc_var.value_location == ValueLocation.CELL_CENTERED
+            np.testing.assert_allclose(cc_var.values, c, rtol=_RTOL_DAT)
+
+    def test_write_fe_point_invalid_datapacking_raises(
+        self, output_path: Callable
+    ) -> None:
+        """Unrecognised datapacking string raises ValueError immediately."""
+        x, y, nodes = create_FE_tri()
+        path = output_path("test_dat_write_fe_bad_packing.dat")
+
+        with pytest.raises(ValueError, match="datapacking"):
+            with tecio.open(str(path), "w") as datfile:
+                datfile.write_fe_zone(
+                    zone_type=ZoneType.FETRIANGLE,
+                    data=[x, y],
+                    node_map=nodes,
+                    variables=["x", "y"],
+                    datapacking="ROWS",
+                )
+
     # ------------------------------------------------------------------
     # Error paths
     # ------------------------------------------------------------------
@@ -638,14 +956,13 @@ class TestWriteFEZone:
         x, y, nodes = create_FE_tri()
         path = output_path("test_dat_write_fe_len.dat")
 
-        with pytest.raises(ValueError):
-            with tecio.open(str(path), "w") as datfile:
-                datfile.write_fe_zone(
-                    zone_type=ZoneType.FETRIANGLE,
-                    data=[x[:-1], y],
-                    node_map=nodes,
-                    variables=["x", "y"],
-                )
+        with pytest.raises(ValueError), tecio.open(str(path), "w") as datfile:
+            datfile.write_fe_zone(
+                zone_type=ZoneType.FETRIANGLE,
+                data=[x[:-1], y],
+                node_map=nodes,
+                variables=["x", "y"],
+            )
 
     def test_write_fe_unsupported_zone_type_raises(self, output_path: Callable) -> None:
         """FEPOLYGON raises NotImplementedError.

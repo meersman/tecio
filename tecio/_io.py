@@ -745,8 +745,8 @@ def open(
           or :class:`tecio.dat.Read`
         - ``'w'`` / ``'x'`` → :class:`tecio.szl.Write`,
           :class:`tecio.plt.Write`, or :class:`tecio.dat.Write`
-        - ``'a'`` → :class:`~tecio._io.AppendWrite`
-        - ``'a+'`` → :class:`~tecio._io.AppendReadWrite`
+        - ``'a'`` → :class:`~tecio.AppendWrite`
+        - ``'a+'`` → :class:`~tecio.AppendReadWrite`
 
     Raises:
         ValueError: Unsupported file extension or unrecognised mode.

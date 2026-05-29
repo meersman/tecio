@@ -96,6 +96,7 @@ html_theme_options = {
     "repository_branch": "main",
     "use_download_button": True,
     "show_toc_level": 2,
+    "toc_title": "On this page",
     "navigation_with_keys": True,
     "back_to_top_button": True,
     "pygments_light_style": "github-light",

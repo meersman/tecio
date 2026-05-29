@@ -14,6 +14,8 @@ These tests are format-agnostic at the ``tecio.open()`` level.  All writes
 use ``.szplt`` unless the test specifically targets PLT/DAT behaviour.
 """
 
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import shutil
@@ -24,7 +26,7 @@ import pytest
 
 import tecio
 from tecio._io import AppendReadWrite, AppendWrite
-from tecio.libtecio import FileType, ValueLocation, ZoneType
+from tecio.libtecio import FileType, ZoneType
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -352,9 +354,9 @@ class TestAppendWrite:
 
         with tecio.open(str(src), "r") as r:
             orig_vars = r.variables
-            orig_nodes = r.zone[0].num_nodes
+            r.zone[0].num_nodes
 
-        x_new = np.zeros(10, dtype=np.float32)
+        np.zeros(10, dtype=np.float32)
         with tecio.open(str(src), "a") as w:
             assert w.current_zone == 2  # two Onera zones copied
             # Append a new tiny zone (all non-Onera variables passive).
@@ -504,7 +506,7 @@ class TestAppendReadWrite:
                 for i in range(rw.num_zones)
             )
             c_avg = (c_sum / rw.num_zones).astype(np.float32)
-            x_ref = rw.zone[0].variable[0].values.ravel()
+            rw.zone[0].variable[0].values.ravel()
 
             rw.write_ijk_zone(
                 data=[c_avg],
@@ -580,7 +582,8 @@ class TestOpenErrors:
         # poly zones.
         path = tmp_path / "poly.plt"
         from tecio import libtecio
-        from tecio.libtecio import ValueLocation as VL, ZoneType as ZT
+        from tecio.libtecio import ValueLocation as VL
+        from tecio.libtecio import ZoneType as ZT
 
         pts = np.array([[0.25,0],[0.75,0],[1,0.25],[1,0.75],[0.75,1],[0.25,1],[0,0.75],[0,0.25]], dtype=np.float32)
         x, y = pts[:,0], pts[:,1]

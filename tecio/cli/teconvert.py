@@ -73,8 +73,8 @@ Examples:
 See Also:
     :mod:`tecio.cli.tecextract`: Extract a zone/variable subset while simultaneously
     converting format via the output file extension.
-
 """
+
 from __future__ import annotations
 
 import argparse

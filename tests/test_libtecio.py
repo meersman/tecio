@@ -20,13 +20,13 @@ Keep output files for Tecplot inspection:
     $ python tests/test_libtecio.py -v --keep-files
 """
 
+# ruff: noqa: E501
+
 import sys
-from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 import pytest
-
 from create_test_data import (
     create_FE_brick,
     create_FE_lineseg,
@@ -39,6 +39,7 @@ from create_test_data import (
     create_FE_two_bricks,
     create_ordered,
 )
+
 from tecio import libtecio
 from tecio.libtecio import (
     DataType,
@@ -48,7 +49,6 @@ from tecio.libtecio import (
     ValueLocation,
     ZoneType,
 )
-
 
 # ===========================================================================
 # New API (SZL/.szplt) — explicit file handles, all DataTypes supported

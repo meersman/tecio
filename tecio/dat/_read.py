@@ -1,54 +1,11 @@
-r"""Tecplot ASCII DAT file reader and writer.
+r"""Tecplot ASCII DAT file reader API.
 
-This module provides :class:`Read` for parsing and :class:`Write` for
-producing Tecplot 360 ASCII data files (``.dat`` / ``.tec``).  Both
-classes mirror the interfaces of :class:`szl.Read` / :class:`szl.Write`
-and :class:`plt.Read` / :class:`plt.Write` so that downstream code can
-switch between file formats by changing only the file extension passed to
-:func:`tecio.open`.
-
-Reading:
-    :class:`Read` parses the entire file on construction and stores all data
-    in memory::
-    
-        dat = tecio.open("result.dat", "r")
-    
-        print(dat.title)
-        print(dat.variables)  # list of variable name strings
-        print(dat.num_zones)
-    
-        zone = dat.zone[0]
-        print(zone.title, zone.zone_type, zone.solution_time)
-    
-        var = zone.variable[0]
-        print(var.name, var.data_type, var.values)
-    
-        if zone.zone_type != ZoneType.ORDERED:
-            print(zone.node_map)  # (num_elements, nodes_per_cell) int64 array
-
-Supported read features:
-    * ``FULL``, ``GRID``, and ``SOLUTION`` file types
-    * Ordered and simple FE zones (FELINESEG through FEBRICK)
-    * ``DATAPACKING=BLOCK`` only (POINT packing raises :exc:`ValueError`)
-    * ``VARLOCATION`` (cell-centred variables)
-    * ``PASSIVEVARLIST`` and ``VARSHARELIST``
-    * ``CONNECTIVITYSHAREZONE``
-    * Dataset-level ``DATASETAUXDATA`` and variable-level ``VARAUXDATA``
-    * Zone-level ``AUXDATA``
-
-Writing:
-    :class:`Write` is a context-manager writer that supports lazy-open,
-    buffered aux data, and atomic (all-or-nothing) zone writes::
-    
-        with tecio.open("result.dat", "w", title="Demo",
-                        variables=["X", "Y", "P"]) as w:
-            w.write_ijk_zone(data=[x, y, p], title="Zone 1")
-    
-    All floating-point variable data is written in scientific notation with a
-    configurable number of significant digits (default 9).
-
-Format specification reference:
-    Tecplot 360 Data Format Guide 2025 R2, "ASCII Data" chapter.
+Supported ``DATAPACKING`` modes:
+    * ``BLOCK`` — one contiguous value block per variable (Tecplot default).
+    * ``POINT`` — one row of all variable values per node, followed by a
+      separate row-per-cell section for any cell-centred variables.  This is
+      the format most commonly produced by third-party exporters and tools
+      that treat the file like a CSV with a header.
 """
 
 from __future__ import annotations
@@ -65,6 +22,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ..libtecio import (
+    DataPacking,
     DataType,
     FileType,
     ValueLocation,
@@ -116,6 +74,12 @@ _STR_TO_FILETYPE: dict[str, FileType] = {
     "full": FileType.FULL,
     "grid": FileType.GRID,
     "solution": FileType.SOLUTION,
+}
+
+#: ASCII keyword → DataPacking (lower-cased at parse time).
+_STR_TO_DATAPACKING: dict[str, DataPacking] = {
+    "point": DataPacking.POINT,
+    "block": DataPacking.BLOCK,
 }
 
 #: ZoneType → ASCII keyword (for writing).
@@ -644,6 +608,12 @@ class ReadZone:
 
     Interface matches :class:`szl.ReadZone`.
 
+    Attributes:
+        datapacking: :class:`~tecio.libtecio.DataPacking` member reflecting the
+            ``DATAPACKING`` keyword found in the zone header (``BLOCK`` or
+            ``POINT``).  The data arrays are identical either way; this
+            attribute records how the values were laid out on disk.
+
     Example:
         >>> zone = ReadZone(title, zone_type, I, J, K, ...)
     """
@@ -660,6 +630,7 @@ class ReadZone:
         variables: list[ReadVariable],
         auxdata: ReadAuxData,
         node_map: npt.NDArray | None = None,
+        datapacking: DataPacking = DataPacking.BLOCK,
     ) -> None:
         self.title: str = title
         self.zone_type: ZoneType = zone_type
@@ -671,6 +642,7 @@ class ReadZone:
         self.variable: list[ReadVariable] = variables
         self.auxdata: ReadAuxData = auxdata
         self.node_map: npt.NDArray | None = node_map
+        self.datapacking: DataPacking = datapacking
 
     @property
     def dimensions(self) -> tuple[int, int, int]:
@@ -719,6 +691,7 @@ class ReadZone:
         return (
             f"ReadZone(title={self.title!r}, "
             f"zone_type={self.zone_type.name}, "
+            f"datapacking={self.datapacking.name}, "
             f"I={self.I}, J={self.J}, K={self.K})"
         )
 
@@ -954,9 +927,9 @@ class Read:
         Example:
             >>> self._parse_zone(tokens)
         """
-        # ------------------------------------------------------------------ #
-        # 1. Collect header lines                                             #
-        # ------------------------------------------------------------------ #
+        # ------------------------------------------------------------------
+        # 1. Collect header lines
+        # ------------------------------------------------------------------
         header_lines: list[str] = [tokens.next_stripped()]  # ZONE T=...
 
         while tokens.has_more():
@@ -984,9 +957,9 @@ class Read:
         if m_zone:
             header_text = header_text[m_zone.end() :]
 
-        # ------------------------------------------------------------------ #
-        # 2. Parse header key=value pairs                                     #
-        # ------------------------------------------------------------------ #
+        # ------------------------------------------------------------------
+        # 2. Parse header key=value pairs
+        # ------------------------------------------------------------------
         kv = _kv_split(header_text)
 
         zone_title = _unquote(kv.get("T", ""))
@@ -1013,11 +986,12 @@ class Read:
             num_cells = int(kv.get("ELEMENTS", kv.get("E", "0")) or "0")
             I, J, K = num_nodes, num_cells, 0
 
-        packing = kv.get("DATAPACKING", "BLOCK").upper()
-        if packing != "BLOCK":
+        packing_raw = kv.get("DATAPACKING", "BLOCK").strip().lower()
+        packing = _STR_TO_DATAPACKING.get(packing_raw)
+        if packing is None:
             raise ValueError(
-                f"DATAPACKING={packing!r} is not supported; only BLOCK "
-                "is implemented in the ASCII reader."
+                f"DATAPACKING={packing_raw!r} is not supported; "
+                "only BLOCK and POINT are implemented in the ASCII reader."
             )
 
         # Variable locations (0-based index → ValueLocation)
@@ -1045,21 +1019,23 @@ class Read:
         ):
             zone_aux[m.group(1)] = _unquote(m.group(2))
 
-        # ------------------------------------------------------------------ #
-        # 3. Read variable data blocks                                        #
-        # ------------------------------------------------------------------ #
-        var_arrays: list[npt.NDArray | None] = [None] * self.num_vars
+        # ------------------------------------------------------------------
+        # 3. Read variable data blocks
+        # ------------------------------------------------------------------
+        if packing == DataPacking.POINT:
+            var_arrays = self._read_point_var_data(
+                tokens, self.num_vars, num_nodes, num_cells,
+                var_locs, passive_set, share_map,
+            )
+        else:
+            var_arrays = self._read_block_var_data(
+                tokens, self.num_vars, num_nodes, num_cells,
+                var_locs, passive_set, share_map,
+            )
 
-        for var_idx in range(self.num_vars):
-            if var_idx in passive_set or var_idx in share_map:
-                continue  # no data block for passive/shared variables
-            loc = var_locs.get(var_idx, ValueLocation.NODAL)
-            n_vals = num_cells if loc == ValueLocation.CELL_CENTERED else num_nodes
-            var_arrays[var_idx] = self._read_float_block(tokens, n_vals)
-
-        # ------------------------------------------------------------------ #
-        # 4. Read connectivity (FE zones only)                                #
-        # ------------------------------------------------------------------ #
+        # ------------------------------------------------------------------
+        # 4. Read connectivity (FE zones only)
+        # ------------------------------------------------------------------
         node_map: npt.NDArray | None = None
 
         if zone_type != ZoneType.ORDERED:
@@ -1070,9 +1046,9 @@ class Read:
                 flat = self._read_int_block(tokens, num_cells * nodes_per_cell)
                 node_map = flat.reshape(num_cells, nodes_per_cell)
 
-        # ------------------------------------------------------------------ #
-        # 5. Build ReadVariable and ReadZone objects                          #
-        # ------------------------------------------------------------------ #
+        # ------------------------------------------------------------------
+        # 5. Build ReadVariable and ReadZone objects
+        # ------------------------------------------------------------------
         # For ordered zones, reshape each variable array from flat 1-D to
         # (I, J, K) for nodal variables or (I-1, J-1, K-1) for cell-centered
         # so that zone dimensions can be inferred from array shape downstream.
@@ -1113,6 +1089,7 @@ class Read:
                 variables=read_vars,
                 auxdata=ReadAuxData(zone_aux),
                 node_map=node_map,
+                datapacking=packing,
             )
         )
 
@@ -1146,6 +1123,97 @@ class Read:
                 except ValueError:
                     pass
         return np.array(values[:n_values], dtype=np.float64)
+
+    @staticmethod
+    def _read_block_var_data(
+        tokens: _LineBuffer,
+        num_vars: int,
+        num_nodes: int,
+        num_cells: int,
+        var_locs: dict[int, ValueLocation],
+        passive_set: set[int],
+        share_map: dict[int, int],
+    ) -> list[npt.NDArray | None]:
+        """Read ``DATAPACKING=BLOCK`` variable data for one zone.
+
+        One contiguous block of values is read per active variable, in
+        dataset variable order.  Passive and shared variables contribute a
+        ``None`` placeholder to the returned list.
+
+        Example:
+            >>> arrays = Read._read_block_var_data(tokens, 3, 100, 80, {}, set(), {})
+        """
+        var_arrays: list[npt.NDArray | None] = [None] * num_vars
+        for var_idx in range(num_vars):
+            if var_idx in passive_set or var_idx in share_map:
+                continue  # no data block for passive/shared variables
+            loc = var_locs.get(var_idx, ValueLocation.NODAL)
+            n_vals = num_cells if loc == ValueLocation.CELL_CENTERED else num_nodes
+            var_arrays[var_idx] = Read._read_float_block(tokens, n_vals)
+        return var_arrays
+
+    @staticmethod
+    def _read_point_var_data(
+        tokens: _LineBuffer,
+        num_vars: int,
+        num_nodes: int,
+        num_cells: int,
+        var_locs: dict[int, ValueLocation],
+        passive_set: set[int],
+        share_map: dict[int, int],
+    ) -> list[npt.NDArray | None]:
+        """Read ``DATAPACKING=POINT`` variable data for one zone.
+
+        The spec writes two interleaved sections:
+
+        * **Nodal section** — ``num_nodes`` rows, one per node.  Each row
+          contains the values of all active nodal variables in dataset order.
+        * **Cell-centred section** — ``num_cells`` rows, one per element.
+          Each row contains the values of all active CC variables in dataset
+          order.
+
+        When all variables are nodal (the common case from CFD exporters) the
+        CC section is empty and is skipped automatically.  Passive and shared
+        variables are excluded from both sections and contribute a ``None``
+        placeholder to the returned list.
+
+        Example:
+            >>> arrays = Read._read_point_var_data(tokens, 3, 100, 80, {}, set(), {})
+        """
+        # Active variable indices, preserving dataset order.
+        nodal_active: list[int] = [
+            i for i in range(num_vars)
+            if i not in passive_set
+            and i not in share_map
+            and var_locs.get(i, ValueLocation.NODAL) == ValueLocation.NODAL
+        ]
+        cc_active: list[int] = [
+            i for i in range(num_vars)
+            if i not in passive_set
+            and i not in share_map
+            and var_locs.get(i, ValueLocation.NODAL) == ValueLocation.CELL_CENTERED
+        ]
+
+        var_arrays: list[npt.NDArray | None] = [None] * num_vars
+
+        # Nodal section: num_nodes rows × len(nodal_active) columns.
+        n_nodal = len(nodal_active)
+        if n_nodal > 0 and num_nodes > 0:
+            flat = Read._read_float_block(tokens, num_nodes * n_nodal)
+            # Row-major: flat[node * n_nodal + col] = value for that variable.
+            matrix = flat.reshape(num_nodes, n_nodal)
+            for col, var_idx in enumerate(nodal_active):
+                var_arrays[var_idx] = np.ascontiguousarray(matrix[:, col])
+
+        # Cell-centred section: num_cells rows × len(cc_active) columns.
+        n_cc = len(cc_active)
+        if n_cc > 0 and num_cells > 0:
+            flat = Read._read_float_block(tokens, num_cells * n_cc)
+            matrix = flat.reshape(num_cells, n_cc)
+            for col, var_idx in enumerate(cc_active):
+                var_arrays[var_idx] = np.ascontiguousarray(matrix[:, col])
+
+        return var_arrays
 
     @staticmethod
     def _read_int_block(tokens: _LineBuffer, n_values: int) -> npt.NDArray:

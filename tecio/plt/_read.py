@@ -44,7 +44,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from ..libtecio import DataType, FileType, ValueLocation, ZoneType
+from ..libtecio import DataPacking, DataType, FileType, ValueLocation, ZoneType
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -547,6 +547,17 @@ class ReadZone:
     def dimensions(self) -> tuple[int, int, int]:
         """(I, J, K) dimensions."""
         return (self.I, self.J, self.K)
+
+    @property
+    def datapacking(self) -> DataPacking:
+        """Always :attr:`~tecio.libtecio.DataPacking.BLOCK` for binary PLT files.
+
+        Binary files have no on-disk row-vs-column layout distinction; this
+        property exists so that code reading PLT zones can check
+        ``zone.datapacking`` the same way it would for a DAT zone, and switch
+        behaviour on the result without special-casing the file format.
+        """
+        return DataPacking.BLOCK
 
     @property
     def solution_time(self) -> float:

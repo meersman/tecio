@@ -229,8 +229,12 @@ class ValueLocation(Enum):
     NODAL = 1
 
 
-class DataFormat(Enum):
-    """Zone data packing order for ASCII files.
+class DataPacking(Enum):
+    """Zone data packing order for ASCII (``.dat``) files.
+
+    Controls whether data is laid out variable-by-variable or point-by-point
+    in the ASCII file.  The ``DATAPACKING`` keyword in a zone header takes one
+    of these two values.
 
     .. list-table::
        :header-rows: 1
@@ -241,10 +245,11 @@ class DataFormat(Enum):
          - Description
        * - ``POINT``
          - ``0``
-         - All variables for one point written together.
+         - One row per node/cell containing all variable values.
        * - ``BLOCK``
          - ``1``
-         - All points for one variable written together.
+         - One contiguous block per variable containing all node/cell values.
+           Tecplot default; faster for variable-at-a-time access patterns.
     """
 
     POINT = 0
@@ -3079,7 +3084,7 @@ def teczne142(
         ctypes.c_double(solution_time),
         ctypes.c_int32(strand),
         ctypes.c_int32(0),  # Deprecated. Enter 0 for this value
-        ctypes.c_int32(_to_int_value(DataFormat.BLOCK)),  # Deprecated. Always set to 1
+        ctypes.c_int32(_to_int_value(DataPacking.BLOCK)),  # Deprecated. Always set to 1
         ctypes.c_int32(num_face_connections),
         ctypes.c_int32(_to_int_value(face_nbr_mode)),
         ctypes.c_int32(total_num_face_nodes),
@@ -3189,7 +3194,7 @@ def tecznefemixed142(
     solution_time: float = 0.0,
     strand_id: int = 0,
     parent_zone: int = 0,
-    data_format: int | DataFormat = DataFormat.BLOCK,
+    datapacking: int | DataPacking = DataPacking.BLOCK,
     num_face_connections: int = 0,
     face_neighbor_mode: int | FaceNeighborMode = FaceNeighborMode.LOCAL_ONE_TO_ONE,
     passive_var_list: Sequence[int | VarStatus] | None = None,
@@ -3208,7 +3213,7 @@ def tecznefemixed142(
         strand_id (int): Strand ID for transient data (0 for static data, positive
             integer for transient data).
         parent_zone (int): Parent zone index (0 = none).
-        data_format (int | DataFormat): DataFormat.BLOCK (1) or DataFormat.POINT (0)
+        datapacking (int | DataPacking): DataPacking.BLOCK (1) or DataPacking.POINT (0)
         num_face_connections (int): Number of face connections.
         face_neighbor_mode (int | FaceNeighborMode): Face-neighbor mode.
         passive_var_list (Sequence[int | VarStatus] | None): PList of VarStatus enums or
@@ -3230,7 +3235,7 @@ def tecznefemixed142(
     solution_time_c = ctypes.c_double(solution_time)
     strand_id_c = ctypes.c_int32(strand_id)
     parent_zone_c = ctypes.c_int32(parent_zone)
-    is_block_c = ctypes.c_int32(_to_int_value(data_format))
+    is_block_c = ctypes.c_int32(_to_int_value(datapacking))
     num_face_connections_c = ctypes.c_int32(num_face_connections)
     face_neighbor_mode_c = ctypes.c_int32(_to_int_value(face_neighbor_mode))
     share_connectivity_c = ctypes.c_int32(share_connectivity_from_zone)

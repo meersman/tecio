@@ -4,7 +4,6 @@
 [![Build and Deploy Docs](https://github.com/meersman/tecio/actions/workflows/docs.yaml/badge.svg)](https://github.com/meersman/tecio/actions/workflows/docs.yaml)
 ![Tests](badges/tests.svg)
 ![Coverage](badges/coverage.svg)
-![Lines of Code](https://sloc.xyz/github/meersman/tecio/)
 
 Python interface for reading and writing Tecplot data files.
 
@@ -90,9 +89,9 @@ tecio
 ## Development
 
 ```bash
-make format  # Format with ruff
-make check   # Lint with ruff + mypy
-make test    # Run pytest
+make install-dev  # Install development dependencies
+make install      # Create an editable install of tecio
+make test         # Run unit tests
 ```
 
 ## Demos

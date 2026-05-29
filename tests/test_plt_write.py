@@ -29,15 +29,13 @@ Keep output files for Tecplot 360 inspection:
 
     $ python tests/test_plt_write.py -v --keep-files
 """
+# ruff: noqa: E501, SIM117
 
 import sys
-from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 import pytest
-
-import tecio
 from create_test_data import (
     create_FE_brick,
     create_FE_lineseg,
@@ -50,6 +48,8 @@ from create_test_data import (
     create_ordered,
     scalar_field,
 )
+
+import tecio
 from tecio.libtecio import DataType, FaceNeighborMode, ValueLocation, ZoneType
 
 _RTOL_F32 = 1e-5
@@ -272,9 +272,8 @@ class TestWriteIJKZone:
         y_bad = y.squeeze(-1)[:-1, :]
         path = output_path("test_plt_write_ijk_shape.plt")
 
-        with pytest.raises(ValueError):
-            with tecio.open(str(path), "w") as pltfile:
-                pltfile.write_ijk_zone(data=[x, y_bad], variables=["x", "y"])
+        with pytest.raises(ValueError), tecio.open(str(path), "w") as pltfile:
+            pltfile.write_ijk_zone(data=[x, y_bad], variables=["x", "y"])
 
 
 # ===========================================================================
@@ -593,14 +592,13 @@ class TestWriteFEZone:
         x, y, nodes = create_FE_tri()
         path = output_path("test_plt_write_fe_len.plt")
 
-        with pytest.raises(ValueError):
-            with tecio.open(str(path), "w") as pltfile:
-                pltfile.write_fe_zone(
-                    zone_type=ZoneType.FETRIANGLE,
-                    data=[x[:-1], y],
-                    node_map=nodes,
-                    variables=["x", "y"],
-                )
+        with pytest.raises(ValueError), tecio.open(str(path), "w") as pltfile:
+            pltfile.write_fe_zone(
+                zone_type=ZoneType.FETRIANGLE,
+                data=[x[:-1], y],
+                node_map=nodes,
+                variables=["x", "y"],
+            )
 
     def test_write_fe_unsupported_zone_type_raises(self, output_path: Callable) -> None:
         """FEPOLYGON raises NotImplementedError.

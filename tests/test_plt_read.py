@@ -8,6 +8,7 @@ import numpy as np
 import tecio
 from tecio.libtecio import ZoneType
 
+
 def test_plt_read():
     """Print out all headers and data fields for test plt file."""
     test_dir = Path(tecio.__file__).parent.parent

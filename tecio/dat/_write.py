@@ -1,54 +1,11 @@
-r"""Tecplot ASCII DAT file reader and writer.
+r"""Tecplot ASCII DAT file writer API.
 
-This module provides :class:`Read` for parsing and :class:`Write` for
-producing Tecplot 360 ASCII data files (``.dat`` / ``.tec``).  Both
-classes mirror the interfaces of :class:`szl.Read` / :class:`szl.Write`
-and :class:`plt.Read` / :class:`plt.Write` so that downstream code can
-switch between file formats by changing only the file extension passed to
-:func:`tecio.open`.
-
-Reading:
-    :class:`Read` parses the entire file on construction and stores all data
-    in memory::
-    
-        dat = tecio.open("result.dat", "r")
-    
-        print(dat.title)
-        print(dat.variables)  # list of variable name strings
-        print(dat.num_zones)
-    
-        zone = dat.zone[0]
-        print(zone.title, zone.zone_type, zone.solution_time)
-    
-        var = zone.variable[0]
-        print(var.name, var.data_type, var.values)
-    
-        if zone.zone_type != ZoneType.ORDERED:
-            print(zone.node_map)  # (num_elements, nodes_per_cell) int64 array
-
-Supported read features:
-    * ``FULL``, ``GRID``, and ``SOLUTION`` file types
-    * Ordered and simple FE zones (FELINESEG through FEBRICK)
-    * ``DATAPACKING=BLOCK`` only (POINT packing raises :exc:`ValueError`)
-    * ``VARLOCATION`` (cell-centred variables)
-    * ``PASSIVEVARLIST`` and ``VARSHARELIST``
-    * ``CONNECTIVITYSHAREZONE``
-    * Dataset-level ``DATASETAUXDATA`` and variable-level ``VARAUXDATA``
-    * Zone-level ``AUXDATA``
-
-Writing:
-    :class:`Write` is a context-manager writer that supports lazy-open,
-    buffered aux data, and atomic (all-or-nothing) zone writes::
-    
-        with tecio.open("result.dat", "w", title="Demo",
-                        variables=["X", "Y", "P"]) as w:
-            w.write_ijk_zone(data=[x, y, p], title="Zone 1")
-    
-    All floating-point variable data is written in scientific notation with a
-    configurable number of significant digits (default 9).
-
-Format specification reference:
-    Tecplot 360 Data Format Guide 2025 R2, "ASCII Data" chapter.
+Supported ``DATAPACKING`` modes for writing:
+    * ``BLOCK`` — one contiguous value block per variable (default).
+    * ``POINT`` — one row of all active nodal variable values per node,
+      followed by a separate row-per-cell section for cell-centred variables.
+      Pass ``datapacking="POINT"`` to :meth:`~Write.write_ijk_zone` or
+      :meth:`~Write.write_fe_zone`.
 """
 
 from __future__ import annotations
@@ -66,6 +23,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ..libtecio import (
+    DataPacking,
     DataType,
     FaceNeighborMode,
     FileType,
@@ -206,6 +164,29 @@ def _stage_float_array(buf: io.StringIO, arr: npt.NDArray, fmt: str) -> None:
     for start in range(0, flat.size, vpl):
         chunk = flat[start : start + vpl]
         buf.write("\t".join(format(float(v), fmt) for v in chunk) + "\n")
+
+
+def _stage_point_rows(
+    buf: io.StringIO,
+    cols: list[npt.NDArray],
+    fmt: str,
+) -> None:
+    """Write *cols* as ``DATAPACKING=POINT`` rows into *buf*.
+
+    Each element of *cols* is the flat value array for one variable.  One
+    tab-separated row is written per point (node or cell): all variable values
+    for that point appear on the same line.  All column arrays must have the
+    same length.  Does nothing when *cols* is empty.
+
+    Example:
+        >>> _stage_point_rows(buf, [x_flat, y_flat, p_flat], ".8e")
+    """
+    if not cols:
+        return
+    # Stack into a (n_points, n_vars) matrix then write row by row.
+    matrix = np.column_stack(cols) if len(cols) > 1 else cols[0].reshape(-1, 1)
+    for row in matrix:
+        buf.write("\t".join(format(float(v), fmt) for v in row) + "\n")
 
 
 def _stage_connectivity_row(buf: io.StringIO, row: npt.NDArray) -> None:
@@ -388,14 +369,33 @@ class Write:
         solution_time: float = 0.0,
         strand_id: int = 0,
         aux: dict[str, Any] | None = None,
+        datapacking: DataPacking | str = DataPacking.BLOCK,
     ) -> None:
-        """Write a complete IJK-ordered zone in BLOCK format.
+        """Write a complete IJK-ordered zone.
 
         Zone dimensions are inferred from the shape of the first NODAL array.
 
+        Parameters:
+            datapacking:
+                :class:`~tecio.libtecio.DataPacking` member or equivalent
+                string (``"BLOCK"`` or ``"POINT"``).  POINT format writes one
+                row of all nodal variable values per node, which many
+                third-party tools read as plain CSV rows.  A separate
+                row-per-cell section follows for any cell-centred variables.
+
         Raises:
-            ValueError: On variable-count or array-shape mismatch.
+            ValueError: On variable-count or array-shape mismatch, or if
+                *datapacking* is not a recognised value.
         """
+        if isinstance(datapacking, str):
+            try:
+                datapacking = DataPacking[datapacking.upper()]
+            except KeyError:
+                raise ValueError(
+                    f"datapacking={datapacking!r} is not supported; "
+                    "use DataPacking.BLOCK, DataPacking.POINT, or their "
+                    "string equivalents."
+                ) from None
         if title is None:
             title = f"IJK_Zone_{self.current_zone + 1}"
         if variables is None:
@@ -504,10 +504,32 @@ class Write:
             var_sharing=var_sharing,
             value_locations_global=vl_global,
             aux=aux,
+            datapacking=datapacking,
         )
-        for arr, dt in zip(data, variable_types, strict=False):
-            cast = np.asarray(arr, dtype=_DT_TO_DTYPE[dt]).ravel(order="F")
-            _stage_float_array(buf, cast, self._float_fmt)
+
+        if datapacking == DataPacking.POINT:
+            # Nodal section: one row per node, all nodal vars per row.
+            nodal_cols = [
+                np.asarray(arr, dtype=_DT_TO_DTYPE[dt]).ravel(order="F")
+                for arr, dt, loc in zip(
+                    data, variable_types, value_locations, strict=True
+                )
+                if loc == ValueLocation.NODAL
+            ]
+            _stage_point_rows(buf, nodal_cols, self._float_fmt)
+            # Cell-centred section: one row per cell, all CC vars per row.
+            cc_cols = [
+                np.asarray(arr, dtype=_DT_TO_DTYPE[dt]).ravel(order="F")
+                for arr, dt, loc in zip(
+                    data, variable_types, value_locations, strict=True
+                )
+                if loc == ValueLocation.CELL_CENTERED
+            ]
+            _stage_point_rows(buf, cc_cols, self._float_fmt)
+        else:
+            for arr, dt in zip(data, variable_types, strict=False):
+                cast = np.asarray(arr, dtype=_DT_TO_DTYPE[dt]).ravel(order="F")
+                _stage_float_array(buf, cast, self._float_fmt)
 
         self._fp.write(buf.getvalue())
         self.current_zone += 1
@@ -528,15 +550,33 @@ class Write:
         solution_time: float = 0.0,
         strand_id: int = 0,
         aux: dict[str, Any] | None = None,
+        datapacking: DataPacking | str = DataPacking.BLOCK,
     ) -> None:
-        """Write a complete finite-element zone in BLOCK format.
+        """Write a complete finite-element zone.
 
         ``FEPOLYGON`` and ``FEPOLYHEDRON`` raise :exc:`NotImplementedError`.
 
+        Parameters:
+            datapacking:
+                :class:`~tecio.libtecio.DataPacking` member or equivalent
+                string (``"BLOCK"`` or ``"POINT"``).  POINT format writes one
+                row of all nodal variable values per node, followed by a
+                separate row-per-cell section for cell-centred variables.
+
         Raises:
             NotImplementedError: For unsupported zone types.
-            ValueError: On variable-count or array-length mismatch.
+            ValueError: On variable-count or array-length mismatch, or if
+                *datapacking* is not a recognised value.
         """
+        if isinstance(datapacking, str):
+            try:
+                datapacking = DataPacking[datapacking.upper()]
+            except KeyError:
+                raise ValueError(
+                    f"datapacking={datapacking!r} is not supported; "
+                    "use DataPacking.BLOCK, DataPacking.POINT, or their "
+                    "string equivalents."
+                ) from None
         if zone_type in _FE_POLY:
             raise NotImplementedError(
                 f"Zone type {zone_type.name!r} is not supported by write_fe_zone."
@@ -625,10 +665,32 @@ class Write:
             value_locations_global=vl_global,
             con_sharing=con_sharing,
             aux=aux,
+            datapacking=datapacking,
         )
-        for arr, dt in zip(data, variable_types, strict=False):
-            cast = np.asarray(arr, dtype=_DT_TO_DTYPE[dt]).ravel()
-            _stage_float_array(buf, cast, self._float_fmt)
+
+        if datapacking == DataPacking.POINT:
+            # Nodal section: one row per node, all nodal vars per row.
+            nodal_cols = [
+                np.asarray(arr, dtype=_DT_TO_DTYPE[dt]).ravel()
+                for arr, dt, loc in zip(
+                    data, variable_types, value_locations, strict=True
+                )
+                if loc == ValueLocation.NODAL
+            ]
+            _stage_point_rows(buf, nodal_cols, self._float_fmt)
+            # Cell-centred section: one row per cell, all CC vars per row.
+            cc_cols = [
+                np.asarray(arr, dtype=_DT_TO_DTYPE[dt]).ravel()
+                for arr, dt, loc in zip(
+                    data, variable_types, value_locations, strict=True
+                )
+                if loc == ValueLocation.CELL_CENTERED
+            ]
+            _stage_point_rows(buf, cc_cols, self._float_fmt)
+        else:
+            for arr, dt in zip(data, variable_types, strict=False):
+                cast = np.asarray(arr, dtype=_DT_TO_DTYPE[dt]).ravel()
+                _stage_float_array(buf, cast, self._float_fmt)
 
         if not con_sharing:
             conn = np.asarray(node_map, dtype=np.intp).reshape(
@@ -678,6 +740,7 @@ class Write:
         value_locations_global: list[ValueLocation] | None = None,
         con_sharing: int = 0,
         aux: dict[str, Any] | None = None,
+        datapacking: DataPacking = DataPacking.BLOCK,
     ) -> None:
         """Write a ``ZONE`` header block into the staging buffer *buf*."""
         zt_str = _ZONETYPE_STR[zone_type]
@@ -692,7 +755,7 @@ class Write:
                 f" Nodes={num_nodes}, Elements={num_elements}, ZONETYPE={zt_str}\n"
             )
 
-        buf.write(" DATAPACKING=BLOCK\n")
+        buf.write(f" DATAPACKING={datapacking.name}\n")
 
         if value_locations_global:
             cc = [

@@ -30,6 +30,7 @@ import numpy.typing as npt
 
 from .. import libtecio
 from ..libtecio import (
+    DataPacking,
     DataType,
     FaceNeighborMode,
     FileType,
@@ -269,6 +270,7 @@ class Write:
         solution_time: float = 0.0,
         strand_id: int = 0,
         aux: dict[str, Any] | None = None,
+        datapacking: DataPacking | str = DataPacking.BLOCK,
     ) -> None:
         """Write a complete IJK-ordered zone.
 
@@ -293,6 +295,9 @@ class Write:
                 static zones.
             strand_id: Strand ID for transient data.  Use ``0`` for static zones.
             aux: Zone-level auxiliary data as ``{name: value}`` string pairs.
+            datapacking: Must be :attr:`~tecio.libtecio.DataPacking.BLOCK` (the
+                default).  :attr:`~tecio.libtecio.DataPacking.POINT` is an
+                ASCII-only layout and is not supported by the SZL binary format.
 
         Note:
             If the file is already open, ``data`` and ``variables`` may be
@@ -307,7 +312,25 @@ class Write:
         Note:
             Separate grid files (where all variables are cell-centred) are not
             handled automatically; use the low-level API for that case.
+
+        Raises:
+            NotImplementedError: If *datapacking* is
+                :attr:`~tecio.libtecio.DataPacking.POINT`.
         """
+        if isinstance(datapacking, str):
+            try:
+                datapacking = DataPacking[datapacking.upper()]
+            except KeyError:
+                raise ValueError(
+                    f"datapacking={datapacking!r} is not a recognised value; "
+                    "use DataPacking.BLOCK or the string 'BLOCK'."
+                ) from None
+        if datapacking != DataPacking.BLOCK:
+            raise NotImplementedError(
+                "DATAPACKING=POINT is an ASCII-only layout and is not supported "
+                "by the SZL binary format.  Use DataPacking.BLOCK (the default) "
+                "or write to a .dat file instead."
+            )
         # Set default title if none provided
         if title is None:
             title = f"IJK_Zone_{self.current_zone + 1}"
@@ -489,6 +512,7 @@ class Write:
         solution_time: float = 0.0,
         strand_id: int = 0,
         aux: dict[str, Any] | None = None,
+        datapacking: DataPacking | str = DataPacking.BLOCK,
     ) -> None:
         """Write a complete finite-element zone.
 
@@ -526,9 +550,13 @@ class Write:
             solution_time: Solution time for transient data (0.0 = static).
             strand_id: Strand ID for transient data (0 = static).
             aux: Zone-level auxiliary data as ``{name: value}`` strings.
+            datapacking: Must be :attr:`~tecio.libtecio.DataPacking.BLOCK` (the
+                default).  :attr:`~tecio.libtecio.DataPacking.POINT` is an
+                ASCII-only layout and is not supported by the SZL binary format.
 
         Raises:
-            NotImplementedError: For FEPOLYGON or FEPOLYHEDRON zones.
+            NotImplementedError: For FEPOLYGON, FEPOLYHEDRON, or if *datapacking*
+                is :attr:`~tecio.libtecio.DataPacking.POINT`.
             ValueError: On variable count or array length mismatch.
 
         Note:
@@ -537,6 +565,20 @@ class Write:
             dtype inference and F-order ravel internally; 1-D arrays are
             unaffected by memory order.
         """
+        if isinstance(datapacking, str):
+            try:
+                datapacking = DataPacking[datapacking.upper()]
+            except KeyError:
+                raise ValueError(
+                    f"datapacking={datapacking!r} is not a recognised value; "
+                    "use DataPacking.BLOCK or the string 'BLOCK'."
+                ) from None
+        if datapacking != DataPacking.BLOCK:
+            raise NotImplementedError(
+                "DATAPACKING=POINT is an ASCII-only layout and is not supported "
+                "by the SZL binary format.  Use DataPacking.BLOCK (the default) "
+                "or write to a .dat file instead."
+            )
         if zone_type not in _FE_SIMPLE:
             raise NotImplementedError(
                 f"Zone type {zone_type.name!r} is not supported by write_fe_zone. "

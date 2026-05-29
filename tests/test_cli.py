@@ -41,10 +41,10 @@ import pytest
 
 import tecio
 from tecio.cli.tecdump import main as tecdump_main
-from tecio.cli.teconvert import main as teconvert_main
 from tecio.cli.tecextract import main as tecextract_main
 from tecio.cli.tecfix import main as tecfix_main
 from tecio.cli.tecmerge import main as tecmerge_main
+from tecio.cli.teconvert import main as teconvert_main
 from tecio.cli.tecscale import main as tecscale_main
 from tecio.cli.tecslice import main as tecslice_main
 from tecio.cli.tecstats import main as tecstats_main
@@ -245,8 +245,7 @@ class TestTecextract:
             assert r.num_zones == 1
 
     def test_extract_variable_1_reduces_count(self, tmp_path: Path) -> None:
-        """
-        Output is written to DAT format because the SZL C library requires
+        """Output is written to DAT format because the SZL C library requires
         variables 1, 2, and 3 (x, y, z) to be present to compute its
         subzone layout — writing a single-variable SZL file is not supported.
         """

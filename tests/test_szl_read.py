@@ -8,6 +8,7 @@ import numpy as np
 import tecio
 from tecio.libtecio import ZoneType
 
+
 def test_szl_read():
     """Print out all headers and data fields for test szl file."""
     test_dir = Path(tecio.__file__).parent.parent

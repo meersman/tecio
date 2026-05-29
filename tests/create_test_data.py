@@ -413,6 +413,7 @@ def create_FE_mixed() -> tuple[
     # Cell 2: Pyramid - base quad 2,5,6,3 + apex 18
     # Cell 3: Prism - bottom tri 5,7,6 + top tri 11,13,12
     # Cell 4: Hex - bottom quad 7,9,10,8 + top quad 13,15,16,14
+    # fmt off
     node_map = np.array(
         [
             1, 2, 3, 17,  # tet: 4 nodes
@@ -421,6 +422,7 @@ def create_FE_mixed() -> tuple[
             7, 9, 10, 8, 13, 15, 16, 14,  # hex: 8 nodes
         ],
     )
+    # fmt on
 
     # One entry per cell: number of nodes in that cell
     num_nodes_per_element = np.array([4, 5, 6, 8])
