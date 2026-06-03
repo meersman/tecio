@@ -22,7 +22,7 @@ value.
    ValueLocation
    FaceNeighborMode
    FeCellShape
-   DataFormat
+   DataPacking
    VarStatus
    Boolean
 ```
@@ -35,7 +35,7 @@ value.
 .. autoclass:: tecio.libtecio.ValueLocation
 .. autoclass:: tecio.libtecio.FaceNeighborMode
 .. autoclass:: tecio.libtecio.FeCellShape
-.. autoclass:: tecio.libtecio.DataFormat
+.. autoclass:: tecio.libtecio.DataPacking
 .. autoclass:: tecio.libtecio.VarStatus
 .. autoclass:: tecio.libtecio.Boolean
 ```

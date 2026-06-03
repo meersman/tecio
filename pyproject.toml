@@ -74,6 +74,9 @@ ignore = ["D203", "D213", "SIM105"]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ty.terminal]
+output-format = "concise"
+
 [tool.mypy]
 python_version = "3.10"
 check_untyped_defs = true

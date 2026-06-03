@@ -32,7 +32,7 @@ See {doc}`libtecio_enums` for full documentation.
    ValueLocation
    FaceNeighborMode
    FeCellShape
-   DataFormat
+   DataPacking
    VarStatus
    Boolean
 ```
