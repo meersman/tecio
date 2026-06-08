@@ -45,8 +45,9 @@ Writing:
     :class:`Write` is a context-manager writer that supports lazy-open,
     buffered aux data, and atomic (all-or-nothing) zone writes::
 
-        with tecio.open("result.dat", "w", title="Demo",
-                        variables=["X", "Y", "P"]) as w:
+        with tecio.open(
+            "result.dat", "w", title="Demo", variables=["X", "Y", "P"]
+        ) as w:
             w.write_ijk_zone(data=[x, y, p], title="Zone 1")
 
     All floating-point variable data is written in scientific notation with a

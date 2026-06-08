@@ -42,7 +42,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, overload
 
 import numpy as np
 import numpy.typing as npt
@@ -157,7 +157,7 @@ def _copy_zones(reader: szl.Read | plt.Read, writer: szl.Write | plt.Write) -> N
                 # No array needed; append a placeholder so indices stay aligned.
                 data.append(np.array([], dtype=np.float32))
             else:
-                data.append(var.values)
+                data.append(var.values)  # ty: ignore[invalid-argument-type]
 
         # Strip placeholder arrays — Write infers active variables from
         # passive_vars / var_sharing.
@@ -263,7 +263,7 @@ class AppendWrite:
     # Write delegation
     # ------------------------------------------------------------------
 
-    def write_ijk_zone(self, *args: Any, **kwargs: Any) -> None:
+    def write_ijk_zone(self, *args: Any, **kwargs: Any) -> None:  # noqa: D417
         """Append a structured IJK-ordered zone.
 
         Delegates to the underlying format writer's ``write_ijk_zone``
@@ -313,7 +313,7 @@ class AppendWrite:
         """
         self._writer.write_ijk_zone(*args, **kwargs)
 
-    def write_fe_zone(self, *args: Any, **kwargs: Any) -> None:
+    def write_fe_zone(self, *args: Any, **kwargs: Any) -> None:  # noqa: D417
         """Append an unstructured finite-element zone.
 
         Delegates to the underlying format writer's ``write_fe_zone``
@@ -635,6 +635,34 @@ def _open_exclusive(
 # ---------------------------------------------------------------------------
 # Public open()
 # ---------------------------------------------------------------------------
+
+
+# fmt: off
+@overload
+def open(
+    path: str | os.PathLike,
+    mode: Literal["r"],
+    **kwargs: Any,
+) -> szl.Read | plt.Read | dat.Read: ...
+@overload
+def open(
+    path: str | os.PathLike,
+    mode: Literal["w"] | Literal["x"],
+    **kwargs: Any,
+) -> szl.Write | plt.Write | dat.Write: ...
+@overload
+def open(
+    path: str | os.PathLike,
+    mode: Literal["a"],
+    **kwargs: Any,
+) -> AppendWrite: ...
+@overload
+def open(
+    path: str | os.PathLike,
+    mode: Literal["a+"],
+    **kwargs: Any,
+) -> AppendReadWrite: ...
+# fmt: on
 
 
 def open(

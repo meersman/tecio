@@ -56,12 +56,19 @@ Examples:
 
         $ tecextract -zones 1,2 -o subset.dat solution.szplt
 
-    Call directly from a Tecplot macro or Python session, passing arguments as a list of strings::
+    Call directly from a Tecplot macro or Python session, passing arguments as a list of
+    strings::
 
         import tecio.cli.tecextract.main as tecextract
 
         tecextract([
-            "-zones", "1,2", "-variables", "1,2,5", "-o", "subset.szplt", "solution.szplt"
+            "-zones",
+            "1,2",
+            "-variables",
+            "1,2,5",
+            "-o",
+            "subset.szplt",
+            "solution.szplt",
         ])
 
 See Also:
@@ -71,8 +78,8 @@ See Also:
       IJK indices and/or solution time.
     * :mod:`tecio.cli.tecmerge` - Merge zones from multiple files into a single output —
       the inverse operation to ``tecextract``.
-
 """
+
 from __future__ import annotations
 
 import argparse
@@ -106,10 +113,10 @@ def _parse_index_list(value: str) -> list[int]:
     """
     try:
         return [int(v.strip()) for v in value.split(",")]
-    except ValueError:
+    except ValueError as exc:
         raise argparse.ArgumentTypeError(
             f"Expected comma-separated integers, got: {value!r}"
-        )
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +170,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=str,
         default=None,
         metavar="PATH",
@@ -174,7 +182,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "-f", "--force",
+        "-f",
+        "--force",
         action="store_true",
         default=False,
         help="Overwrite the output file if it already exists.",

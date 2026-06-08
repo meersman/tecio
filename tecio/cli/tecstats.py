@@ -91,6 +91,7 @@ See Also:
        passive once bad values have been identified via statistics.
 
 """
+
 from __future__ import annotations
 
 import argparse
@@ -137,7 +138,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "  Write results to a CSV file (auto-named from input stem)\n"
             "    $ tecstats -csv <file>                 # <stem>_stats.csv\n"
             "  CSV with zone/variable filter suffixes\n"
-            "    $ tecstats -csv -zone 2 -variable 3 <file>  # <stem>_zone_2_var_3_stats.csv\n"
+            "    $ tecstats -csv -zone 2 -variable 3 <file>  # <stem>_zone_2_var_3_stats.csv\n"  # noqa: E501
         ),
         formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
             prog, width=70, max_help_position=24
@@ -176,7 +177,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "-f", "--force",
+        "-f",
+        "--force",
         action="store_true",
         default=False,
         help="Overwrite the output CSV file if it already exists.",

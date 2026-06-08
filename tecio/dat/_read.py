@@ -14,7 +14,7 @@ import contextlib
 
 # Standard library
 import re
-from collections.abc import Iterator
+from collections.abc import ItemsView, Iterator, KeysView, ValuesView
 from typing import Any
 
 # Third-party
@@ -426,15 +426,15 @@ class ReadAuxData:
         """Return value for *key* or *default*."""
         return self._data.get(key, default)
 
-    def keys(self) -> Iterator[str]:
+    def keys(self) -> KeysView[str]:
         """Return iterator over auxiliary data names."""
         return self._data.keys()
 
-    def values(self) -> Iterator[str]:
+    def values(self) -> ValuesView[str]:
         """Return iterator over auxiliary data values."""
         return self._data.values()
 
-    def items(self) -> Iterator[tuple[str, str]]:
+    def items(self) -> ItemsView[str, str]:
         """Return iterator over (name, value) pairs."""
         return self._data.items()
 
@@ -573,11 +573,14 @@ class ReadVariable:
 
         Example:
             >>> arr = var.get_values((1, 100))
+
         Args:
             value_range ((None, None) | (start, end)):
                 1-based start (inclusive) and end (exclusive).
+
         Returns:
             arr (numpy.ndarray | None)
+
         Raises:
             ValueError: If only one of start/end is given.
         """
@@ -622,7 +625,7 @@ class ReadZone:
         self,
         title: str,
         zone_type: ZoneType,
-        I: int,
+        I: int,  # noqa: E741
         J: int,
         K: int,
         solution_time: float,
@@ -710,10 +713,12 @@ class Read:
     Example:
         >>> dat = Read("Onera.dat")
         >>> dat = tecio.open("Onera.dat", "r")
+
     Args:
         path (str):
             Path to the ``.dat`` file.
-    Raises
+
+    Raises:
         FileNotFoundError: If *path* does not exist.
         ValueError: On unsupported format features.
     """
@@ -796,6 +801,7 @@ class Read:
 
         Example:
             >>> aux = dat.get_var_auxdata(1)
+
         Raises:
             IndexError: If ``var_index`` is out of range.
         """
@@ -803,13 +809,16 @@ class Read:
             raise IndexError(
                 f"Variable index {var_index} out of range [1, {self.num_vars}]"
             )
-        return self._var_auxdata[var_index]
+        result = self._var_auxdata[var_index]
+        assert result is not None
+        return result
 
     def get_zone_auxdata(self, zone_index: int) -> ReadAuxData:
         """Return auxiliary data for zone ``zone_index`` (1-based).
 
         Example:
             >>> aux = dat.get_zone_auxdata(1)
+
         Raises:
             IndexError: If ``zone_index`` is out of range.
         """
@@ -976,7 +985,7 @@ class Read:
             )
 
         if zone_type == ZoneType.ORDERED:
-            I = int(kv.get("I", "1") or "1")
+            I = int(kv.get("I", "1") or "1")  # noqa: E741
             J = int(kv.get("J", "1") or "1")
             K = int(kv.get("K", "1") or "1")
             num_nodes = I * J * K
@@ -984,7 +993,7 @@ class Read:
         else:
             num_nodes = int(kv.get("NODES", kv.get("N", "0")) or "0")
             num_cells = int(kv.get("ELEMENTS", kv.get("E", "0")) or "0")
-            I, J, K = num_nodes, num_cells, 0
+            I, J, K = num_nodes, num_cells, 0  # noqa: E741
 
         packing_raw = kv.get("DATAPACKING", "BLOCK").strip().lower()
         packing = _STR_TO_DATAPACKING.get(packing_raw)
@@ -1024,13 +1033,23 @@ class Read:
         # ------------------------------------------------------------------
         if packing == DataPacking.POINT:
             var_arrays = self._read_point_var_data(
-                tokens, self.num_vars, num_nodes, num_cells,
-                var_locs, passive_set, share_map,
+                tokens,
+                self.num_vars,
+                num_nodes,
+                num_cells,
+                var_locs,
+                passive_set,
+                share_map,
             )
         else:
             var_arrays = self._read_block_var_data(
-                tokens, self.num_vars, num_nodes, num_cells,
-                var_locs, passive_set, share_map,
+                tokens,
+                self.num_vars,
+                num_nodes,
+                num_cells,
+                var_locs,
+                passive_set,
+                share_map,
             )
 
         # ------------------------------------------------------------------
@@ -1182,13 +1201,15 @@ class Read:
         """
         # Active variable indices, preserving dataset order.
         nodal_active: list[int] = [
-            i for i in range(num_vars)
+            i
+            for i in range(num_vars)
             if i not in passive_set
             and i not in share_map
             and var_locs.get(i, ValueLocation.NODAL) == ValueLocation.NODAL
         ]
         cc_active: list[int] = [
-            i for i in range(num_vars)
+            i
+            for i in range(num_vars)
             if i not in passive_set
             and i not in share_map
             and var_locs.get(i, ValueLocation.NODAL) == ValueLocation.CELL_CENTERED
@@ -1219,7 +1240,7 @@ class Read:
     def _read_int_block(tokens: _LineBuffer, n_values: int) -> npt.NDArray:
         """Read exactly *n_values* integers from *tokens* into an int64 array.
 
-        Examples
+        Examples:
             >>> arr = Read._read_int_block(tokens, 24)
         """
         values: list[int] = []

@@ -10,24 +10,26 @@ PACKAGE = tecio
 
 # Default target
 help:
-	@echo "Tecio Development Commands"
-	@echo "=============================="
 	@echo ""
-	@echo "Setup:"
-	@echo "  make install          Install package dependencies"
-	@echo "  make install-dev      Install package + dev dependencies"
+	@echo "                      Tecio Development Commands"
+	@echo "    ================================================================="
+	@echo "    Setup:"
+	@echo "      make install          Install tecio package and dependencies"
+	@echo "      make install-dev      Install dev dependencies"
+	@echo "      make install-docs     Install docs dependencies"
+	@echo "      make uninstall        Uninstall tecio  package"
+	@echo "    Code Quality:"
+	@echo "      make format           Format code ruff"
+	@echo "      make lint             Run code linting with ruff"
+	@echo "      make typecheck        Run mypy type checking"
+	@echo "      make check            Run all checks (format + lint)"
+	@echo "    Testing:"
+	@echo "      make test             Run unit tests"
+	@echo "      make coverage         Run unit tests and create coverage report"
+	@echo "    Cleanup:"
+	@echo "      make clean            Remove generated files"
+	@echo "      make testclean        Remove test artefacts"
 	@echo ""
-	@echo "Code Quality:"
-	@echo "  make format           Format code ruff"
-	@echo "  make lint             Run code linting with ruff"
-	@echo "  make check            Run all checks (format + lint)"
-	@echo "  make typecheck        Run mypy type checking"
-	@echo ""
-	@echo "Testing:"
-	@echo "  make test             Run unit tests (not yet implemented)"
-	@echo ""
-	@echo "Cleanup:"
-	@echo "  make clean            Remove generated files"
 
 # Install package dependencies
 install:
@@ -47,15 +49,15 @@ uninstall:
 
 # Format code with black and isort
 format:
-	ruff format .
+	ruff format tecio
 
 # Run linters
 lint:
-	ruff check . --fix
+	ruff check tecio --fix
 
 # Run type checker
 typecheck:
-	mypy .
+	ty check tecio
 
 # Run all checks
 check: format lint typecheck
@@ -104,6 +106,6 @@ versions:
 	@echo "Tool Versions:"
 	@echo "=============="
 	@python --version
-	@ruff --version | head -n1
-	@mypy --version
+	@ruff --version
+	@ty --version
 	@pytest --version

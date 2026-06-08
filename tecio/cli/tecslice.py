@@ -305,7 +305,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Input Tecplot file.",
     )
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=str,
         required=True,
         metavar="PATH",
@@ -315,7 +316,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "-f", "--force",
+        "-f",
+        "--force",
         action="store_true",
         default=False,
         help="Overwrite the output file if it already exists.",
@@ -896,7 +898,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 t = args.t
                 t_desc = (
                     (
-                        f"[{t.start if t is not None and t.start is not None else '-inf'}"
+                        f"[{t.start if t is not None and t.start is not None else '-inf'}"  # noqa: E501
                         f":"
                         f"{t.end if t is not None and t.end is not None else '+inf'}"
                         f":{t.skip if t is not None and t.skip is not None else '1'}]"

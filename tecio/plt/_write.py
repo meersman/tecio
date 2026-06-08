@@ -19,11 +19,11 @@ from ..libtecio import (
     ZoneType,
 )
 
-# ---------------------------------------------------------------------------
-# Zone-type sets (mirrors szl.py)
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------
+# Module-level constants
+# -------------------------------------------------------------------------------------
 
-#: FE zone types supported by :meth:`Write.write_fe_zone`.
+# FE zone types supported by :meth:`Write.write_fe_zone`.
 _FE_SIMPLE: frozenset[ZoneType] = frozenset({
     ZoneType.FELINESEG,
     ZoneType.FETRIANGLE,
@@ -33,9 +33,9 @@ _FE_SIMPLE: frozenset[ZoneType] = frozenset({
 })
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
+# =====================================================================================
+# Helpers
+# =====================================================================================
 
 
 def _infer_data_type(dt: DataType | np.dtype) -> DataType:
@@ -78,9 +78,9 @@ def _infer_data_type(dt: DataType | np.dtype) -> DataType:
     raise ValueError(f"Unsupported dtype: {dt_np}")
 
 
-# ---------------------------------------------------------------------------
+# =====================================================================================
 # Write class
-# ---------------------------------------------------------------------------
+# =====================================================================================
 
 
 class Write:
@@ -101,29 +101,42 @@ class Write:
     which point ``variables`` must be provided to that call).
 
     Args:
-        path:      Output file path (should end in ``.plt``).
-        title:     Dataset title string.
-        variables: Variable name list.  If provided the file is opened
-                   immediately.  If ``None``, the file is opened on the first
-                   zone write.
-        file_type: :class:`~libtecio.FileType` enum.  Defaults to
-                   :attr:`~libtecio.FileType.FULL`.
+        path:         Output file path (should end in ``.plt``).
+        title:        Dataset title string.
+        variables:    Variable name list.  If provided the file is opened
+                      immediately.  If ``None``, the file is opened on the first
+                      zone write.
+        file_type:    :class:`~libtecio.FileType` enum.  Defaults to
+                      :attr:`~libtecio.FileType.FULL`.
+
+    Attributes:
+        path:         Output file path.
+        title:        Dataset title string.
+        variables:    Variable name list, or ``None`` if the file has not been opened
+                      yet.
+        file_type:    File type (FULL, GRID, or SOLUTION).
+        current_zone: The index of the most recently written zone.  Before any zones
+                      have been written, ``current_zone`` is ``0``.  During a call to a
+                      zone writing method, ``current_zone`` still refers to the
+                      previously written zone.  ``current_zone`` is incremented only
+                      after a zone writing method successfully completes.
+        auxdataset:   Buffered dataset-level auxiliary data, flushed before the first
+                      zone.
+        auxvar:       Buffered variable-level auxiliary data, flushed before the first
+                      zone.
 
     Caution:
-        Unlike the SZL writer, zone data must be written strictly in order:
-        header → variable data → connectivity.  This is enforced internally
-        by the write methods.
+        Unlike the SZL writer, zone data must be written strictly in order: header →
+        variable data → connectivity.  This is enforced internally by the write methods.
 
-    Example:
+    Examples:
         Define file header fields on open.
 
         >>> with plt.Write("out.plt", variables=["X", "Y", "P"]) as w:
         ...     w.write_ijk_zone(data=[x, y, p], title="Zone 1")
 
-    Example:
-        If writer handle is opened with just the file name, the
-        variable name list can be provided with the first zone
-        written.
+        If writer handle is opened with just the file name, the variable name list can
+        be provided with the first zone written.
 
         >>> with plt.Write("out.plt") as w:
         ...     w.write_ijk_zone(
@@ -133,7 +146,6 @@ class Write:
         ...     )
     """
 
-    # Class-level annotations so autodoc can discover instance attributes.
     path: str
     """Output file path."""
 
@@ -147,7 +159,14 @@ class Write:
     """File type (FULL, GRID, or SOLUTION)."""
 
     current_zone: int
-    """1-based index of the most recently written zone (0 before any zone is written)."""
+    """The index of the most recently written zone.
+
+    * Before any zones have been written, ``current_zone`` is ``0``.
+    * During a call to a zone writing method, ``current_zone`` still refers to the
+      previously written zone.
+    * ``current_zone`` is incremented only after a zone writing method successfully
+      completes.
+    """
 
     auxdataset: dict[str, Any]
     """Buffered dataset-level auxiliary data, flushed before the first zone."""
@@ -182,9 +201,7 @@ class Write:
         if self.variables is not None:
             self._open(self.variables)
 
-    # ------------------------------------------------------------------
-    # Context manager
-    # ------------------------------------------------------------------
+    # -- Context manager --------------------------------------------------------------
 
     def __enter__(self) -> Write:
         """Support ``with`` statement — returns *self*."""
@@ -204,9 +221,18 @@ class Write:
             if exc_type is None:
                 raise
 
-    # ------------------------------------------------------------------
-    # File lifecycle
-    # ------------------------------------------------------------------
+    # -- Validation checks and errror handling ----------------------------------------
+
+    def _check_variables(self) -> list[str]:
+        """Return the variable list, raising if the file has not been opened yet."""
+        if self.variables is None:
+            raise RuntimeError(
+                "Attempted to access variable name list before they were set. "
+                "Ensure variables are set on initialization or zone write."
+            )
+        return self.variables
+
+    # -- File lifecycle ---------------------------------------------------------------
 
     def _open(self, var_names: list[str]) -> None:
         """Call ``tecini142`` and record the variable list.
@@ -266,10 +292,10 @@ class Write:
         for key, subdict in self.auxvar.items():
             if isinstance(key, int):
                 var_idx = key - 1  # Convert to 0-based
-                if var_idx < 1 not in range(len(self.variables)):
+                if var_idx < 1 not in range(len(self._check_variables())):
                     raise IndexError(
                         f"Variable index {var_idx} out of bounds "
-                        f"[1, {len(self.variables)}]"
+                        f"[1, {len(self._check_variables())}]"
                     )
             elif isinstance(key, str):
                 try:
@@ -292,13 +318,12 @@ class Write:
         self.auxdataset.clear()
         self.auxvar.clear()
 
-    # ------------------------------------------------------------------
-    # Zone writers
-    # ------------------------------------------------------------------
+    # -- Zone writers -----------------------------------------------------------------
 
     def write_ijk_zone(
         self,
-        data: Sequence[npt.NDArray],
+        data: Sequence[npt.ArrayLike],
+        *,
         title: str | None = None,
         variables: list[str] | None = None,
         value_locations: Sequence[ValueLocation] | None = None,
@@ -311,53 +336,52 @@ class Write:
     ) -> None:
         """Write a complete IJK-ordered zone.
 
-        The zone header (``teczne142``), variable data (``tecdat142``), and
-        optional zone aux data (``teczauxstr142``) are all written in strict
-        sequence, as required by the classic TecIO API.
+        The zone header (``teczne142``), variable data (``tecdat142``), and optional
+        zone aux data (``teczauxstr142``) are all written in strict sequence, as
+        required by the classic TecIO API.
 
-        The zone dimensions ``imax × jmax × kmax`` are inferred from the
-        shape of the first nodal data array.  1-D arrays produce a
-        ``(N, 1, 1)`` zone; 2-D arrays produce an ``(I, J, 1)`` zone.
+        The zone dimensions ``imax × jmax × kmax`` are inferred from the shape of the
+        first nodal data array.  1-D arrays produce a ``(N, 1, 1)`` zone; 2-D arrays
+        produce an ``(I, J, 1)`` zone.
 
         Args:
-            data:            Sequence of NumPy arrays, one per active variable.
-                             NODAL arrays must all share the same shape.
-                             CELL_CENTERED arrays must have shape
-                             ``(imax-1, jmax-1, kmax-1)`` (minimum 1 in each
-                             dimension).
-            title:           Zone title.  Defaults to
-                             ``"IJK_Zone_{current_zone + 1}"``.
-            variables:       Variable names — required when the file has not
-                             been opened yet (lazy-open path).  Ignored on
-                             subsequent zones once the file is initialised.
-            value_locations: Per-variable :class:`ValueLocation`.  Defaults
-                             to all :attr:`~ValueLocation.NODAL`.
-            passive_vars:    Per-variable passive flags (one per dataset
-                             variable, not just active variables).  Defaults
-                             to all active (``False``).
-            var_sharing:     Per-variable source-zone sharing indices (one per
-                             dataset variable).  ``0`` means no sharing.
-                             Defaults to no sharing.
-            solution_time:   Solution time for transient data (``0.0``
-                             indicates steady-state).
+            data:            Sequence of NumPy arrays, one per active variable.  NODAL
+                             arrays must all share the same shape.  CELL_CENTERED arrays
+                             must have shape ``(imax-1, jmax-1, kmax-1)`` (minimum 1 in
+                             each dimension).
+            title:           Zone title.  Defaults to ``"IJK_Zone_{current_zone + 1}"``.
+            variables:       Variable name list.  Required only when the file has not
+                             been opened yet (lazy-open path).  Ignored on subsequent
+                             zones once the file is already initialised. Default to
+                             ``[V1, V2, V3, ...]`` if not provided in open or zone call.
+            value_locations: Per-variable :class:`ValueLocation`.  Defaults to all
+                             :attr:`~ValueLocation.NODAL`.
+            passive_vars:    Per-variable passive flags (one per dataset variable, not
+                             just active variables).  Defaults to all active
+                             (``False``).
+            var_sharing:     Per-variable source-zone sharing indices (one per dataset
+                             variable).  ``0`` means no sharing.  Defaults to no
+                             sharing.
+            solution_time:   Solution time for transient data (``0.0`` indicates
+                             steady-state).
             strand_id:       Strand ID for transient data (``0`` indicates
                              steady-state).
-            aux:             Zone-level auxiliary data as ``{name: value}``
-                             strings.  Written immediately after the zone
-                             header and before variable data.
-            datapacking:     Must be :attr:`~tecio.libtecio.DataPacking.BLOCK`
-                             (the default).
-                             :attr:`~tecio.libtecio.DataPacking.POINT` is an
-                             ASCII-only layout and is not supported by the PLT
-                             binary format.
+            aux:             Zone-level auxiliary data as ``{name: value}`` strings.
+                             Written immediately after the zone header and before
+                             variable data.
+            datapacking:     Must be :attr:`~tecio.libtecio.DataPacking.BLOCK` (the
+                             default).  :attr:`~tecio.libtecio.DataPacking.POINT` is an
+                             ASCII-only layout and is not supported by the PLT binary
+                             format. Defined only for parity with ASCII writer.
 
         Raises:
             NotImplementedError: If *datapacking* is
-                :attr:`~tecio.libtecio.DataPacking.POINT`.
-            ValueError: If the number of supplied data arrays does not match
-                        the number of active (non-passive, non-shared)
-                        variables, or if array shapes are inconsistent.
+                                 :attr:`~tecio.libtecio.DataPacking.POINT`.
+            ValueError:          If the number of supplied data arrays does not match
+                                 the number of active (non-passive, non-shared)
+                                 variables, or if array shapes are inconsistent.
         """
+        # Validate inputs
         if isinstance(datapacking, str):
             try:
                 datapacking = DataPacking[datapacking.upper()]
@@ -372,13 +396,17 @@ class Write:
                 "by the PLT binary format.  Use DataPacking.BLOCK (the default) "
                 "or write to a .dat file instead."
             )
+
+        # Convert input data to NumPy arrays
+        arrays: list[npt.NDArray] = [np.asarray(arr) for arr in data]
+
         # Default title
         if title is None:
             title = f"IJK_Zone_{self.current_zone + 1}"
 
         # Default variable names (only used on lazy-open first-zone call)
         if variables is None:
-            variables = [f"V{i}" for i in range(1, len(data) + 1)]
+            variables = [f"V{i}" for i in range(1, len(arrays) + 1)]
 
         # Lazy open and flush buffered aux data before the first zone
         if not self._opened:
@@ -386,20 +414,20 @@ class Write:
             self.flush_aux()
 
         # Per-active-variable data types inferred from array dtypes
-        variable_types = [_infer_data_type(arr.dtype) for arr in data]
+        variable_types = [_infer_data_type(arr.dtype) for arr in arrays]
 
         # Default value locations — all nodal
         if value_locations is None:
-            value_locations = [ValueLocation.NODAL] * len(data)
+            value_locations = [ValueLocation.NODAL] * len(arrays)
 
         # Default passive / sharing arrays — length equals dataset variable count
         if passive_vars is None:
-            passive_vars = [False] * len(self.variables)
+            passive_vars = [False] * len(self._check_variables())
         if var_sharing is None:
-            var_sharing = [0] * len(self.variables)
+            var_sharing = [0] * len(self._check_variables())
 
         # Validate active variable count
-        if len(data) != len(self.variables):
+        if len(arrays) != len(self._check_variables()):
             expected_vars = sum(
                 1
                 for is_passive, share_zone in zip(
@@ -412,15 +440,15 @@ class Write:
                     "No active variables to write — all variables are either "
                     "passive or shared."
                 )
-            if len(data) == 0:
+            if len(arrays) == 0:
                 raise ValueError(
                     f"No data arrays provided. Expected {expected_vars} active "
                     "variable arrays based on passive_vars and var_sharing."
                 )
-            if len(data) != expected_vars:
+            if len(arrays) != expected_vars:
                 raise ValueError(
                     f"Expected {expected_vars} data arrays for active variables, "
-                    f"got {len(data)}."
+                    f"got {len(arrays)}."
                 )
 
         # Infer zone dimensions from first nodal array or first cell array if no nodal
@@ -433,25 +461,25 @@ class Write:
             if loc == ValueLocation.CELL_CENTERED
         ]
         if len(nodal_indices) >= 1:
-            ndims = data[nodal_indices[0]].ndim
+            ndims = arrays[nodal_indices[0]].ndim
             if ndims not in (1, 2, 3):
                 raise ValueError(
                     f"Arrays must be 1D, 2D, or 3D; got {ndims}-D array.  "
                     "For time-dependent data, write each time step as a separate zone."
                 )
 
-            nodal_shape = data[nodal_indices[0]].shape + (1,) * (3 - ndims)
+            nodal_shape = arrays[nodal_indices[0]].shape + (1,) * (3 - ndims)
             cell_shape = tuple(max(i - 1, 1) for i in nodal_shape)
             imax, jmax, kmax = nodal_shape
         elif len(cell_indices) >= 1:
-            ndims = data[cell_indices[0]].ndim
+            ndims = arrays[cell_indices[0]].ndim
             if ndims not in (1, 2, 3):
                 raise ValueError(
                     f"Arrays must be 1D, 2D, or 3D; got {ndims}-D array.  "
                     "For time-dependent data, write each time step as a separate zone."
                 )
 
-            cell_shape = data[cell_indices[0]].shape + (1,) * (3 - ndims)
+            cell_shape = arrays[cell_indices[0]].shape + (1,) * (3 - ndims)
             nodal_shape = tuple(max(i + 1, 1) for i in cell_shape)
             imax, jmax, kmax = nodal_shape
         else:
@@ -461,7 +489,7 @@ class Write:
             )
 
         # Validate individual array shapes
-        for i, (arr, loc) in enumerate(zip(data, value_locations, strict=True)):
+        for i, (arr, loc) in enumerate(zip(arrays, value_locations, strict=True)):
             if arr.ndim != ndims:
                 raise ValueError(f"Array {i} is {arr.ndim}D, expected {ndims}D.")
             shape = arr.shape + (1,) * (3 - arr.ndim)
@@ -488,7 +516,7 @@ class Write:
         # Build global (dataset-length) value-location and type lists —
         # passive / shared positions use placeholder values (they are not
         # written but the arrays must be the right length for teczne142).
-        value_locations_global = [ValueLocation.NODAL] * len(self.variables)
+        value_locations_global = [ValueLocation.NODAL] * len(self._check_variables())
         for local_idx, var_idx in enumerate(active_var_idx):
             value_locations_global[var_idx - 1] = value_locations[local_idx]
 
@@ -516,15 +544,16 @@ class Write:
 
         # Write active variable data in dataset-variable order
         for var_idx, arr, dtype in zip(
-            active_var_idx, data, variable_types, strict=True
+            active_var_idx, arrays, variable_types, strict=True
         ):
             self.current_var = var_idx
             write_data(arr, dtype)
 
     def write_fe_zone(
         self,
+        data: Sequence[npt.ArrayLike],
         zone_type: ZoneType,
-        data: Sequence[npt.NDArray],
+        *,
         node_map: npt.ArrayLike | None = None,
         title: str | None = None,
         variables: list[str] | None = None,
@@ -541,62 +570,63 @@ class Write:
     ) -> None:
         """Write a complete finite-element zone.
 
-        The full sequence required by the classic TecIO API is issued
-        internally:
+        The full sequence required by the classic TecIO API is issued internally:
 
         1. :func:`~tecio.libtecio.teczne142` — zone header.
-        2. :func:`~tecio.libtecio.teczauxstr142` — zone-level aux data (if any), before data.
+        2. :func:`~tecio.libtecio.teczauxstr142` — zone-level aux data (if any), before
+           data.
         3. :func:`~tecio.libtecio.tecdat142` — one call per active variable.
         4. :func:`~tecio.libtecio.tecnode142` — node map.
-        5. :func:`~tecio.libtecio.tecface142` — face-neighbour connections (if provided).
+        5. :func:`~tecio.libtecio.tecface142` — face-neighbour connections (if
+           provided).
 
         ``FEPOLYGON`` and ``FEPOLYHEDRON`` zone types are not supported
         (they require ``tecpolyface142`` / ``tecpolybconn142``); use the
         low-level libtecio API directly for those types.
 
         Args:
-            zone_type:       FE zone type.  Must be one of :data:`_FE_SIMPLE`.
-            data:            Sequence of 1-D NumPy arrays, one per active
-                             variable.  NODAL arrays must have length
-                             ``num_nodes``; CELL_CENTERED arrays must have
-                             length ``num_cells``.  Both counts are inferred
-                             from *node_map*.
-            node_map:        Integer array of shape
-                             ``(num_cells, nodes_per_cell)`` with 1-based node
-                             indices.
-            title:           Zone title.  Defaults to
-                             ``"FE_Zone_{current_zone + 1}"``.
-            variables:       Variable names — required on the lazy-open first
-                             zone call.
-            value_locations: Per-variable :class:`ValueLocation`.  Defaults
-                             to all :attr:`~ValueLocation.NODAL`.
-            passive_vars:    Per-variable passive flags (dataset-length).
-                             Defaults to all active.
-            var_sharing:     Per-variable sharing zone indices (dataset-
-                             length).  Defaults to no sharing.
-            con_sharing:     Source-zone index for connectivity sharing.
-                             Pass ``0`` for no sharing (mandatory for the
-                             first zone).
-            face_neighbors:  Optional face-neighbour connection array.  Its
-                             length sets ``num_face_connections`` in the zone
-                             header automatically.
-            face_nbr_mode:   Face-neighbour mode; used only when
-                             *face_neighbors* is provided.
+            data:            Sequence of 1-D NumPy arrays, one per active variable.
+                             NODAL arrays must have length ``num_nodes``; CELL_CENTERED
+                             arrays must have length ``num_cells``.  Both counts are
+                             inferred from *node_map*.
+            zone_type:       FE zone type from the ZoneType enum.  Must be one of the
+                             types in ``_FE_SIMPLE``.
+            node_map:        Integer array of shape ``(num_cells, nodes_per_cell)`` with
+                             1-based node indices.
+            title:           Zone title.  Defaults to ``"FE_Zone_{current_zone + 1}"``.
+            variables:       Variable name list.  Required only when the file has not
+                             been opened yet (lazy-open path).  Ignored on subsequent
+                             zones once the file is already initialised. Default to
+                             ``[V1, V2, V3, ...]`` if not provided in open or zone call.
+            value_locations: Per-variable :class:`ValueLocation`.  Defaults to all
+                             :attr:`~ValueLocation.NODAL`.
+            passive_vars:    Per-variable passive flags (dataset-length).  Defaults to
+                             all active.
+            var_sharing:     Per-variable sharing zone indices (dataset- length).
+                             Defaults to no sharing.
+            con_sharing:     Source-zone index for connectivity sharing.  Pass ``0`` for
+                             no sharing (mandatory for the first zone).
+            face_neighbors:  Optional face-neighbour connection array.  Its length sets
+                             ``num_face_connections`` in the zone header automatically.
+            face_nbr_mode:   Face-neighbour mode; used only when *face_neighbors* is
+                             provided.
             solution_time:   Solution time for transient data.
             strand_id:       Strand ID for transient data.
             aux:             Zone-level auxiliary data as ``{name: value}``.
-            datapacking:     Must be :attr:`~tecio.libtecio.DataPacking.BLOCK`
-                             (the default).
-                             :attr:`~tecio.libtecio.DataPacking.POINT` is an
-                             ASCII-only layout and is not supported by the PLT
-                             binary format.
+            datapacking:     Must be :attr:`~tecio.libtecio.DataPacking.BLOCK` (the
+                             default).  :attr:`~tecio.libtecio.DataPacking.POINT` is an
+                             ASCII-only layout and is not supported by the PLT binary
+                             format.Defined only for parity with ASCII writer.
 
         Raises:
-            NotImplementedError: If *zone_type* is not in :data:`_FE_SIMPLE`,
-                or if *datapacking* is
-                :attr:`~tecio.libtecio.DataPacking.POINT`.
-            ValueError:          On variable count or array length mismatch.
+            NotImplementedError: If *zone_type* is not in :data:`_FE_SIMPLE`, or if
+                                 *datapacking* is
+                                 :attr:`~tecio.libtecio.DataPacking.POINT`.
+            ValueError:          On variable count or array length mismatch
+            RuntimeError:        If attempting to write variable aux before variables
+                                 are defined.
         """
+        # Validate input
         if isinstance(datapacking, str):
             try:
                 datapacking = DataPacking[datapacking.upper()]
@@ -618,13 +648,16 @@ class Write:
                 "the low-level libtecio API."
             )
 
+        # Convert input data to NumPy arrays
+        arrays: list[npt.NDArray] = [np.asarray(arr) for arr in data]
+
         # Default title
         if title is None:
             title = f"FE_Zone_{self.current_zone + 1}"
 
         # Default variable names (only used on lazy-open first-zone call)
         if variables is None:
-            variables = [f"V{i}" for i in range(1, len(data) + 1)]
+            variables = [f"V{i}" for i in range(1, len(arrays) + 1)]
 
         # Lazy open and flush buffered aux data before the first zone
         if not self._opened:
@@ -632,20 +665,20 @@ class Write:
             self.flush_aux()
 
         # Per-active-variable data types
-        variable_types = [_infer_data_type(arr.dtype) for arr in data]
+        variable_types = [_infer_data_type(arr.dtype) for arr in arrays]
 
         # Default value locations — all nodal
         if value_locations is None:
-            value_locations = [ValueLocation.NODAL] * len(data)
+            value_locations = [ValueLocation.NODAL] * len(arrays)
 
         # Default passive / sharing arrays
         if passive_vars is None:
-            passive_vars = [False] * len(self.variables)
+            passive_vars = [False] * len(self._check_variables())
         if var_sharing is None:
-            var_sharing = [0] * len(self.variables)
+            var_sharing = [0] * len(self._check_variables())
 
         # Validate active variable count
-        if len(data) != len(self.variables):
+        if len(arrays) != len(self._check_variables()):
             expected_vars = sum(
                 1
                 for is_passive, share_zone in zip(
@@ -658,15 +691,15 @@ class Write:
                     "No active variables to write — all variables are either "
                     "passive or shared."
                 )
-            if len(data) == 0:
+            if len(arrays) == 0:
                 raise ValueError(
                     f"No data arrays provided. Expected {expected_vars} active "
                     "variable arrays based on passive_vars and var_sharing."
                 )
-            if len(data) != expected_vars:
+            if len(arrays) != expected_vars:
                 raise ValueError(
                     f"Expected {expected_vars} data arrays for active variables, "
-                    f"got {len(data)}."
+                    f"got {len(arrays)}."
                 )
 
         # Derive num_nodes and num_cells from node_map.
@@ -676,7 +709,7 @@ class Write:
         num_nodes = int(node_map_arr.max())
 
         # Validate per-variable array lengths
-        for i, (arr, loc) in enumerate(zip(data, value_locations, strict=True)):
+        for i, (arr, loc) in enumerate(zip(arrays, value_locations, strict=True)):
             if loc == ValueLocation.NODAL and arr.size != num_nodes:
                 raise ValueError(
                     f"Array {i} is NODAL but has {arr.size} values; "
@@ -689,7 +722,10 @@ class Write:
                 )
 
         # Face-neighbour count for zone header
-        num_face_cons = len(face_neighbors) if face_neighbors is not None else 0
+        face_neighbors_arr: npt.NDArray | None = (
+            np.asarray(face_neighbors) if face_neighbors is not None else None
+        )
+        num_face_cons = len(face_neighbors_arr) if face_neighbors_arr is not None else 0
 
         # Determine active variable indices (1-based, dataset-level)
         active_var_idx = [
@@ -702,7 +738,7 @@ class Write:
         ]
 
         # Build global value-location list for teczne142
-        value_locations_global = [ValueLocation.NODAL] * len(self.variables)
+        value_locations_global = [ValueLocation.NODAL] * len(self._check_variables())
         for local_idx, var_idx in enumerate(active_var_idx):
             value_locations_global[var_idx - 1] = value_locations[local_idx]
 
@@ -735,18 +771,20 @@ class Write:
 
         # Write active variable data in dataset-variable order
         for var_idx, arr, dtype in zip(
-            active_var_idx, data, variable_types, strict=True
+            active_var_idx, arrays, variable_types, strict=True
         ):
             self.current_var = var_idx
             write_data(arr, dtype)
 
         # Write connectivity (must come after all tecdat142 calls)
         if (not con_sharing) or (self.current_zone == 1):
+            if node_map is None:
+                raise ValueError("node_map must be provided when writing connectivity.")
             # If first zone, must supply connectivity
-            write_connectivity(node_map, face_neighbors)
+            write_connectivity(node_map, face_neighbors_arr)
 
 
-def write_data(arr: npt.ArrayLike, dt: np.dtype | DataType | None = None) -> None:
+def write_data(data: npt.ArrayLike, dtype: np.dtype | DataType | None = None) -> None:
     """Write a single variable's data using ``tecdat142``.
 
     ``tecdat142`` only accepts ``float32`` or ``float64``; integer types are
@@ -754,8 +792,8 @@ def write_data(arr: npt.ArrayLike, dt: np.dtype | DataType | None = None) -> Non
     order before writing, which matches Tecplot's expected BLOCK layout.
 
     Args:
-        arr:       Array-like of values to write.
-        dt:        Intended :class:`DataType` for the variable.
+        data: Array-like of values to write.
+        dtype: Intended :class:`DataType` for the variable.
 
     Output defaults:
     1. Inferrs data_typeype for nummpy arrays
@@ -772,7 +810,13 @@ def write_data(arr: npt.ArrayLike, dt: np.dtype | DataType | None = None) -> Non
         np.dtype(np.uint8): DataType.BYTE,
     }
 
-    data_type = _infer_data_type(dt) if dt is not None else dtype_to_datatype[arr.dtype]
+    # Convert input array-like data to NumPy arrays
+    arr = np.asarray(data)
+
+    if dtype is not None:
+        data_type = _infer_data_type(dtype)
+    else:
+        data_type = dtype_to_datatype[arr.dtype]
 
     # tecdat142 already returns a contiguous array so no need to cast before calling
     if data_type in (DataType.FLOAT,):

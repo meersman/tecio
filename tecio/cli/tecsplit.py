@@ -133,7 +133,6 @@ import numpy as np
 from .. import open as tecio_open
 from ..libtecio import FileType, ZoneType
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -186,7 +185,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Input Tecplot file to split.",
     )
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=str,
         default=None,
         metavar="DIR",
@@ -197,7 +197,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "-f", "--force",
+        "-f",
+        "--force",
         action="store_true",
         default=False,
         help="Overwrite output files that already exist.",
@@ -282,14 +283,14 @@ def _parse_var_spec(
                     f"[1, {len(var_names)}]."
                 )
             result.append(idx - 1)
-        except ValueError:
+        except ValueError as exc:
             lower = token.lower()
             matched = [i for i, n in enumerate(var_names) if n.lower() == lower]
             if not matched:
                 raise argparse.ArgumentTypeError(
                     f"{label.capitalize()} '{token}' not found.  "
                     f"Available variables: {var_names}"
-                )
+                ) from exc
             result.extend(matched)
     return result
 
@@ -518,8 +519,7 @@ def _write_one_file(
     """
     if dst.exists() and not force:
         raise FileExistsError(
-            f"Output file already exists: {dst}\n"
-            "Use --force / -f to overwrite."
+            f"Output file already exists: {dst}\nUse --force / -f to overwrite."
         )
 
     with tecio_open(str(src), "r") as reader:
@@ -638,8 +638,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 return 1
             sol_items: list[tuple[str, frozenset[int]]] = [
-                (_sanitize_varname(var_names[i]), frozenset({i}))
-                for i in non_coord
+                (_sanitize_varname(var_names[i]), frozenset({i})) for i in non_coord
             ]
 
         elif args.pop is not None:
@@ -671,8 +670,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
 
             sol_items = [
-                (_sanitize_varname(var_names[i]), frozenset({i}))
-                for i in pop_unique
+                (_sanitize_varname(var_names[i]), frozenset({i})) for i in pop_unique
             ]
 
         else:
@@ -692,8 +690,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         # ------------------------------------------------------------------ #
         grid_path = _make_output_path(src, "_grid", output_dir)
         sol_paths: list[Path] = [
-            _make_output_path(src, f"_{label}", output_dir)
-            for label, _ in sol_items
+            _make_output_path(src, f"_{label}", output_dir) for label, _ in sol_items
         ]
         output_paths = [grid_path, *sol_paths]
 
@@ -733,7 +730,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"  Coords    : "
             f"{coord_names if coord_names else '(none)'} → {grid_path.name}"
         )
-        for (label, sol_set), sp in zip(sol_items, sol_paths, strict=False):
+        for (_label, sol_set), sp in zip(sol_items, sol_paths, strict=False):
             active_names = [var_names[i] for i in sorted(sol_set)]
             print(f"  Solution  : {active_names} → {sp.name}")
 
@@ -753,7 +750,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         # ------------------------------------------------------------------ #
         # 7. Write each solution file.                                        #
         # ------------------------------------------------------------------ #
-        for (label, sol_set), sp in zip(sol_items, sol_paths, strict=False):
+        for (_label, sol_set), sp in zip(sol_items, sol_paths, strict=False):
             print(f"Writing solution : {sp}")
             n_s = _write_one_file(
                 dst=sp,

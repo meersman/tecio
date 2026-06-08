@@ -89,6 +89,7 @@ See Also:
     * :mod:`tecio.cli.tecslice`: Extract planar slices from volumetric zone data.
 
 """
+
 from __future__ import annotations
 
 import argparse
@@ -470,7 +471,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"\nUnion variable list ({n_union}): {union_vars}")
 
         # Report any variables that will be passive in some files.
-        for fi, (reader, imap) in enumerate(zip(readers, index_maps, strict=False)):
+        for fi, (_reader, imap) in enumerate(zip(readers, index_maps, strict=False)):
             missing = [union_vars[ui] for ui, li in enumerate(imap) if li is None]
             if missing:
                 print(

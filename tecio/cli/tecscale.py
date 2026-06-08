@@ -84,6 +84,7 @@ See Also:
     any variable transformation.
 
 """
+
 from __future__ import annotations
 
 import argparse
@@ -161,7 +162,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=str,
         default=None,
         metavar="PATH",
@@ -171,7 +173,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "-f", "--force",
+        "-f",
+        "--force",
         action="store_true",
         default=False,
         help="Overwrite the output file if it already exists.",
@@ -264,19 +267,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             num_vars: int = reader.num_vars
 
             # Resolve target variable.
-            var_idx0: int = _resolve_variable(args.variable, var_names)
+            var_idx0: int | None = _resolve_variable(args.variable, var_names)
             if var_idx0 is None:
                 return 1
 
             # Validate zone if specified.
-            if args.zone is not None:
-                if args.zone < 1 or args.zone > reader.num_zones:
-                    print(
-                        f"Error: zone index {args.zone} out of range "
-                        f"[1, {reader.num_zones}].",
-                        file=sys.stderr,
-                    )
-                    return 1
+            if (
+                args.zone is not None
+                and (args.zone < 1 or args.zone > reader.num_zones)
+            ):
+                print(
+                    f"Error: zone index {args.zone} out of range "
+                    f"[1, {reader.num_zones}].",
+                    file=sys.stderr,
+                )
+                return 1
 
             print(
                 f"Scaling '{var_names[var_idx0]}' (var {var_idx0 + 1}): "

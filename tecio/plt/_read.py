@@ -1,4 +1,4 @@
-r""" Native binary reader for Tecplot PLT (``.plt``) files.
+r"""Native binary reader for Tecplot PLT (``.plt``) files.
 
 This module provides a pure-Python / NumPy reader for Tecplot PLT binary
 files (format versions v112 and v191).  It is a **standalone debugging
@@ -37,7 +37,7 @@ from __future__ import annotations
 import io
 import os
 import struct
-from collections.abc import Iterator
+from collections.abc import ItemsView, Iterator, KeysView, ValuesView
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -110,7 +110,7 @@ class PltReadError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 
-def _read_int32(fp: io.RawIOBase, byte_order: str) -> int:
+def _read_int32(fp: io.BufferedIOBase, byte_order: str) -> int:
     """Read a single INT32 with the given byte-order prefix."""
     raw = fp.read(4)
     if len(raw) < 4:
@@ -119,7 +119,7 @@ def _read_int32(fp: io.RawIOBase, byte_order: str) -> int:
     return int(v)
 
 
-def _read_int64(fp: io.RawIOBase, byte_order: str) -> int:
+def _read_int64(fp: io.BufferedIOBase, byte_order: str) -> int:
     """Read a single INT64 with the given byte-order prefix."""
     raw = fp.read(8)
     if len(raw) < 8:
@@ -128,7 +128,7 @@ def _read_int64(fp: io.RawIOBase, byte_order: str) -> int:
     return int(v)
 
 
-def _read_float32(fp: io.RawIOBase, byte_order: str) -> float:
+def _read_float32(fp: io.BufferedIOBase, byte_order: str) -> float:
     """Read a single FLOAT32 with the given byte-order prefix."""
     raw = fp.read(4)
     if len(raw) < 4:
@@ -137,7 +137,7 @@ def _read_float32(fp: io.RawIOBase, byte_order: str) -> float:
     return float(v)
 
 
-def _read_float64(fp: io.RawIOBase, byte_order: str) -> float:
+def _read_float64(fp: io.BufferedIOBase, byte_order: str) -> float:
     """Read a single FLOAT64 with the given byte-order prefix."""
     raw = fp.read(8)
     if len(raw) < 8:
@@ -146,7 +146,7 @@ def _read_float64(fp: io.RawIOBase, byte_order: str) -> float:
     return float(v)
 
 
-def _read_string(fp: io.RawIOBase, byte_order: str) -> str:
+def _read_string(fp: io.BufferedIOBase, byte_order: str) -> str:
     """Read a null-terminated string stored as INT32 code-points.
 
     The PLT format stores each character as a 4-byte integer (see Note 1 of
@@ -164,7 +164,7 @@ def _read_string(fp: io.RawIOBase, byte_order: str) -> str:
     return "".join(chars)
 
 
-def _skip_string(fp: io.RawIOBase, byte_order: str) -> None:
+def _skip_string(fp: io.BufferedIOBase, byte_order: str) -> None:
     """Read and discard a null-terminated INT32 string."""
     while True:
         raw = fp.read(4)
@@ -175,7 +175,7 @@ def _skip_string(fp: io.RawIOBase, byte_order: str) -> None:
             break
 
 
-def _peek_float32(fp: io.RawIOBase, byte_order: str) -> float:
+def _peek_float32(fp: io.BufferedIOBase, byte_order: str) -> float:
     """Peek at the next 4 bytes as a FLOAT32 without advancing the file pointer."""
     pos = fp.tell()
     val = _read_float32(fp, byte_order)
@@ -265,17 +265,17 @@ class ReadAuxData:
         """Return value for *key* or *default* if absent."""
         return self._data.get(key, default)
 
-    def keys(self) -> Iterator[str]:
+    def keys(self) -> KeysView[str]:
         """Return iterator over auxiliary data names."""
-        return self._data.keys()  # type: ignore[return-value]
+        return self._data.keys()
 
-    def values(self) -> Iterator[str]:
+    def values(self) -> ValuesView[str]:
         """Return iterator over auxiliary data values."""
-        return self._data.values()  # type: ignore[return-value]
+        return self._data.values()
 
-    def items(self) -> Iterator[tuple[str, str]]:
+    def items(self) -> ItemsView[str, str]:
         """Return iterator over (name, value) pairs."""
-        return self._data.items()  # type: ignore[return-value]
+        return self._data.items()
 
     # ------------------------------------------------------------------
     # Type converters (same as szl.ReadAuxData)
@@ -721,7 +721,7 @@ class _PltParser:
     # Header section
     # ------------------------------------------------------------------
 
-    def _parse_header(self, fp: io.RawIOBase) -> None:
+    def _parse_header(self, fp: io.BufferedIOBase) -> None:
         """Parse the PLT header section up to and including EOHMARKER."""
         self._detect_version_and_endian(fp)
         byte_order = self.byte_order
@@ -782,7 +782,7 @@ class _PltParser:
                     f"{fp.tell() - 4:#010x}."
                 )
 
-    def _detect_version_and_endian(self, fp: io.RawIOBase) -> None:
+    def _detect_version_and_endian(self, fp: io.BufferedIOBase) -> None:
         """Read magic bytes and INT32=1 endian probe; set ``self.byte_order``."""
         magic = fp.read(8)
         if magic == _MAGIC_V112:
@@ -815,7 +815,7 @@ class _PltParser:
             f"Byte-order probe value {raw!r} is neither 1 in little- nor big-endian."
         )
 
-    def _parse_zone_header(self, fp: io.RawIOBase, *, v191: bool) -> None:
+    def _parse_zone_header(self, fp: io.BufferedIOBase, *, v191: bool) -> None:
         """Parse a single zone header record and append to ``self.zones``."""
         byte_order = self.byte_order
         num_vars = len(self.var_names)
@@ -910,7 +910,7 @@ class _PltParser:
     # Header skip helpers (geometry and text records)
     # ------------------------------------------------------------------
 
-    def _skip_geometry(self, fp: io.RawIOBase) -> None:
+    def _skip_geometry(self, fp: io.BufferedIOBase) -> None:
         """Skip a geometry record (marker already consumed)."""
         byte_order = self.byte_order
         _read_int32(fp, byte_order)  # CoordSys
@@ -948,7 +948,7 @@ class _PltParser:
         elif geom_type == 4:  # Ellipse
             fp.read(gtype_bytes * 2)
 
-    def _skip_text(self, fp: io.RawIOBase) -> None:
+    def _skip_text(self, fp: io.BufferedIOBase) -> None:
         """Skip a text record (marker already consumed)."""
         byte_order = self.byte_order
         _read_int32(fp, byte_order)  # CoordSys
@@ -969,14 +969,14 @@ class _PltParser:
         _read_int32(fp, byte_order)  # Clipping
         _skip_string(fp, byte_order)  # The text itself
 
-    def _skip_custom_label(self, fp: io.RawIOBase) -> None:
+    def _skip_custom_label(self, fp: io.BufferedIOBase) -> None:
         """Skip a CustomLabel record (marker already consumed)."""
         byte_order = self.byte_order
         n_labels = _read_int32(fp, byte_order)
         for _ in range(n_labels):
             _skip_string(fp, byte_order)
 
-    def _skip_user_rec(self, fp: io.RawIOBase) -> None:
+    def _skip_user_rec(self, fp: io.BufferedIOBase) -> None:
         """Skip a UserRec record (marker already consumed)."""
         _skip_string(fp, self.byte_order)
 
@@ -984,7 +984,7 @@ class _PltParser:
     # Data section
     # ------------------------------------------------------------------
 
-    def _parse_data_section(self, fp: io.RawIOBase) -> None:
+    def _parse_data_section(self, fp: io.BufferedIOBase) -> None:
         """Parse the data section and record variable file offsets.
 
         The EOHMARKER has already been consumed by :meth:`_parse_header`.
@@ -1044,7 +1044,7 @@ class _PltParser:
 
     def _record_var_offsets(
         self,
-        fp: io.RawIOBase,
+        fp: io.BufferedIOBase,
         meta: _ZoneMeta,
         num_vars: int,
     ) -> None:
@@ -1100,7 +1100,7 @@ class _PltParser:
 
     def _record_connectivity_offset(
         self,
-        fp: io.RawIOBase,
+        fp: io.BufferedIOBase,
         meta: _ZoneMeta,
     ) -> None:
         """Record the file offset of the connectivity block (if present)."""
@@ -1146,7 +1146,7 @@ class _PltParser:
         # Miscellaneous face-neighbor connections (skip; not needed for data)
         # We do not parse the mode-dependent records here.
 
-    def _skip_poly_face_map(self, fp: io.RawIOBase, meta: _ZoneMeta) -> None:
+    def _skip_poly_face_map(self, fp: io.BufferedIOBase, meta: _ZoneMeta) -> None:
         """Skip the face-map block for FEPOLYGON / FEPOLYHEDRON zones."""
         zt = meta.zone_type
 
@@ -1240,7 +1240,7 @@ class Read:
         ]
 
         self._auxdata: ReadAuxData | None = None
-        self._var_auxdata: list[ReadAuxData] | None = None
+        self._var_auxdata: list[ReadAuxData | None] | None = None
 
     def __enter__(self) -> Read:
         """Context manager for Read class."""
@@ -1297,14 +1297,14 @@ class Read:
         return self._auxdata
 
     @property
-    def var_auxdata(self) -> list[ReadAuxData]:
+    def var_auxdata(self) -> list[ReadAuxData | None]:
         """List of per-variable auxiliary data objects.
 
         Index 0 is ``None`` (placeholder) so that 1-based indexing matches
         Tecplot convention; use ``var_auxdata[1]`` for the first variable.
         """
         if self._var_auxdata is None:
-            self._var_auxdata = [None]  # type: ignore[list-item]
+            self._var_auxdata = [None]
             for i in range(self.num_vars):
                 self._var_auxdata.append(ReadAuxData(self._raw_var_auxdata.get(i, {})))
         return self._var_auxdata
@@ -1319,7 +1319,9 @@ class Read:
             raise IndexError(
                 f"Variable index {var_index} out of range [1, {self.num_vars}]."
             )
-        return self.var_auxdata[var_index]
+        result = self.var_auxdata[var_index]
+        assert result is not None
+        return result
 
     def get_zone_auxdata(self, zone_index: int) -> ReadAuxData:
         """Return auxiliary data for zone *zone_index* (1-based).

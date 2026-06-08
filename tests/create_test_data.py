@@ -5,9 +5,10 @@
 import numpy as np
 import numpy.typing as npt
 
-#=======================================================================================
+# ======================================================================================
 # Functions to create all supported Tecplot data formats
-#=======================================================================================
+# ======================================================================================
+
 
 def scalar_field(
     x: np.ndarray,
@@ -413,7 +414,7 @@ def create_FE_mixed() -> tuple[
     # Cell 2: Pyramid - base quad 2,5,6,3 + apex 18
     # Cell 3: Prism - bottom tri 5,7,6 + top tri 11,13,12
     # Cell 4: Hex - bottom quad 7,9,10,8 + top quad 13,15,16,14
-    # fmt off
+    # fmt: off
     node_map = np.array(
         [
             1, 2, 3, 17,  # tet: 4 nodes
@@ -422,7 +423,7 @@ def create_FE_mixed() -> tuple[
             7, 9, 10, 8, 13, 15, 16, 14,  # hex: 8 nodes
         ],
     )
-    # fmt on
+    # fmt: on
 
     # One entry per cell: number of nodes in that cell
     num_nodes_per_element = np.array([4, 5, 6, 8])
@@ -479,12 +480,12 @@ def create_FE_hanging_node_poly() -> tuple[
     """
     points = np.array(
         [
-            [0.0, 0.0],   # 1
-            [1.0, 0.0],   # 2
-            [1.0, 1.0],   # 3
-            [0.5, 1.5],   # 4
+            [0.0, 0.0],  # 1
+            [1.0, 0.0],  # 2
+            [1.0, 1.0],  # 3
+            [0.5, 1.5],  # 4
             [-0.5, 1.0],  # 5
-            [2.0, 1.0],   # 6
+            [2.0, 1.0],  # 6
         ],
         dtype=np.float32,
     )
@@ -493,14 +494,14 @@ def create_FE_hanging_node_poly() -> tuple[
 
     # Each row: [node_a, node_b, left_elem, right_elem]
     faces = np.array([
-            [1, 2],  # face 1 — E1 boundary
-            [2, 3],  # face 2 — shared
-            [3, 4],  # face 3 — E1 boundary
-            [4, 5],  # face 4 — E1 boundary
-            [5, 1],  # face 5 — E1 boundary
-            [2, 6],  # face 6 — E2 boundary
-            [6, 3],  # face 7 — E2 boundary
-        ])
+        [1, 2],  # face 1 — E1 boundary
+        [2, 3],  # face 2 — shared
+        [3, 4],  # face 3 — E1 boundary
+        [4, 5],  # face 4 — E1 boundary
+        [5, 1],  # face 5 — E1 boundary
+        [2, 6],  # face 6 — E2 boundary
+        [6, 3],  # face 7 — E2 boundary
+    ])
     # All polygon faces are edges → 2 nodes each
     num_faces = len(faces)
     face_node_counts = np.full(num_faces, 2)

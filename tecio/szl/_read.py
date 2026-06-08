@@ -10,7 +10,7 @@ Todo:
 from __future__ import annotations
 
 import ctypes
-from collections.abc import Iterator
+from collections.abc import ItemsView, Iterator, KeysView, ValuesView
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,7 +32,7 @@ class Read:
         file_name: Path to the ``.szplt`` file.
     """
 
-    def __init__(self, file_name):
+    def __init__(self, file_name) -> None:
         """Initialize with a C-pointer file handle, metadata, and a list of zones."""
         if not Path(file_name).exists():
             raise FileNotFoundError(f"No such file or directory: '{file_name}'")
@@ -40,8 +40,9 @@ class Read:
         self.zone = [
             ReadZone(self.handle, i + 1, self.num_vars) for i in range(self.num_zones)
         ]
+        self._path = file_name
         self._auxdata: ReadAuxData | None = None
-        self._var_auxdata: list[ReadAuxData] | None = None
+        self._var_auxdata: list[ReadAuxData | None] | None = None
 
     def __enter__(self) -> Read:
         """Context manager for Read class."""
@@ -59,20 +60,31 @@ class Read:
             if exc_type is None:
                 raise
 
+    def _check_handle(self) -> ctypes.c_void_p:
+        """Return file handle catching errors if the reader has already been closed.
+
+        This ensures the that each libtecio call will execute or return an appropriate
+        ValueError.
+        """
+        if self.handle is None:
+            raise ValueError(f"I/O operation on closed file: '{self._path}'")
+        else:
+            return self.handle
+
     @property
     def file_type(self) -> FileType:
         """File type enum (FULL, GRID, or SOLUTION)."""
-        return libtecio.tec_file_get_type(self.handle)
+        return libtecio.tec_file_get_type(self._check_handle())
 
     @property
     def title(self) -> str:
         """Dataset title string."""
-        return libtecio.tec_data_set_get_title(self.handle)
+        return libtecio.tec_data_set_get_title(self._check_handle())
 
     @property
     def num_vars(self) -> int:
         """Number of variables in the dataset."""
-        return libtecio.tec_data_set_get_num_vars(self.handle)
+        return libtecio.tec_data_set_get_num_vars(self._check_handle())
 
     @property
     def variables(self) -> list[str]:
@@ -83,28 +95,30 @@ class Read:
     @property
     def num_zones(self) -> int:
         """Number of zones in the file."""
-        return libtecio.tec_data_set_get_num_zones(self.handle)
+        return libtecio.tec_data_set_get_num_zones(self._check_handle())
 
     @property
     def num_auxdata_items(self) -> int:
         """Number of dataset-level auxiliary data items."""
-        return libtecio.tec_data_set_aux_data_get_num_items(self.handle)
+        return libtecio.tec_data_set_aux_data_get_num_items(self._check_handle())
 
     @property
     def auxdata(self) -> ReadAuxData:
         """Per-variable auxiliary data (1-indexed to match Tecplot)."""
         if self._auxdata is None:
-            self._auxdata = ReadAuxData(self.handle, "dataset")
+            self._auxdata = ReadAuxData(self._check_handle(), "dataset")
         return self._auxdata
 
     @property
-    def var_auxdata(self) -> list[ReadAuxData]:
+    def var_auxdata(self) -> list[ReadAuxData | None]:
         """Per-variable auxiliary data (1-indexed to match Tecplot)."""
         if self._var_auxdata is None:
             # Create list with None at index 0 for 1-based indexing
             self._var_auxdata = [None]
             for i in range(self.num_vars):
-                self._var_auxdata.append(ReadAuxData(self.handle, "var", i + 1))
+                self._var_auxdata.append(
+                    ReadAuxData(self._check_handle(), "var", i + 1)
+                )
         return self._var_auxdata
 
     def get_var_auxdata(self, var_index: int) -> ReadAuxData:
@@ -120,7 +134,9 @@ class Read:
             raise IndexError(
                 f"Variable index {var_index} out of range [1, {self.num_vars}]"
             )
-        return self.var_auxdata[var_index]
+        result = self.var_auxdata[var_index]
+        assert result is not None
+        return result
 
     def get_zone_auxdata(self, zone_index: int) -> ReadAuxData:
         """Return auxiliary data for zone *zone_index* (1-based).
@@ -132,7 +148,7 @@ class Read:
             raise IndexError(
                 f"Variable index {zone_index} out of range [1, {self.num_zones}]"
             )
-        return ReadAuxData(self.handle, "zone", zone_index)
+        return ReadAuxData(self._check_handle(), "zone", zone_index)
 
     def close(self) -> None:
         """Close the file reader handle."""
@@ -151,6 +167,10 @@ class ReadZone:
         _handle (ctypes.c_void_p): C library file handle.
         zone_index (int): 1-based zone index.
         num_vars (int): Number of variables in the dataset.
+
+    Note:
+        For simplicity in calling, lists of objects are initially set to none, then
+        cached once called
     """
 
     _handle: ctypes.c_void_p
@@ -158,10 +178,8 @@ class ReadZone:
     num_vars: int
     _auxdata: ReadAuxData | None = None
     _variable: list[ReadVariable] | None = None
-    # Note: For simplicity in calling, lists of objects are initially set to none, then
-    #       cached once called.
 
-    def __post_init__(self) -> tuple[int, int, int]:
+    def __post_init__(self) -> None:
         """Set data dimensions as attributes."""
         self.I, self.J, self.K = libtecio.tec_zone_get_ijk(
             self._handle, self.zone_index
@@ -190,7 +208,7 @@ class ReadZone:
         for var in self.variables:
             if var.name.lower() == name.lower():  # case-insensitive match
                 return var.values
-        # If no match, raise normal AttributeError
+            # If no match, raise normal AttributeError
         raise AttributeError(
             f"'{type(self).__name__}' object has no attribute '{name}'"
         )
@@ -228,6 +246,7 @@ class ReadZone:
     @property
     def dimensions(self) -> tuple[int, int, int]:
         """``(I, J, K)`` dimensions for current zone."""
+        return (self.I, self.J, self.K)
 
     @property
     def datapacking(self) -> DataPacking:
@@ -239,7 +258,6 @@ class ReadZone:
         behaviour on the result without special-casing the file format.
         """
         return DataPacking.BLOCK
-        return (self.I, self.J, self.K)
 
     @property
     def nodes_per_cell(self) -> int:
@@ -553,6 +571,7 @@ class ReadAuxData:
     def data(self) -> dict[str, str]:
         """Underlying dictionary of auxiliary data."""
         self._load_data()
+        assert self._data is not None
         return self._data
 
     def __len__(self) -> int:
@@ -575,15 +594,15 @@ class ReadAuxData:
         """Get auxiliary data value with optional default."""
         return self.data.get(key, default)
 
-    def keys(self) -> Iterator[str]:
+    def keys(self) -> KeysView[str]:
         """Return iterator over auxiliary data names."""
         return self.data.keys()
 
-    def values(self) -> Iterator[str]:
+    def values(self) -> ValuesView[str]:
         """Return iterator over auxiliary data values."""
         return self.data.values()
 
-    def items(self) -> Iterator[tuple[str, str]]:
+    def items(self) -> ItemsView[str, str]:
         """Return iterator over (name, value) pairs."""
         return self.data.items()
 
@@ -648,3 +667,4 @@ class ReadAuxData:
 
     def __str__(self) -> str:
         """Return string representation of AuxData."""
+        return repr(self)

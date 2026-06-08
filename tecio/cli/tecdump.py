@@ -211,11 +211,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     # Show node map for FE zones
                     if zone.zone_type != ZoneType.ORDERED:
                         print(f"  Nodes Per Cell  : {zone.nodes_per_cell}")
-                        print(f"  Node Map Shape  : {zone.node_map.shape}")
-                        value_str = np.array2string(
-                            zone.node_map, prefix="  Connectivity    : ", separator=", "
-                        )
-                        print(f"  Connectivity    : {value_str}")
+                        if zone.node_map is not None:
+                            print(f"  Node Map Shape  : {zone.node_map.shape}")
+                            value_str = np.array2string(
+                                zone.node_map,
+                                prefix="  Connectivity    : ",
+                                separator=", ",
+                            )
+                            print(f"  Connectivity    : {value_str}")
 
                     # Print variable record
                     if args.print_vars:
@@ -232,7 +235,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                                 print(f"    Num Values    : {var.num_values}")
 
                                 # Check if variable is shared or passive (no data)
-                                if (var.shared_zone is None) and (not var.is_passive()):
+                                if (
+                                    var.shared_zone is None
+                                    and not var.is_passive()
+                                    and var.values is not None
+                                ):
                                     print(f"    Array shape   : {var.values.shape}")
                                     # Get first 100 values or all if fewer than 100
                                     value_str = np.array2string(

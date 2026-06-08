@@ -10,6 +10,7 @@ from __future__ import annotations
 import ctypes
 from collections.abc import Sequence
 from enum import Enum
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -367,7 +368,7 @@ class Debug(Enum):
 
 def _prepare_array_for_ctypes(
     values: npt.ArrayLike, np_dtype, ctype
-) -> tuple[ctypes.POINTER, int, npt.NDArray]:
+) -> tuple[Any, int, npt.NDArray]:
     """Convert an input array to contiguous numpy array and return a ctypes pointer.
 
     Args:
@@ -393,7 +394,7 @@ def _prepare_array_for_ctypes(
     return ptr, count, arr
 
 
-def _to_int_value(value: int | Enum, enum_class: type | None = None) -> int:
+def _to_int_value(value: int | Enum, enum_class: type[Enum] | None = None) -> int:
     """Convert Enum or int to int value.
 
     (Optional check against enum_class if provided.)
@@ -418,6 +419,13 @@ def _process_sequence(seq: Sequence[int | Enum] | None) -> ctypes.Array | None:
         return None
     values = [_to_int_value(v) for v in seq]
     return (ctypes.c_int32 * len(values))(*values)
+
+
+def _decode(value: bytes | None) -> str:
+    """Decode a ctypes c_char_p value to str, raising if unexpectedly null."""
+    if value is None:
+        raise ValueError("Unexpected null pointer returned from TecIO C library.")
+    return value.decode("utf-8")
 
 
 # ======================================================================================
@@ -1141,7 +1149,7 @@ def tec_data_set_get_title(handle: ctypes.c_void_p) -> str:
             f"Error getting data set title: handle={handle}, return_code={ret}"
         )
 
-    return title.value.decode("utf-8")
+    return _decode(title.value)
 
 
 def tec_data_set_get_num_vars(handle: ctypes.c_void_p) -> int:
@@ -1249,7 +1257,7 @@ def tec_zone_get_title(handle: ctypes.c_void_p, zone_index: int) -> str:
             f"zone_index={zone_index}, return_code={ret}"
         )
 
-    return zone_title.value.decode("utf-8")
+    return _decode(zone_title.value)
 
 
 def tec_zone_get_type(handle: ctypes.c_void_p, zone_index: int) -> ZoneType:
@@ -1497,7 +1505,7 @@ def tec_var_get_name(handle: ctypes.c_void_p, var_index: int) -> str:
             f"var_index={var_index}, return_code={ret}"
         )
 
-    return var_name.value.decode("utf-8")
+    return _decode(var_name.value)
 
 
 def tec_var_is_enabled(handle: ctypes.c_void_p, var_index: int) -> bool:
@@ -1971,7 +1979,7 @@ def tec_data_set_aux_data_get_item(
             f"item_index={item_index}, return_code={ret}"
         )
 
-    return name.value.decode("utf-8"), value.value.decode("utf-8")
+    return _decode(name.value), _decode(value.value)
 
 
 def tec_var_aux_data_get_num_items(handle: ctypes.c_void_p, var_index: int) -> int:
@@ -2033,7 +2041,7 @@ def tec_var_aux_data_get_item(
             f"item_index={item_index}, return_code={ret}"
         )
 
-    return name.value.decode("utf-8"), value.value.decode("utf-8")
+    return _decode(name.value), _decode(value.value)
 
 
 def tec_zone_aux_data_get_num_items(handle: ctypes.c_void_p, zone_index: int) -> int:
@@ -2095,7 +2103,7 @@ def tec_zone_aux_data_get_item(
             f"item_index={item_index}, return_code={ret}"
         )
 
-    return name.value.decode("utf-8"), value.value.decode("utf-8")
+    return _decode(name.value), _decode(value.value)
 
 
 # --------------------------------------------------------------------------------------
