@@ -75,10 +75,9 @@ jobs:
       - name: Upload coverage to Codecov
         # Only upload once, not for every matrix version
         if: matrix.python-version == '3.11'
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.xml
           fail_ci_if_error: false
 
   ci:
