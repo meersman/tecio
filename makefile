@@ -49,11 +49,11 @@ uninstall:
 
 # Format code with black and isort
 format:
-	ruff format tecio
+	ruff format --check tecio
 
 # Run linters
 lint:
-	ruff check tecio --fix
+	ruff check tecio
 
 # Run type checker
 typecheck:

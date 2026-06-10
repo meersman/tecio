@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/meersman/tecio/actions/workflows/ci.yml/badge.svg)](https://github.com/meersman/tecio/actions/workflows/ci.yml)
 [![Codecov](https://codecov.io/gh/meersman/tecio/branch/main/graph/badge.svg)](https://codecov.io/gh/meersman/tecio)
-[![Build and Deploy Docs](https://github.com/meersman/tecio/actions/workflows/docs.yml/badge.svg)](https://meersman.github.io/tecio)
+[![Docs](https://github.com/meersman/tecio/actions/workflows/docs.yml/badge.svg)](https://meersman.github.io/tecio)
 
 Python interface for reading and writing Tecplot data files.
 
@@ -72,8 +72,7 @@ tecio
 │   ├── __init__.py
 │   ├── _read.py
 │   └── _write.py
-├── libtecio.py         # TecIO Python wrapper functions
-├── plt                 # Higher level PLT file API
+├── plt
 │   ├── __init__.py
 │   ├── _read.py
 │   └── _write.py
@@ -81,15 +80,16 @@ tecio
 │   ├── __init__.py
 │   ├── _read.py
 │   └── _write.py
-└── tecutils.py
+├── libtecio.py         # TecIO Python wrapper functions
+└── utils.py
 ```
 
 ## Development
 
 ```bash
-make install-dev  # Install development dependencies
-make install      # Create an editable install of tecio
+make install-dev  # Install with development dependencies
 make test         # Run unit tests
+make check        # Run format, lint and typechecks
 ```
  
 ## References
