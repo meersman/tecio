@@ -34,7 +34,7 @@ tecsplit = "tecio.cli.tecsplit:main"
 [project.optional-dependencies]
 dev = [
     "ruff",
-    "mypy",
+    "ty",
     "pytest",
     "pytest-cov",
     "genbadge"
@@ -83,15 +83,6 @@ convention = "google"
 
 [tool.ty.terminal]
 output-format = "concise"
-
-[tool.mypy]
-python_version = "3.10"
-check_untyped_defs = true
-strict = true
-
-[[tool.mypy.overrides]]
-module = ["tecio", "tecio.*"]
-ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 pythonpath = ["tecio"]
