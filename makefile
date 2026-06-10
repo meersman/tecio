@@ -67,14 +67,12 @@ check: format lint typecheck
 # Run unit tests
 test:
 	pytest -v --junitxml=junit.xml; EXIT=$$?; \
-	genbadge tests -i junit.xml -o badges/tests.svg; \
 	exit $$EXIT
 	@echo "✓ Tests complete"
 
 # Run coverage report
 coverage:
 	pytest -q --cov=$(PACKAGE) --cov-report=xml  --cov-report=term; EXIT=$$?; \
-	genbadge coverage -i coverage.xml -o badges/coverage.svg; \
 	exit $$EXIT
 	@echo "✓ Tests complete"
 

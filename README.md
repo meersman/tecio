@@ -3,11 +3,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/meersman/tecio/actions/workflows/ci.yml/badge.svg)](https://github.com/meersman/tecio/actions/workflows/ci.yml)
 [![Codecov](https://codecov.io/gh/meersman/tecio/branch/main/graph/badge.svg)](https://codecov.io/gh/meersman/tecio)
-[![Build and Deploy Docs](https://github.com/meersman/tecio/actions/workflows/docs.yaml/badge.svg)](https://github.com/meersman/tecio/actions/workflows/docs.yml)
+[![Build and Deploy Docs](https://github.com/meersman/tecio/actions/workflows/docs.yml/badge.svg)](https://meersman.github.io/tecio)
 
 Python interface for reading and writing Tecplot data files.
-
-📖 **[Documentation](https://meersman.github.io/tecio)**
 
 ## Overview
 

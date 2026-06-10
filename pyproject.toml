@@ -19,6 +19,10 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
+[project.urls]
+Homepage = "https://github.com/meersman/tecio"
+Documentation = "https://meersman.github.io/tecio/"
+Issues = "https://github.com/meersman/tecio/issues"
 
 [project.scripts]
 teconvert = "tecio.cli.teconvert:main"
@@ -37,7 +41,6 @@ dev = [
     "ty",
     "pytest",
     "pytest-cov",
-    "genbadge"
 ]
 docs = [
     "sphinx>=7.0",

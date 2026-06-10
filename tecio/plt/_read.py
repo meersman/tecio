@@ -95,6 +95,14 @@ _DATATYPE_DTYPE: dict[DataType, str] = {
     DataType.BYTE: "u1",
 }
 
+#: PLT format variable location integers → ValueLocation enum.
+#: The PLT spec uses 0 = Node, 1 = Cell Centered (format guide §IV.iv),
+#: which is the opposite of the ValueLocation enum (CELL_CENTERED=0, NODAL=1).
+_PLT_VALUELOCATION_MAP: dict[int, ValueLocation] = {
+    0: ValueLocation.NODAL,
+    1: ValueLocation.CELL_CENTERED,
+}
+
 
 # ---------------------------------------------------------------------------
 # Custom exception
@@ -482,15 +490,20 @@ class ReadVariable:
         if data.dtype.byteorder not in ("=", "|", np.dtype(dt).str[0]):
             data = data.byteswap().newbyteorder()
 
-        # Reshape to (I, J, K) / (I-1, J-1, K-1) for full reads of ordered zones.
+        # Reshape for full reads of ordered zones.
         if full_read and self._meta.zone_type == ZoneType.ORDERED:
             ni, nj, nk = self._meta.i_max, self._meta.j_max, self._meta.k_max
             if self.value_location == ValueLocation.CELL_CENTERED:
-                shape = (max(ni - 1, 1), max(nj - 1, 1), max(nk - 1, 1))
+                # On disk: i * j * (k-1) values in Fortran order (Note 5).
+                # Ghost padding occupies the last row in I and J after reshape,
+                # so reshape to (ni, nj, nk-1) then slice to (ni-1, nj-1, nk-1)
+                # to discard the ghost values and return only significant cells.
+                data = data.reshape((ni, nj, max(nk - 1, 1)), order="F")
+                data = data[: max(ni - 1, 1), : max(nj - 1, 1), :]
             else:
                 shape = (ni, nj, nk)
-            if data.size == shape[0] * shape[1] * shape[2]:
-                data = data.reshape(shape, order="F")
+                if data.size == shape[0] * shape[1] * shape[2]:
+                    data = data.reshape(shape, order="F")
 
         return data
 
@@ -841,10 +854,13 @@ class _PltParser:
         meta.zone_type = ZoneType(_read_int32(fp, byte_order))
 
         # Variable locations
+        # PLT spec: 0 = Node, 1 = Cell Centered — opposite of the input ValueLocation
+        # enum (CELL_CENTERED=0, NODAL=1) to TecIO functions, so map through
+        # _PLT_VALUELOCATION_MAP.
         specify_var_location = _read_int32(fp, byte_order)
         if specify_var_location == 1:
             locs = [_read_int32(fp, byte_order) for _ in range(num_vars)]
-            meta.value_locations = [ValueLocation(loc) for loc in locs]
+            meta.value_locations = [_PLT_VALUELOCATION_MAP[loc] for loc in locs]
         else:
             meta.value_locations = [ValueLocation.NODAL] * num_vars
 
@@ -885,8 +901,8 @@ class _PltParser:
                 else:
                     meta.num_faces = _read_int32(fp, byte_order)
                     meta.total_face_nodes = _read_int32(fp, byte_order)
-                meta.num_boundary_faces = _read_int32(fp, byte_order)
-                meta.num_boundary_connections = _read_int32(fp, byte_order)
+                    meta.num_boundary_faces = _read_int32(fp, byte_order)
+                    meta.num_boundary_connections = _read_int32(fp, byte_order)
 
             meta.num_elements = _read_int32(fp, byte_order)
             # ICellDim, JCellDim, KCellDim (for future use; always 0)
@@ -1075,12 +1091,16 @@ class _PltParser:
             fp.seek(count * itemsize, os.SEEK_CUR)
 
     def _var_value_count(self, meta: _ZoneMeta, var_idx: int) -> int:
-        """Return the number of values written for variable *var_idx*.
+        """Return the number of values on disk for variable *var_idx*.
 
         For cell-centered variables in ORDERED zones the PLT format writes
-        ``IMax * JMax * (KMax - 1)`` values (ghost-padded; see Note 5 of
-        the format spec), but we simply read the padded count here because
-        that is what is physically on disk.
+        ``IMax * JMax * (KMax - 1)`` values on disk (see Note 5 of the format
+        spec).  The significant cell count is ``(I-1) * (J-1) * (K-1)``; the
+        remainder are ghost (zero-padded) values that are trimmed in
+        :meth:`ReadVariable.get_values` after reshaping.
+
+        For FE zones, cell-centered variables store exactly one value per
+        element with no padding.
         """
         loc = meta.value_locations[var_idx]
 
@@ -1089,11 +1109,13 @@ class _PltParser:
             j = max(meta.j_max, 1)
             k = max(meta.k_max, 1)
             if loc == ValueLocation.CELL_CENTERED:
-                # Ghost values included (see spec Note 5)
-                return max(i - 1, 1) * max(j - 1, 1) * max(k - 1, 1)
+                # PLT Note 5: IMax * JMax * (KMax - 1) values on disk.
+                # Only K is reduced; I and J retain their full extent as ghost
+                # padding in the Fortran-order layout.
+                return i * j * max(k - 1, 1)
             return i * j * k
         else:
-            # FE zones
+            # FE zones — no ghost padding.
             if loc == ValueLocation.CELL_CENTERED:
                 return meta.num_elements
             return meta.num_nodes
