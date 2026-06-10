@@ -1,4 +1,4 @@
-name: CI
+ame: CI
 
 on:
   push:
@@ -87,7 +87,7 @@ jobs:
 
   ci:
     name: CI passed
-    needs: [format, lint, typecheck, test]
+    needs: [format, lint, typecheck, unit-test]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -108,8 +108,8 @@ jobs:
             echo "Type check failed"
             exit 1
           fi
-          if [[ "${{ needs.test.result }}" != "success" && \
-                "${{ needs.test.result }}" != "skipped" ]]; then
+          if [[ "${{ needs.unit-test.result }}" != "success" && \
+                "${{ needs.unit-test.result }}" != "skipped" ]]; then
             echo "Tests failed"
             exit 1
           fi
