@@ -11,12 +11,14 @@ sigma = 10.0
 beta = 8.0 / 3.0
 rho = 28.0
 
+
 def lorenz(state):
     x, y, z = state
     dx = sigma * (y - x)
     dy = x * (rho - z) - y
     dz = x * y - beta * z
     return np.array([dx, dy, dz])
+
 
 # Time integration (RK4)
 dt = 0.01
@@ -36,7 +38,7 @@ for i in tqdm(range(n_steps), desc="RK4 Integration", bar_format=bf):
     k3 = lorenz(state + 0.5 * dt * k2)
     k4 = lorenz(state + dt * k3)
 
-    state = state + (dt / 6.0) * (k1 + 2*k2 + 2*k3 + k4)
+    state = state + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
 # Split coordinates
 x = traj[:, 0]
@@ -45,7 +47,6 @@ z = traj[:, 2]
 
 # Write Tecplot file
 with tecio.open("lorenz.szplt", "w") as szl:
-
     # Zone 1: full trajectory as ordered line
     szl.write_ijk_zone(
         title="Lorenz Attractor",
@@ -59,25 +60,25 @@ with tecio.open("lorenz.szplt", "w") as szl:
     for i in tqdm(range(0, n_steps, 10), desc="Writing zones", bar_format=bf):
         szl.write_ijk_zone(
             title="Trajectory",
-            variables=["x", "y", "z", "t",  "tau"],
+            variables=["x", "y", "z", "t", "tau"],
             data=[
-                x[:i+1],
-                y[:i+1],
-                z[:i+1],
-                np.arange(i+1)*dt,
-                (np.arange(i+1) - i - 1)*dt,
+                x[: i + 1],
+                y[: i + 1],
+                z[: i + 1],
+                np.arange(i + 1) * dt,
+                (np.arange(i + 1) - i - 1) * dt,
             ],
             strand_id=1,
-            solution_time=i*dt,
+            solution_time=i * dt,
         )
     for i in tqdm(range(0, n_steps, 10), desc="Writing zones", bar_format=bf):
         szl.write_ijk_zone(
             title="Particle",
             variables=["x", "y", "z", "t", "tau"],
-            data=[x[i:i+1], y[i:i+1], z[i:i+1]],
+            data=[x[i : i + 1], y[i : i + 1], z[i : i + 1]],
             passive_vars=[False, False, False, True, True],
             strand_id=2,
-            solution_time=i*dt,
+            solution_time=i * dt,
         )
 
     print("Finalizing output file")

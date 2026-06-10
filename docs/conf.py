@@ -102,29 +102,3 @@ html_theme_options = {
     "pygments_light_style": "github-light",
     "pygments_dark_style": "paraiso-dark",
 }
-
-# -- Demo auto-copy ----------------------------------------------------------
-
-def _copy_demos(app) -> None:
-    """Copy demo markdown and images into the docs source tree."""
-    docs_dir = Path(__file__).parent
-    demos_src = docs_dir.parent / "demos"
-
-    if not demos_src.is_dir():
-        return
-
-    _image_exts = {".gif", ".png", ".jpg", ".jpeg", ".svg"}
-    _text_exts = {".md"}
-
-    for demo_dir in sorted(demos_src.iterdir()):
-        if not demo_dir.is_dir():
-            continue
-        dst = docs_dir / "_demos" / demo_dir.name
-        dst.mkdir(parents=True, exist_ok=True)
-        for src_file in demo_dir.iterdir():
-            if src_file.suffix in _text_exts | _image_exts:
-                shutil.copy2(src_file, dst / src_file.name)
-
-
-def setup(app):
-    app.connect("builder-inited", _copy_demos)

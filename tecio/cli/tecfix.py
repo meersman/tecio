@@ -177,7 +177,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 
 
-def _classify_array(arr: npt.NDArray) -> str | None:
+def _classify_array(arr: npt.NDArray[Any]) -> str | None:
     """Return a short description of any NaN / Inf in *arr*, or ``None``.
 
     Args:
