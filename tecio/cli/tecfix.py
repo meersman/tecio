@@ -387,7 +387,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             continue
                         if var.data_type not in _FLOAT_TYPES:
                             continue
-                        label = _classify_array(np.assarray(var.values))
+                        label = _classify_array(np.asarray(var.values))
                         if label is not None:
                             zone_bad[f"Variable{j + 1}"] = label
 
