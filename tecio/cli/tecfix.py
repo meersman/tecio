@@ -177,7 +177,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 
 
-def _classify_array(arr: npt.NDArray[Any]) -> str | None:
+def _classify_array(arr: npt.NDArray) -> str | None:
     """Return a short description of any NaN / Inf in *arr*, or ``None``.
 
     Args:
@@ -387,7 +387,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             continue
                         if var.data_type not in _FLOAT_TYPES:
                             continue
-                        label = _classify_array(var.values)
+                        label = _classify_array(np.assarray(var.values))
                         if label is not None:
                             zone_bad[f"Variable{j + 1}"] = label
 
