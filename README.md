@@ -1,9 +1,9 @@
 # tecio
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Build and Deploy Docs](https://github.com/meersman/tecio/actions/workflows/docs.yaml/badge.svg)](https://github.com/meersman/tecio/actions/workflows/docs.yaml)
-![Tests](badges/tests.svg)
-![Coverage](badges/coverage.svg)
+[![CI](https://github.com/meersman/tecio/actions/workflows/ci.yml/badge.svg)](https://github.com/meersman/tecio/actions/workflows/ci.yml)
+[![Codecov](https://github.com/meersman/tecio/actions/workflows/ci.yml/badge.svg)](https://github.com/meersman/tecio/actions/workflows/ci.yml)
+[![Build and Deploy Docs](https://github.com/meersman/tecio/actions/workflows/docs.yaml/badge.svg)](https://meersman.github.io/tecio/)
 
 Python interface for reading and writing Tecplot data files.
 
@@ -93,11 +93,6 @@ make install-dev  # Install development dependencies
 make install      # Create an editable install of tecio
 make test         # Run unit tests
 ```
-
-## Demos
- * [Lorenz attactor animation](demos/lorenz/lorenz.md)
- * [Gravity wave animation around binary black holes](demos/gravity_waves/gravity_waves.md)
- * [Spectral incompressible Navier Stokes animation](demos/simple_spectral_solver/simple_spectral.md)
  
 ## References
 

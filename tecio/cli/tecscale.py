@@ -272,9 +272,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 1
 
             # Validate zone if specified.
-            if (
-                args.zone is not None
-                and (args.zone < 1 or args.zone > reader.num_zones)
+            if args.zone is not None and (
+                args.zone < 1 or args.zone > reader.num_zones
             ):
                 print(
                     f"Error: zone index {args.zone} out of range "

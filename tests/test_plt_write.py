@@ -79,10 +79,10 @@ class TestWriteIJKZone:
         """
         i, j, k = 3, 4, 5
         x, y, z = create_ordered((i, j, k))
-        x = x.astype(np.float32)                          # → FLOAT
-        y = y.astype(np.float64)                          # → DOUBLE
-        z = z.astype(np.float32)                          # → FLOAT
-        c = scalar_field(x, y, z).astype(np.float64)      # → DOUBLE
+        x = x.astype(np.float32)  # → FLOAT
+        y = y.astype(np.float64)  # → DOUBLE
+        z = z.astype(np.float32)  # → FLOAT
+        c = scalar_field(x, y, z).astype(np.float64)  # → DOUBLE
 
         path = output_path("test_plt_write_ijk_3d.plt")
         with tecio.open(str(path), "w") as pltfile:
@@ -99,12 +99,16 @@ class TestWriteIJKZone:
             zone = r.zone[0]
             assert zone.zone_type == ZoneType.ORDERED
             assert zone.dimensions == (i, j, k)
-            assert zone.variable[0].data_type == DataType.DOUBLE   # input was float32
+            assert zone.variable[0].data_type == DataType.DOUBLE  # input was float32
             assert zone.variable[1].data_type == DataType.DOUBLE
-            assert zone.variable[2].data_type == DataType.DOUBLE   # input was float32
+            assert zone.variable[2].data_type == DataType.DOUBLE  # input was float32
             assert zone.variable[3].data_type == DataType.DOUBLE
-            np.testing.assert_allclose(zone.variable[0].values.ravel(), x.ravel(), rtol=_RTOL_F32)
-            np.testing.assert_allclose(zone.variable[1].values.ravel(), y.ravel(), rtol=_RTOL_F64)
+            np.testing.assert_allclose(
+                zone.variable[0].values.ravel(), x.ravel(), rtol=_RTOL_F32
+            )
+            np.testing.assert_allclose(
+                zone.variable[1].values.ravel(), y.ravel(), rtol=_RTOL_F64
+            )
 
     def test_write_ijk_int32_upcasts_to_double(self, output_path: Callable) -> None:
         """int32 input is stored as float64 in PLT.
@@ -170,7 +174,9 @@ class TestWriteIJKZone:
             cc_var = zone.variable[3]
             assert cc_var.value_location == ValueLocation.CELL_CENTERED
             assert cc_var.data_type == DataType.DOUBLE
-            np.testing.assert_allclose(cc_var.values.ravel(), cc.ravel(), rtol=_RTOL_F64)
+            np.testing.assert_allclose(
+                cc_var.values.ravel(), cc.ravel(), rtol=_RTOL_F64
+            )
 
     def test_write_ijk_unsteady_with_sharing(self, output_path: Callable) -> None:
         """100-zone transient dataset with variable sharing — float32 grid, float64 solution.

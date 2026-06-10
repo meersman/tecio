@@ -23,7 +23,7 @@ def test_dat_read():
     dat = tecio.open(input_file, "r")
 
     print("\nFile Record")
-    print("="*70)
+    print("=" * 70)
     print(f"File Type         : {dat.file_type}")
     print(f"Dataset Title     : {dat.title}")
     print(f"Num Vars          : {dat.num_vars}")
@@ -33,7 +33,7 @@ def test_dat_read():
 
     # Print dataset-level auxiliary data if available
     print("\n\nDataset Auxiliary Data")
-    print("-"*70)
+    print("-" * 70)
     if len(dat.auxdata) > 0:
         print(f"Dataset Aux Data  : {dict(dat.auxdata)}")
         for name, value in dat.auxdata.items():
@@ -41,20 +41,20 @@ def test_dat_read():
 
     # Print variable-level auxiliary data if available
     print("\n\nVariable Auxiliary Data")
-    print("-"*70)
+    print("-" * 70)
     for i in range(dat.num_vars):
-        var_aux = dat.get_var_auxdata(i+1)
+        var_aux = dat.get_var_auxdata(i + 1)
         if len(var_aux) > 0:
-            print(f"Var {i+1:3} Aux Data  : {dict(var_aux)}")
+            print(f"Var {i + 1:3} Aux Data  : {dict(var_aux)}")
             for name, value in var_aux.items():
                 print(f"  {name:>15} : {value}")
 
     # Print zone record
     print("\n\nZone Record")
-    print("-"*70)
+    print("-" * 70)
     for i in range(dat.num_zones):
         zone = dat.zone[i]
-        print(f"\nZone {i+1:3}")
+        print(f"\nZone {i + 1:3}")
         print(f"  Title           : {zone.title}")
         print(f"  Zone Type       : {zone.zone_type}")
         print(f"  Datapacking     : {zone.datapacking}")
@@ -71,7 +71,7 @@ def test_dat_read():
         # Print variable record
         for j in range(dat.num_vars):
             var = zone.variable[j]
-            print(f"  Variable {j+1:3}")
+            print(f"  Variable {j + 1:3}")
             print(f"    Name          : {var.name}")
             print(f"    Data Type     : {var.data_type}")
             print(f"    Is Enabled    : {var.is_enabled()}")
@@ -82,8 +82,7 @@ def test_dat_read():
 
             # Get first 100 values or all if fewer than 100
             value_str = np.array2string(
-                var.values,
-                prefix="    Values        : ", separator=", "
+                var.values, prefix="    Values        : ", separator=", "
             )
             print(f"    Values        : {value_str}")
 
@@ -91,10 +90,10 @@ def test_dat_read():
         if zone.zone_type != ZoneType.ORDERED:
             print(f"  Node Map Shape  : {zone.node_map.shape}")
             value_str = np.array2string(
-                zone.node_map,
-                prefix="  Connectivity    : ", separator=", "
+                zone.node_map, prefix="  Connectivity    : ", separator=", "
             )
             print(f"  Connectivity    : {value_str}")
+
 
 def test_dat_read_point_ordered():
     """Read a hand-authored DATAPACKING=POINT ordered zone from a temp file.

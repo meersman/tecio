@@ -164,32 +164,42 @@ class TestTecdump:
 class TestTeconvert:
     """Tests for teconvert — converts between SZL, PLT, and DAT."""
 
-    @pytest.mark.parametrize("src_fmt,dst_flag,dst_ext", [
-        ("szplt", "-dat",   ".dat"),
-        ("szplt", "-plt",   ".plt"),
-        ("plt",   "-dat",   ".dat"),
-        ("plt",   "-szplt", ".szplt"),
-        ("dat",   "-szplt", ".szplt"),
-        ("dat",   "-plt",   ".plt"),
-    ])
+    @pytest.mark.parametrize(
+        "src_fmt,dst_flag,dst_ext",
+        [
+            ("szplt", "-dat", ".dat"),
+            ("szplt", "-plt", ".plt"),
+            ("plt", "-dat", ".dat"),
+            ("plt", "-szplt", ".szplt"),
+            ("dat", "-szplt", ".szplt"),
+            ("dat", "-plt", ".plt"),
+        ],
+    )
     def test_convert_between_formats(
         self, src_fmt: str, dst_flag: str, dst_ext: str, tmp_path: Path
     ) -> None:
         """Convert between every supported format pair; output must be readable."""
         dst = tmp_path / f"out{dst_ext}"
         ret = teconvert_main([
-            dst_flag, "--force", "-o", str(dst), str(_ONERA[src_fmt])
+            dst_flag,
+            "--force",
+            "-o",
+            str(dst),
+            str(_ONERA[src_fmt]),
         ])
         assert ret == 0
         assert dst.exists()
         assert dst.stat().st_size > 0
         assert _is_readable(dst)
 
-    @pytest.mark.parametrize("fmt,flag", [
-        ("szplt", "-szplt"),
-        ("plt",   "-plt"),
-        ("dat",   "-dat"),
-    ])
+    @pytest.mark.parametrize(
+        "fmt,flag",
+        [
+            ("szplt", "-szplt"),
+            ("plt", "-plt"),
+            ("dat", "-dat"),
+        ],
+    )
     def test_same_format_noop(self, fmt: str, flag: str) -> None:
         """Same-format conversion warns and returns 0."""
         ret = teconvert_main([flag, str(_ONERA[fmt])])
@@ -250,29 +260,29 @@ class TestTecextract:
         subzone layout — writing a single-variable SZL file is not supported.
         """
         dst = tmp_path / "out.dat"
-        ret = tecextract_main([
-            "-variables", "1", "-o", str(dst), str(_ONERA["szplt"])
-        ])
+        ret = tecextract_main(["-variables", "1", "-o", str(dst), str(_ONERA["szplt"])])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_vars == 1
             assert r.variables == ["x"]
-            
+
     def test_extract_variable_1_szplt_requires_xyz(self, tmp_path: Path) -> None:
         """Extracting a single variable to SZL fails — the format requires
         variables 1, 2, and 3 (x, y, z) to compute its subzone layout.
         """
         dst = tmp_path / "out.szplt"
-        ret = tecextract_main([
-            "-variables", "1", "-o", str(dst), str(_ONERA["szplt"])
-        ])
+        ret = tecextract_main(["-variables", "1", "-o", str(dst), str(_ONERA["szplt"])])
         assert ret == 1
-    
+
     def test_extract_multiple_variables(self, tmp_path: Path) -> None:
         """``-variables 1,2,3`` produces a file with exactly 3 variables."""
         dst = tmp_path / "out.szplt"
         ret = tecextract_main([
-            "-variables", "1,2,3", "-o", str(dst), str(_ONERA["szplt"])
+            "-variables",
+            "1,2,3",
+            "-o",
+            str(dst),
+            str(_ONERA["szplt"]),
         ])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
@@ -283,8 +293,13 @@ class TestTecextract:
         """Combined zone + variable filter applies both restrictions."""
         dst = tmp_path / "out.szplt"
         ret = tecextract_main([
-            "-zones", "2", "-variables", "10",
-            "-o", str(dst), str(_ONERA["szplt"]),
+            "-zones",
+            "2",
+            "-variables",
+            "10",
+            "-o",
+            str(dst),
+            str(_ONERA["szplt"]),
         ])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
@@ -295,31 +310,45 @@ class TestTecextract:
     def test_output_format_controlled_by_extension(self, tmp_path: Path) -> None:
         """Writing to .dat produces a readable ASCII output."""
         dst = tmp_path / "out.dat"
-        assert tecextract_main(
-            ["-o", str(dst), "--force", str(_ONERA["szplt"])]
-        ) == 0
+        assert tecextract_main(["-o", str(dst), "--force", str(_ONERA["szplt"])]) == 0
         assert _is_readable(dst)
 
     def test_zone_out_of_range_returns_1(self, tmp_path: Path) -> None:
         """Zone index beyond num_zones (2) returns exit code 1."""
-        assert tecextract_main([
-            "-zones", "99", "-o", str(tmp_path / "out.szplt"),
-            str(_ONERA["szplt"]),
-        ]) == 1
+        assert (
+            tecextract_main([
+                "-zones",
+                "99",
+                "-o",
+                str(tmp_path / "out.szplt"),
+                str(_ONERA["szplt"]),
+            ])
+            == 1
+        )
 
     def test_variable_out_of_range_returns_1(self, tmp_path: Path) -> None:
         """Variable index beyond num_vars (18) returns exit code 1."""
-        assert tecextract_main([
-            "-variables", "99", "-o", str(tmp_path / "out.szplt"),
-            str(_ONERA["szplt"]),
-        ]) == 1
+        assert (
+            tecextract_main([
+                "-variables",
+                "99",
+                "-o",
+                str(tmp_path / "out.szplt"),
+                str(_ONERA["szplt"]),
+            ])
+            == 1
+        )
 
     def test_missing_input_returns_1(self, tmp_path: Path) -> None:
         """Non-existent source file returns exit code 1."""
-        assert tecextract_main([
-            "-o", str(tmp_path / "out.szplt"),
-            str(tmp_path / "ghost.szplt"),
-        ]) == 1
+        assert (
+            tecextract_main([
+                "-o",
+                str(tmp_path / "out.szplt"),
+                str(tmp_path / "ghost.szplt"),
+            ])
+            == 1
+        )
 
     def test_existing_output_no_force_returns_1(self, tmp_path: Path) -> None:
         """Existing output without --force returns exit code 1."""
@@ -411,7 +440,7 @@ class TestTecmerge:
     def test_merge_two_distinct_files_doubles_zones(self, tmp_path: Path) -> None:
         """Merging two distinct copies produces a file with 4 zones (2 × 2)."""
         src1 = _copy_onera("szplt", tmp_path, "a")
-        src2 = _copy_onera("dat",   tmp_path, "b")
+        src2 = _copy_onera("dat", tmp_path, "b")
         dst = tmp_path / "merged.szplt"
         ret = tecmerge_main(["-o", str(dst), str(src1), str(src2)])
         assert ret == 0
@@ -422,16 +451,14 @@ class TestTecmerge:
     def test_merge_mixed_formats(self, tmp_path: Path) -> None:
         """SZL + DAT inputs are merged into a single readable output."""
         dst = tmp_path / "merged.szplt"
-        ret = tecmerge_main([
-            "-o", str(dst), str(_ONERA["szplt"]), str(_ONERA["dat"])
-        ])
+        ret = tecmerge_main(["-o", str(dst), str(_ONERA["szplt"]), str(_ONERA["dat"])])
         assert ret == 0
         assert _is_readable(dst)
 
     def test_merge_three_formats(self, tmp_path: Path) -> None:
         """Three distinct copies produce 6 zones (3 × 2)."""
         src1 = _copy_onera("szplt", tmp_path, "a")
-        src2 = _copy_onera("dat",   tmp_path, "b")
+        src2 = _copy_onera("dat", tmp_path, "b")
         src3 = _copy_onera("szplt", tmp_path, "c")
         dst = tmp_path / "merged.szplt"
         ret = tecmerge_main(["-o", str(dst), str(src1), str(src2), str(src3)])
@@ -442,12 +469,20 @@ class TestTecmerge:
     def test_assign_time_strands_with_delta(self, tmp_path: Path) -> None:
         """``-delta`` assigns evenly-spaced solution times per input file."""
         src1 = _copy_onera("szplt", tmp_path, "t0")
-        src2 = _copy_onera("dat",   tmp_path, "t1")
+        src2 = _copy_onera("dat", tmp_path, "t1")
         dst = tmp_path / "transient.szplt"
         ret = tecmerge_main([
             "--assign-time-strands",
-            "-start", "0.0", "-delta", "1.0", "-strand", "1",
-            "-o", str(dst), str(src1), str(src2),
+            "-start",
+            "0.0",
+            "-delta",
+            "1.0",
+            "-strand",
+            "1",
+            "-o",
+            str(dst),
+            str(src1),
+            str(src2),
         ])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
@@ -458,13 +493,22 @@ class TestTecmerge:
     def test_assign_time_strands_with_end(self, tmp_path: Path) -> None:
         """-end computes the step size automatically from start/end/N."""
         src1 = _copy_onera("szplt", tmp_path, "t0")
-        src2 = _copy_onera("dat",   tmp_path, "t1")
+        src2 = _copy_onera("dat", tmp_path, "t1")
         src3 = _copy_onera("szplt", tmp_path, "t2")
         dst = tmp_path / "transient_end.szplt"
         ret = tecmerge_main([
             "--assign-time-strands",
-            "-start", "0.0", "-end", "4.0", "-strand", "1",
-            "-o", str(dst), str(src1), str(src2), str(src3),
+            "-start",
+            "0.0",
+            "-end",
+            "4.0",
+            "-strand",
+            "1",
+            "-o",
+            str(dst),
+            str(src1),
+            str(src2),
+            str(src3),
         ])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
@@ -473,41 +517,67 @@ class TestTecmerge:
 
     def test_missing_start_with_assign_ts_returns_1(self, tmp_path: Path) -> None:
         """--assign-time-strands without -start returns exit code 1."""
-        assert tecmerge_main([
-            "--assign-time-strands", "-delta", "1.0",
-            "-o", str(tmp_path / "out.szplt"), str(_ONERA["szplt"]),
-        ]) == 1
+        assert (
+            tecmerge_main([
+                "--assign-time-strands",
+                "-delta",
+                "1.0",
+                "-o",
+                str(tmp_path / "out.szplt"),
+                str(_ONERA["szplt"]),
+            ])
+            == 1
+        )
 
     def test_missing_delta_and_end_returns_1(self, tmp_path: Path) -> None:
         """--assign-time-strands without -delta or -end returns exit code 1."""
-        assert tecmerge_main([
-            "--assign-time-strands", "-start", "0.0",
-            "-o", str(tmp_path / "out.szplt"), str(_ONERA["szplt"]),
-        ]) == 1
+        assert (
+            tecmerge_main([
+                "--assign-time-strands",
+                "-start",
+                "0.0",
+                "-o",
+                str(tmp_path / "out.szplt"),
+                str(_ONERA["szplt"]),
+            ])
+            == 1
+        )
 
     def test_missing_input_returns_1(self, tmp_path: Path) -> None:
         """Non-existent input file returns exit code 1."""
-        assert tecmerge_main([
-            "-o", str(tmp_path / "out.szplt"),
-            str(tmp_path / "ghost.szplt"),
-        ]) == 1
+        assert (
+            tecmerge_main([
+                "-o",
+                str(tmp_path / "out.szplt"),
+                str(tmp_path / "ghost.szplt"),
+            ])
+            == 1
+        )
 
     def test_existing_output_no_force_returns_1(self, tmp_path: Path) -> None:
         """Existing output without --force returns exit code 1."""
         dst = tmp_path / "merged.szplt"
         dst.touch()
-        assert tecmerge_main([
-            "-o", str(dst),
-            str(_ONERA["szplt"]), str(_ONERA["dat"]),
-        ]) == 1
+        assert (
+            tecmerge_main([
+                "-o",
+                str(dst),
+                str(_ONERA["szplt"]),
+                str(_ONERA["dat"]),
+            ])
+            == 1
+        )
 
     def test_force_overwrites_existing(self, tmp_path: Path) -> None:
         """--force overwrites an existing output file."""
         dst = tmp_path / "merged.szplt"
         dst.touch()
         ret = tecmerge_main([
-            "--force", "-o", str(dst),
-            str(_ONERA["szplt"]), str(_ONERA["dat"]),
+            "--force",
+            "-o",
+            str(dst),
+            str(_ONERA["szplt"]),
+            str(_ONERA["dat"]),
         ])
         assert ret == 0
         assert dst.stat().st_size > 0
@@ -525,8 +595,13 @@ class TestTecscale:
         """Scale variable 1 (x) by a constant factor; output is readable."""
         dst = tmp_path / "scaled.szplt"
         ret = tecscale_main([
-            "-variable", "1", "-scale", "2.0",
-            "-o", str(dst), str(onera_path),
+            "-variable",
+            "1",
+            "-scale",
+            "2.0",
+            "-o",
+            str(dst),
+            str(onera_path),
         ])
         assert ret == 0
         assert _is_readable(dst)
@@ -535,8 +610,13 @@ class TestTecscale:
         """Scale the Pressure variable identified by name."""
         dst = tmp_path / "scaled.szplt"
         ret = tecscale_main([
-            "-variable", "Pressure", "-scale", "1e-3",
-            "-o", str(dst), str(onera_path),
+            "-variable",
+            "Pressure",
+            "-scale",
+            "1e-3",
+            "-o",
+            str(dst),
+            str(onera_path),
         ])
         assert ret == 0
         assert _is_readable(dst)
@@ -545,8 +625,15 @@ class TestTecscale:
         """Applying both scale and offset returns exit code 0."""
         dst = tmp_path / "scaled.szplt"
         ret = tecscale_main([
-            "-variable", "Temperature", "-scale", "1.0", "-offset", "-273.15",
-            "-o", str(dst), str(onera_path),
+            "-variable",
+            "Temperature",
+            "-scale",
+            "1.0",
+            "-offset",
+            "-273.15",
+            "-o",
+            str(dst),
+            str(onera_path),
         ])
         assert ret == 0
         assert dst.exists()
@@ -555,8 +642,15 @@ class TestTecscale:
         """-zone restricts scaling to zone 1 only."""
         dst = tmp_path / "scaled.szplt"
         ret = tecscale_main([
-            "-variable", "Density", "-scale", "1000.0", "-zone", "1",
-            "-o", str(dst), str(onera_path),
+            "-variable",
+            "Density",
+            "-scale",
+            "1000.0",
+            "-zone",
+            "1",
+            "-o",
+            str(dst),
+            str(onera_path),
         ])
         assert ret == 0
         assert dst.exists()
@@ -567,8 +661,14 @@ class TestTecscale:
         dst = tmp_path / "scaled.szplt"
         scale = 2.0
         tecscale_main([
-            "-variable", "1", "-scale", str(scale),
-            "--force", "-o", str(dst), str(src),
+            "-variable",
+            "1",
+            "-scale",
+            str(scale),
+            "--force",
+            "-o",
+            str(dst),
+            str(src),
         ])
         with tecio.open(str(src), "r") as r_orig:
             orig = r_orig.zone[0].variable[0].values.ravel().astype(np.float64)
@@ -581,8 +681,16 @@ class TestTecscale:
         src = _ONERA["szplt"]
         dst = tmp_path / "scaled.szplt"
         tecscale_main([
-            "-variable", "Pressure", "-scale", "999.0", "-zone", "1",
-            "--force", "-o", str(dst), str(src),
+            "-variable",
+            "Pressure",
+            "-scale",
+            "999.0",
+            "-zone",
+            "1",
+            "--force",
+            "-o",
+            str(dst),
+            str(src),
         ])
         with tecio.open(str(src), "r") as r_src:
             orig = r_src.zone[1].variable[9].values.ravel().astype(np.float64)
@@ -594,44 +702,69 @@ class TestTecscale:
         self, onera_path: Path, tmp_path: Path
     ) -> None:
         """Unknown variable name returns exit code 1."""
-        assert tecscale_main([
-            "-variable", "DOES_NOT_EXIST_XYZ",
-            "-o", str(tmp_path / "scaled.szplt"), str(onera_path),
-        ]) == 1
+        assert (
+            tecscale_main([
+                "-variable",
+                "DOES_NOT_EXIST_XYZ",
+                "-o",
+                str(tmp_path / "scaled.szplt"),
+                str(onera_path),
+            ])
+            == 1
+        )
 
     def test_variable_index_out_of_range_returns_1(
         self, onera_path: Path, tmp_path: Path
     ) -> None:
         """Variable index beyond num_vars (18) returns exit code 1."""
-        assert tecscale_main([
-            "-variable", "99",
-            "-o", str(tmp_path / "scaled.szplt"), str(onera_path),
-        ]) == 1
+        assert (
+            tecscale_main([
+                "-variable",
+                "99",
+                "-o",
+                str(tmp_path / "scaled.szplt"),
+                str(onera_path),
+            ])
+            == 1
+        )
 
     def test_zone_out_of_range_returns_1(
         self, onera_path: Path, tmp_path: Path
     ) -> None:
         """Zone index beyond num_zones (2) returns exit code 1."""
-        assert tecscale_main([
-            "-variable", "1", "-zone", "99",
-            "-o", str(tmp_path / "scaled.szplt"), str(onera_path),
-        ]) == 1
+        assert (
+            tecscale_main([
+                "-variable",
+                "1",
+                "-zone",
+                "99",
+                "-o",
+                str(tmp_path / "scaled.szplt"),
+                str(onera_path),
+            ])
+            == 1
+        )
 
     def test_missing_input_returns_1(self, tmp_path: Path) -> None:
         """Non-existent source file returns exit code 1."""
-        assert tecscale_main([
-            "-variable", "1",
-            "-o", str(tmp_path / "out.szplt"),
-            str(tmp_path / "ghost.szplt"),
-        ]) == 1
+        assert (
+            tecscale_main([
+                "-variable",
+                "1",
+                "-o",
+                str(tmp_path / "out.szplt"),
+                str(tmp_path / "ghost.szplt"),
+            ])
+            == 1
+        )
 
     def test_existing_output_no_force_returns_1(self, tmp_path: Path) -> None:
         """Existing output without --force returns exit code 1."""
         dst = tmp_path / "out.szplt"
         dst.touch()
-        assert tecscale_main([
-            "-variable", "1", "-o", str(dst), str(_ONERA["szplt"])
-        ]) == 1
+        assert (
+            tecscale_main(["-variable", "1", "-o", str(dst), str(_ONERA["szplt"])]) == 1
+        )
 
 
 # ===========================================================================
@@ -687,8 +820,13 @@ class TestTecslice:
         """--strand-id on a static file keeps all zones (strand 0 is immune)."""
         dst = tmp_path / "sliced.szplt"
         ret = tecslice_main([
-            "--strand-id", "1", "-t", "0.0:10.0",
-            "-o", str(dst), str(_ONERA["szplt"]),
+            "--strand-id",
+            "1",
+            "-t",
+            "0.0:10.0",
+            "-o",
+            str(dst),
+            str(_ONERA["szplt"]),
         ])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
@@ -703,34 +841,47 @@ class TestTecslice:
 
     def test_invalid_time_skip_returns_1(self, tmp_path: Path) -> None:
         """Negative time skip (::-1) returns exit code 1."""
-        assert tecslice_main([
-            "-t", "::-1",
-            "-o", str(tmp_path / "out.szplt"),
-            str(_ONERA["szplt"]),
-        ]) == 1
+        assert (
+            tecslice_main([
+                "-t",
+                "::-1",
+                "-o",
+                str(tmp_path / "out.szplt"),
+                str(_ONERA["szplt"]),
+            ])
+            == 1
+        )
 
     def test_missing_input_returns_1(self, tmp_path: Path) -> None:
         """Non-existent source file returns exit code 1."""
-        assert tecslice_main([
-            "-i", "::2",
-            "-o", str(tmp_path / "sliced.szplt"),
-            str(tmp_path / "ghost.szplt"),
-        ]) == 1
+        assert (
+            tecslice_main([
+                "-i",
+                "::2",
+                "-o",
+                str(tmp_path / "sliced.szplt"),
+                str(tmp_path / "ghost.szplt"),
+            ])
+            == 1
+        )
 
     def test_existing_output_no_force_returns_1(self, tmp_path: Path) -> None:
         """Existing output without --force returns exit code 1."""
         dst = tmp_path / "sliced.szplt"
         dst.touch()
-        assert tecslice_main([
-            "-i", "::2", "-o", str(dst), str(_ONERA["szplt"])
-        ]) == 1
+        assert tecslice_main(["-i", "::2", "-o", str(dst), str(_ONERA["szplt"])]) == 1
 
     def test_force_overwrites_existing(self, tmp_path: Path) -> None:
         """--force overwrites an existing output file."""
         dst = tmp_path / "sliced.szplt"
         dst.touch()
         ret = tecslice_main([
-            "--force", "-i", "::2", "-o", str(dst), str(_ONERA["szplt"])
+            "--force",
+            "-i",
+            "::2",
+            "-o",
+            str(dst),
+            str(_ONERA["szplt"]),
         ])
         assert ret == 0
         assert dst.stat().st_size > 0
@@ -808,8 +959,7 @@ class TestTecstats:
         tecstats_main(["-csv", str(src)])
         lines = (tmp_path / "Onera_stats.csv").read_text(encoding="utf-8").splitlines()
         expected_header = (
-            "zone_num,zone_title,var_num,var_name,"
-            "min,max,mean,std,location,note"
+            "zone_num,zone_title,var_num,var_name,min,max,mean,std,location,note"
         )
         assert lines[0] == expected_header
         assert len(lines) == _NUM_ZONES * _NUM_VARS + 1  # 36 data rows + header
@@ -851,4 +1001,5 @@ class TestTecstats:
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(pytest.main([__file__, "-v"] + sys.argv[1:]))

@@ -61,7 +61,7 @@ class TestNewApi:
     Key pattern::
 
         handle = tec_file_writer_open(path, variables=[...])
-        izone  = tec_zone_create_ijk(handle, title, i, j, k, var_types=[...])
+        izone = tec_zone_create_ijk(handle, title, i, j, k, var_types=[...])
         tec_zone_var_write_float_values(handle, izone, var_num, array)
         ...
         tec_file_writer_close(handle)
@@ -85,15 +85,21 @@ class TestNewApi:
         """
         i, j, k = 3, 4, 5
         x, y, z = create_ordered((i, j, k))
-        x = x.astype(np.float32)                            # FLOAT
-        y = y.astype(np.float64)                            # DOUBLE
-        z = z.astype(np.float32)                            # FLOAT
-        c = (np.sin(2 * np.pi * x) * 1000).astype(np.int32)   # INT32
+        x = x.astype(np.float32)  # FLOAT
+        y = y.astype(np.float64)  # DOUBLE
+        z = z.astype(np.float32)  # FLOAT
+        c = (np.sin(2 * np.pi * x) * 1000).astype(np.int32)  # INT32
 
         path = output_path("test_tec_zone_create_ijk.szplt")
-        handle = libtecio.tec_file_writer_open(str(path), variables=["x", "y", "z", "c"])
+        handle = libtecio.tec_file_writer_open(
+            str(path), variables=["x", "y", "z", "c"]
+        )
         izone = libtecio.tec_zone_create_ijk(
-            handle, "test_ordered_ijk", i, j, k,
+            handle,
+            "test_ordered_ijk",
+            i,
+            j,
+            k,
             var_types=[DataType.FLOAT, DataType.DOUBLE, DataType.FLOAT, DataType.INT32],
             value_locations=[ValueLocation.NODAL] * 4,
         )
@@ -119,14 +125,18 @@ class TestNewApi:
         - FE arrays are 1-D and do not need Fortran ravel (node-indexed)
         """
         x, y, nodes = create_FE_lineseg()
-        x = x.astype(np.float32)                           # FLOAT
-        y = y.astype(np.float32)                           # FLOAT
-        c = np.sin(2 * np.pi * x).astype(np.float64)      # DOUBLE
+        x = x.astype(np.float32)  # FLOAT
+        y = y.astype(np.float32)  # FLOAT
+        c = np.sin(2 * np.pi * x).astype(np.float64)  # DOUBLE
 
         path = output_path("test_tec_zone_create_fe_lineseg.szplt")
         handle = libtecio.tec_file_writer_open(str(path), variables=["x", "y", "c"])
         izone = libtecio.tec_zone_create_fe(
-            handle, "test_fe_lineseg", ZoneType.FELINESEG, len(x), len(nodes),
+            handle,
+            "test_fe_lineseg",
+            ZoneType.FELINESEG,
+            len(x),
+            len(nodes),
             var_types=[DataType.FLOAT, DataType.FLOAT, DataType.DOUBLE],
             value_locations=[ValueLocation.NODAL] * 3,
         )
@@ -149,14 +159,18 @@ class TestNewApi:
         - node_map shape: (num_elements, 3) — rows are per-element, C-order
         """
         x, y, nodes = create_FE_tri()
-        x = x.astype(np.float32)                                  # FLOAT
-        y = y.astype(np.float64)                                  # DOUBLE
-        c = (np.sin(2 * np.pi * x) * 1000).astype(np.int32)      # INT32
+        x = x.astype(np.float32)  # FLOAT
+        y = y.astype(np.float64)  # DOUBLE
+        c = (np.sin(2 * np.pi * x) * 1000).astype(np.int32)  # INT32
 
         path = output_path("test_tec_zone_create_fe_tri.szplt")
         handle = libtecio.tec_file_writer_open(str(path), variables=["x", "y", "c"])
         izone = libtecio.tec_zone_create_fe(
-            handle, "test_fe_triangle", ZoneType.FETRIANGLE, len(x), len(nodes),
+            handle,
+            "test_fe_triangle",
+            ZoneType.FETRIANGLE,
+            len(x),
+            len(nodes),
             var_types=[DataType.FLOAT, DataType.DOUBLE, DataType.INT32],
             value_locations=[ValueLocation.NODAL] * 3,
         )
@@ -179,14 +193,18 @@ class TestNewApi:
         - node_map shape: (num_elements, 4)
         """
         x, y, nodes = create_FE_quad()
-        x = x.astype(np.float64)                            # DOUBLE
-        y = y.astype(np.float64)                            # DOUBLE
-        c = np.sin(2 * np.pi * x).astype(np.float32)       # FLOAT
+        x = x.astype(np.float64)  # DOUBLE
+        y = y.astype(np.float64)  # DOUBLE
+        c = np.sin(2 * np.pi * x).astype(np.float32)  # FLOAT
 
         path = output_path("test_tec_zone_create_fe_quad.szplt")
         handle = libtecio.tec_file_writer_open(str(path), variables=["x", "y", "c"])
         izone = libtecio.tec_zone_create_fe(
-            handle, "test_fe_quad", ZoneType.FEQUADRILATERAL, len(x), len(nodes),
+            handle,
+            "test_fe_quad",
+            ZoneType.FEQUADRILATERAL,
+            len(x),
+            len(nodes),
             var_types=[DataType.DOUBLE, DataType.DOUBLE, DataType.FLOAT],
             value_locations=[ValueLocation.NODAL] * 3,
         )
@@ -210,15 +228,21 @@ class TestNewApi:
         - node_map shape: (num_elements, 4); ravel to 1-D before writing
         """
         x, y, z, nodes = create_FE_tet()
-        x = x.astype(np.float32)                            # FLOAT
-        y = y.astype(np.float32)                            # FLOAT
-        z = z.astype(np.float32)                            # FLOAT
-        c = np.sin(2 * np.pi * x).astype(np.float64)       # DOUBLE
+        x = x.astype(np.float32)  # FLOAT
+        y = y.astype(np.float32)  # FLOAT
+        z = z.astype(np.float32)  # FLOAT
+        c = np.sin(2 * np.pi * x).astype(np.float64)  # DOUBLE
 
         path = output_path("test_tec_zone_create_fe_tet.szplt")
-        handle = libtecio.tec_file_writer_open(str(path), variables=["x", "y", "z", "c"])
+        handle = libtecio.tec_file_writer_open(
+            str(path), variables=["x", "y", "z", "c"]
+        )
         izone = libtecio.tec_zone_create_fe(
-            handle, "test_fe_tet", ZoneType.FETETRAHEDRON, len(x), len(nodes),
+            handle,
+            "test_fe_tet",
+            ZoneType.FETETRAHEDRON,
+            len(x),
+            len(nodes),
             var_types=[DataType.FLOAT, DataType.FLOAT, DataType.FLOAT, DataType.DOUBLE],
             value_locations=[ValueLocation.NODAL] * 4,
         )
@@ -245,15 +269,21 @@ class TestNewApi:
           and prisms when using the simple FE zone types
         """
         x, y, z, nodes = create_FE_pyramid()
-        x = x.astype(np.float32)                                    # FLOAT
-        y = y.astype(np.float64)                                    # DOUBLE
-        z = z.astype(np.float32)                                    # FLOAT
-        c = (np.sin(2 * np.pi * x) * 100).astype(np.int16)         # INT16
+        x = x.astype(np.float32)  # FLOAT
+        y = y.astype(np.float64)  # DOUBLE
+        z = z.astype(np.float32)  # FLOAT
+        c = (np.sin(2 * np.pi * x) * 100).astype(np.int16)  # INT16
 
         path = output_path("test_tec_zone_create_fe_pyramid.szplt")
-        handle = libtecio.tec_file_writer_open(str(path), variables=["x", "y", "z", "c"])
+        handle = libtecio.tec_file_writer_open(
+            str(path), variables=["x", "y", "z", "c"]
+        )
         izone = libtecio.tec_zone_create_fe(
-            handle, "test_fe_pyramid", ZoneType.FEBRICK, len(x), len(nodes),
+            handle,
+            "test_fe_pyramid",
+            ZoneType.FEBRICK,
+            len(x),
+            len(nodes),
             var_types=[DataType.FLOAT, DataType.DOUBLE, DataType.FLOAT, DataType.INT16],
             value_locations=[ValueLocation.NODAL] * 4,
         )
@@ -280,15 +310,21 @@ class TestNewApi:
         - Useful for per-node color indices or boolean masks
         """
         x, y, z, nodes = create_FE_prism()
-        x = x.astype(np.float32)                                         # FLOAT
-        y = y.astype(np.float64)                                         # DOUBLE
-        z = z.astype(np.float32)                                         # FLOAT
-        c = ((np.sin(2 * np.pi * x) + 1.0) * 127).astype(np.uint8)     # BYTE
+        x = x.astype(np.float32)  # FLOAT
+        y = y.astype(np.float64)  # DOUBLE
+        z = z.astype(np.float32)  # FLOAT
+        c = ((np.sin(2 * np.pi * x) + 1.0) * 127).astype(np.uint8)  # BYTE
 
         path = output_path("test_tec_zone_create_fe_prism.szplt")
-        handle = libtecio.tec_file_writer_open(str(path), variables=["x", "y", "z", "c"])
+        handle = libtecio.tec_file_writer_open(
+            str(path), variables=["x", "y", "z", "c"]
+        )
         izone = libtecio.tec_zone_create_fe(
-            handle, "test_fe_prism", ZoneType.FEBRICK, len(x), len(nodes),
+            handle,
+            "test_fe_prism",
+            ZoneType.FEBRICK,
+            len(x),
+            len(nodes),
             var_types=[DataType.FLOAT, DataType.DOUBLE, DataType.FLOAT, DataType.BYTE],
             value_locations=[ValueLocation.NODAL] * 4,
         )
@@ -312,15 +348,21 @@ class TestNewApi:
           follows the standard hex ordering (four bottom, four top)
         """
         x, y, z, faces, nodes = create_FE_brick()
-        x = x.astype(np.float32)                               # FLOAT
-        y = y.astype(np.float32)                               # FLOAT
-        z = z.astype(np.float64)                               # DOUBLE
-        c = (np.sin(2 * np.pi * x) * 1000).astype(np.int32)   # INT32
+        x = x.astype(np.float32)  # FLOAT
+        y = y.astype(np.float32)  # FLOAT
+        z = z.astype(np.float64)  # DOUBLE
+        c = (np.sin(2 * np.pi * x) * 1000).astype(np.int32)  # INT32
 
         path = output_path("test_tec_zone_create_fe_brick.szplt")
-        handle = libtecio.tec_file_writer_open(str(path), variables=["x", "y", "z", "c"])
+        handle = libtecio.tec_file_writer_open(
+            str(path), variables=["x", "y", "z", "c"]
+        )
         izone = libtecio.tec_zone_create_fe(
-            handle, "test_fe_brick", ZoneType.FEBRICK, len(x), len(nodes),
+            handle,
+            "test_fe_brick",
+            ZoneType.FEBRICK,
+            len(x),
+            len(nodes),
             var_types=[DataType.FLOAT, DataType.FLOAT, DataType.DOUBLE, DataType.INT32],
             value_locations=[ValueLocation.NODAL] * 4,
         )
@@ -352,12 +394,18 @@ class TestNewApi:
         x = x.astype(np.float32)
         y = y.astype(np.float32)
         z = z.astype(np.float32)
-        c = np.array([100, 200], dtype=np.int16)       # CELL_CENTERED INT16
+        c = np.array([100, 200], dtype=np.int16)  # CELL_CENTERED INT16
 
         path = output_path("test_tec_zone_face_nbr.szplt")
-        handle = libtecio.tec_file_writer_open(str(path), variables=["x", "y", "z", "c"])
+        handle = libtecio.tec_file_writer_open(
+            str(path), variables=["x", "y", "z", "c"]
+        )
         izone = libtecio.tec_zone_create_fe(
-            handle, "test_two_bricks", ZoneType.FEBRICK, len(x), len(nodes),
+            handle,
+            "test_two_bricks",
+            ZoneType.FEBRICK,
+            len(x),
+            len(nodes),
             var_types=[DataType.FLOAT, DataType.FLOAT, DataType.FLOAT, DataType.INT16],
             value_locations=[
                 ValueLocation.NODAL,
@@ -404,7 +452,9 @@ class TestNewApi:
         solution_times = np.linspace(0.0, 2 * np.pi, 50)
 
         path = output_path("test_tec_aux_data_unsteady.szplt")
-        handle = libtecio.tec_file_writer_open(str(path), variables=["x", "y", "z", "c"])
+        handle = libtecio.tec_file_writer_open(
+            str(path), variables=["x", "y", "z", "c"]
+        )
 
         libtecio.tec_data_set_add_aux_data(handle, "Author", "test_tecio_lite")
         libtecio.tec_data_set_add_aux_data(handle, "CreatedBy", "libtecio")
@@ -417,19 +467,40 @@ class TestNewApi:
 
         last_zone = None
         for num, t in enumerate(solution_times):
-            c = (np.sin(2 * np.pi * x + t) * np.cos(2 * np.pi * y + t)).astype(np.float64)
+            c = (np.sin(2 * np.pi * x + t) * np.cos(2 * np.pi * y + t)).astype(
+                np.float64
+            )
             izone = libtecio.tec_zone_create_ijk(
-                handle, f"test_aux_unsteady_{num + 1}", i, j, k,
-                var_types=[DataType.FLOAT, DataType.DOUBLE, DataType.FLOAT, DataType.DOUBLE],
+                handle,
+                f"test_aux_unsteady_{num + 1}",
+                i,
+                j,
+                k,
+                var_types=[
+                    DataType.FLOAT,
+                    DataType.DOUBLE,
+                    DataType.FLOAT,
+                    DataType.DOUBLE,
+                ],
                 value_locations=[ValueLocation.NODAL] * 4,
             )
             libtecio.tec_zone_add_aux_data(handle, izone, "MeshType", "structured")
             libtecio.tec_zone_add_aux_data(handle, izone, "IJK", f"{i}x{j}x{k}")
-            libtecio.tec_zone_set_unsteady_options(handle, izone, solution_time=t, strand=1)
-            libtecio.tec_zone_var_write_float_values(handle, izone, 1, x.ravel(order="F"))
-            libtecio.tec_zone_var_write_double_values(handle, izone, 2, y.ravel(order="F"))
-            libtecio.tec_zone_var_write_float_values(handle, izone, 3, z.ravel(order="F"))
-            libtecio.tec_zone_var_write_double_values(handle, izone, 4, c.ravel(order="F"))
+            libtecio.tec_zone_set_unsteady_options(
+                handle, izone, solution_time=t, strand=1
+            )
+            libtecio.tec_zone_var_write_float_values(
+                handle, izone, 1, x.ravel(order="F")
+            )
+            libtecio.tec_zone_var_write_double_values(
+                handle, izone, 2, y.ravel(order="F")
+            )
+            libtecio.tec_zone_var_write_float_values(
+                handle, izone, 3, z.ravel(order="F")
+            )
+            libtecio.tec_zone_var_write_double_values(
+                handle, izone, 4, c.ravel(order="F")
+            )
             last_zone = izone
 
         libtecio.tec_file_writer_close(handle)
@@ -448,11 +519,11 @@ class TestClassicApi:
 
     Key pattern::
 
-        tecini142(path, variables=[...])      # opens global file context
-        teczne142(title, zone_type, ...)       # declares zone; must come first
-        tecdat142(array, is_double=False)      # writes one variable at a time
-        tecnode142(node_map)                   # writes connectivity (FE only)
-        tecend142()                            # finalises and closes the file
+        tecini142(path, variables=[...])  # opens global file context
+        teczne142(title, zone_type, ...)  # declares zone; must come first
+        tecdat142(array, is_double=False)  # writes one variable at a time
+        tecnode142(node_map)  # writes connectivity (FE only)
+        tecend142()  # finalises and closes the file
 
     Only one file can be open at a time.  Zone header → data → connectivity
     must be strictly ordered before declaring the next zone.
@@ -479,8 +550,14 @@ class TestClassicApi:
         path = output_path("test_plt_zone_create_ijk.plt")
 
         libtecio.tecini142(str(path), variables=["x", "y", "z", "c"])
-        libtecio.teczne142("test_ordered_ijk", ZoneType.ORDERED, i, j, k,
-                           value_locations=[ValueLocation.NODAL] * 4)
+        libtecio.teczne142(
+            "test_ordered_ijk",
+            ZoneType.ORDERED,
+            i,
+            j,
+            k,
+            value_locations=[ValueLocation.NODAL] * 4,
+        )
         libtecio.tecdat142(x.ravel(order="F"), is_double=False)
         libtecio.tecdat142(y.ravel(order="F"), is_double=True)
         libtecio.tecdat142(z.ravel(order="F"), is_double=False)
@@ -503,11 +580,20 @@ class TestClassicApi:
         c = np.sin(2 * np.pi * x).astype(np.float64)
         path = output_path("test_plt_zone_create_fe_lineseg.plt")
 
-        libtecio.tecini142(str(path), variables=["x", "y", "c"],
-                           file_format=FileFormat.PLT, file_type=FileType.FULL)
-        libtecio.teczne142("test_fe_lineseg", ZoneType.FELINESEG,
-                           len(x), len(nodes), 0,
-                           value_locations=[ValueLocation.NODAL] * 3)
+        libtecio.tecini142(
+            str(path),
+            variables=["x", "y", "c"],
+            file_format=FileFormat.PLT,
+            file_type=FileType.FULL,
+        )
+        libtecio.teczne142(
+            "test_fe_lineseg",
+            ZoneType.FELINESEG,
+            len(x),
+            len(nodes),
+            0,
+            value_locations=[ValueLocation.NODAL] * 3,
+        )
         libtecio.tecdat142(x.ravel(), is_double=False)
         libtecio.tecdat142(y.ravel(), is_double=False)
         libtecio.tecdat142(c.ravel(), is_double=True)
@@ -531,9 +617,14 @@ class TestClassicApi:
         path = output_path("test_plt_zone_create_fe_tri.plt")
 
         libtecio.tecini142(str(path), variables=["x", "y", "c"])
-        libtecio.teczne142("test_fe_tri", ZoneType.FETRIANGLE,
-                           len(x), len(nodes), 0,
-                           value_locations=[ValueLocation.NODAL] * 3)
+        libtecio.teczne142(
+            "test_fe_tri",
+            ZoneType.FETRIANGLE,
+            len(x),
+            len(nodes),
+            0,
+            value_locations=[ValueLocation.NODAL] * 3,
+        )
         libtecio.tecdat142(x.ravel(), is_double=True)
         libtecio.tecdat142(y.ravel(), is_double=True)
         libtecio.tecdat142(c.ravel(), is_double=False)
@@ -554,9 +645,14 @@ class TestClassicApi:
         path = output_path("test_plt_zone_create_fe_quad.plt")
 
         libtecio.tecini142(str(path), variables=["x", "y", "c"])
-        libtecio.teczne142("test_fe_quad", ZoneType.FEQUADRILATERAL,
-                           len(x), len(nodes), 0,
-                           value_locations=[ValueLocation.NODAL] * 3)
+        libtecio.teczne142(
+            "test_fe_quad",
+            ZoneType.FEQUADRILATERAL,
+            len(x),
+            len(nodes),
+            0,
+            value_locations=[ValueLocation.NODAL] * 3,
+        )
         libtecio.tecdat142(x.ravel(), is_double=False)
         libtecio.tecdat142(y.ravel(), is_double=False)
         libtecio.tecdat142(c.ravel(), is_double=True)
@@ -578,9 +674,14 @@ class TestClassicApi:
         path = output_path("test_plt_zone_create_fe_tet.plt")
 
         libtecio.tecini142(str(path), variables=["x", "y", "z", "c"])
-        libtecio.teczne142("test_fe_tet", ZoneType.FETETRAHEDRON,
-                           len(x), len(nodes), 0,
-                           value_locations=[ValueLocation.NODAL] * 4)
+        libtecio.teczne142(
+            "test_fe_tet",
+            ZoneType.FETETRAHEDRON,
+            len(x),
+            len(nodes),
+            0,
+            value_locations=[ValueLocation.NODAL] * 4,
+        )
         libtecio.tecdat142(x.ravel(), is_double=False)
         libtecio.tecdat142(y.ravel(), is_double=False)
         libtecio.tecdat142(z.ravel(), is_double=False)
@@ -603,9 +704,14 @@ class TestClassicApi:
         path = output_path("test_plt_zone_create_fe_pyramid.plt")
 
         libtecio.tecini142(str(path), variables=["x", "y", "z", "c"])
-        libtecio.teczne142("test_fe_pyramid", ZoneType.FEBRICK,
-                           len(x), len(nodes), 0,
-                           value_locations=[ValueLocation.NODAL] * 4)
+        libtecio.teczne142(
+            "test_fe_pyramid",
+            ZoneType.FEBRICK,
+            len(x),
+            len(nodes),
+            0,
+            value_locations=[ValueLocation.NODAL] * 4,
+        )
         libtecio.tecdat142(x.ravel(), is_double=True)
         libtecio.tecdat142(y.ravel(), is_double=True)
         libtecio.tecdat142(z.ravel(), is_double=True)
@@ -628,9 +734,14 @@ class TestClassicApi:
         path = output_path("test_plt_zone_create_fe_prism.plt")
 
         libtecio.tecini142(str(path), variables=["x", "y", "z", "c"])
-        libtecio.teczne142("test_fe_prism", ZoneType.FEBRICK,
-                           len(x), len(nodes), 0,
-                           value_locations=[ValueLocation.NODAL] * 4)
+        libtecio.teczne142(
+            "test_fe_prism",
+            ZoneType.FEBRICK,
+            len(x),
+            len(nodes),
+            0,
+            value_locations=[ValueLocation.NODAL] * 4,
+        )
         libtecio.tecdat142(x.ravel(), is_double=False)
         libtecio.tecdat142(y.ravel(), is_double=False)
         libtecio.tecdat142(z.ravel(), is_double=False)
@@ -652,9 +763,14 @@ class TestClassicApi:
         path = output_path("test_plt_zone_create_fe_brick.plt")
 
         libtecio.tecini142(str(path), variables=["x", "y", "z", "c"])
-        libtecio.teczne142("test_fe_brick", ZoneType.FEBRICK,
-                           len(x), len(nodes), 0,
-                           value_locations=[ValueLocation.NODAL] * 4)
+        libtecio.teczne142(
+            "test_fe_brick",
+            ZoneType.FEBRICK,
+            len(x),
+            len(nodes),
+            0,
+            value_locations=[ValueLocation.NODAL] * 4,
+        )
         libtecio.tecdat142(x.ravel(), is_double=False)
         libtecio.tecdat142(y.ravel(), is_double=False)
         libtecio.tecdat142(z.ravel(), is_double=False)
@@ -664,7 +780,9 @@ class TestClassicApi:
 
         assert path.exists()
 
-    def test_plt_tec_zone_face_nbr_write_connections(self, output_path: Callable) -> None:
+    def test_plt_tec_zone_face_nbr_write_connections(
+        self, output_path: Callable
+    ) -> None:
         """PLT face-neighbor connections — float32 all variables.
 
         Demonstrates:
@@ -680,11 +798,16 @@ class TestClassicApi:
         path = output_path("test_plt_zone_face_nbr.plt")
 
         libtecio.tecini142(str(path), variables=["x", "y", "z", "c"])
-        libtecio.teczne142("test_two_bricks", ZoneType.FEBRICK,
-                           len(x), len(nodes), 0,
-                           value_locations=[ValueLocation.NODAL] * 4,
-                           num_face_connections=2,
-                           face_nbr_mode=FaceNeighborMode.LOCAL_ONE_TO_ONE)
+        libtecio.teczne142(
+            "test_two_bricks",
+            ZoneType.FEBRICK,
+            len(x),
+            len(nodes),
+            0,
+            value_locations=[ValueLocation.NODAL] * 4,
+            num_face_connections=2,
+            face_nbr_mode=FaceNeighborMode.LOCAL_ONE_TO_ONE,
+        )
         libtecio.tecdat142(x.ravel(), is_double=False)
         libtecio.tecdat142(y.ravel(), is_double=False)
         libtecio.tecdat142(z.ravel(), is_double=False)
@@ -729,10 +852,19 @@ class TestClassicApi:
         libtecio.tecvauxstr142(4, "Description", "sin*cos field")
 
         for num, t in enumerate(solution_times):
-            c = (np.sin(2 * np.pi * x + t) * np.cos(2 * np.pi * y + t)).astype(np.float64)
-            libtecio.teczne142(f"test_aux_unsteady_{num + 1}", ZoneType.ORDERED, i, j, k,
-                               value_locations=[ValueLocation.NODAL] * 4,
-                               strand=1, solution_time=t)
+            c = (np.sin(2 * np.pi * x + t) * np.cos(2 * np.pi * y + t)).astype(
+                np.float64
+            )
+            libtecio.teczne142(
+                f"test_aux_unsteady_{num + 1}",
+                ZoneType.ORDERED,
+                i,
+                j,
+                k,
+                value_locations=[ValueLocation.NODAL] * 4,
+                strand=1,
+                solution_time=t,
+            )
             libtecio.teczauxstr142("MeshType", "structured")
             libtecio.teczauxstr142("IJK", f"{i}x{j}x{k}")
             libtecio.tecdat142(x.ravel(order="F"), is_double=False)
@@ -788,8 +920,9 @@ class TestClassicApi:
         libtecio.tecdat142(x.ravel(), is_double=False)
         libtecio.tecdat142(y.ravel(), is_double=False)
         libtecio.tecdat142(c.ravel(), is_double=False)
-        libtecio.tecpolyface142(face_node_counts, faces.ravel(order="C"),
-                                left_elems, right_elems)
+        libtecio.tecpolyface142(
+            face_node_counts, faces.ravel(order="C"), left_elems, right_elems
+        )
         libtecio.tecend142()
 
         assert path.exists()

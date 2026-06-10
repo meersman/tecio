@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel if multiple commits create concurrent jobs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Skip CI if commit message contains [skip ci] or [skip test]
+jobs:
+  format:
+    name: Format check
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff format --check .
+
+  lint:
+    name: Lint
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check .
+
+  typecheck:
+    name: Type check
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: ty check tecio/
+
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    needs: [lint, typecheck]
+    if: |
+      !contains(github.event.head_commit.message, '[skip ci]') &&
+      !contains(github.event.head_commit.message, '[skip test]')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install package
+        run: pip install -e ".[dev]"
+      - name: Run tests with coverage
+        run: pytest --cov=tecio --cov-report=xml --cov-report=term-missing
+      - name: Upload coverage to Codecov
+        # Only upload once, not for every matrix version
+        if: matrix.python-version == '3.11'
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+  ci:
+    name: CI passed
+    needs: [format, lint, typecheck, test]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [[ "${{ needs.format.result }}" != "success" && \
+                "${{ needs.format.result }}" != "skipped" ]]; then
+            echo "Format check failed"
+            exit 1
+          fi
+          if [[ "${{ needs.lint.result }}" != "success" && \
+                "${{ needs.lint.result }}" != "skipped" ]]; then
+            echo "Lint failed"
+            exit 1
+          fi
+          if [[ "${{ needs.typecheck.result }}" != "success" && \
+                "${{ needs.typecheck.result }}" != "skipped" ]]; then
+            echo "Type check failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test.result }}" != "success" && \
+                "${{ needs.test.result }}" != "skipped" ]]; then
+            echo "Tests failed"
+            exit 1
+          fi
+          echo "All checks passed"

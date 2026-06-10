@@ -62,7 +62,9 @@ def output_path(request: pytest.FixtureRequest, tmp_path: Path):
 
         def resolve(filename: str) -> Path:
             return out_dir / filename
+
     else:
+
         def resolve(filename: str) -> Path:
             return tmp_path / filename
 

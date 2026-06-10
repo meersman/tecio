@@ -100,9 +100,15 @@ class TestWriteIJKZone:
             zone = r.zone[0]
             assert zone.zone_type == ZoneType.ORDERED
             assert zone.dimensions == (i, j, k)
-            np.testing.assert_allclose(zone.variable[0].values.ravel(), x.ravel(), rtol=_RTOL_DAT)
-            np.testing.assert_allclose(zone.variable[1].values.ravel(), y.ravel(), rtol=_RTOL_DAT)
-            np.testing.assert_allclose(zone.variable[3].values.ravel(), c.ravel(), rtol=_RTOL_DAT)
+            np.testing.assert_allclose(
+                zone.variable[0].values.ravel(), x.ravel(), rtol=_RTOL_DAT
+            )
+            np.testing.assert_allclose(
+                zone.variable[1].values.ravel(), y.ravel(), rtol=_RTOL_DAT
+            )
+            np.testing.assert_allclose(
+                zone.variable[3].values.ravel(), c.ravel(), rtol=_RTOL_DAT
+            )
 
     def test_write_ijk_int_arrays_preserve_values(self, output_path: Callable) -> None:
         """int32 and int16 inputs round-trip through DAT ASCII without loss.
@@ -126,7 +132,9 @@ class TestWriteIJKZone:
 
         path = output_path("test_dat_write_ijk_int.dat")
         with tecio.open(str(path), "w") as datfile:
-            datfile.write_ijk_zone(data=[x, c_i32, c_i16], variables=["x", "c_i32", "c_i16"])
+            datfile.write_ijk_zone(
+                data=[x, c_i32, c_i16], variables=["x", "c_i32", "c_i16"]
+            )
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
@@ -174,7 +182,9 @@ class TestWriteIJKZone:
             cc_var = zone.variable[3]
             assert cc_var.value_location == ValueLocation.CELL_CENTERED
             assert cc_var.values.size == (i - 1) * (j - 1) * (k - 1)
-            np.testing.assert_allclose(cc_var.values.ravel(), cc.ravel(), rtol=_RTOL_DAT)
+            np.testing.assert_allclose(
+                cc_var.values.ravel(), cc.ravel(), rtol=_RTOL_DAT
+            )
 
     def test_write_ijk_high_precision_sig_digits(self, output_path: Callable) -> None:
         """sig_digits=17 gives full float64 round-trip fidelity.
@@ -326,9 +336,15 @@ class TestWriteIJKZone:
             zone = r.zone[0]
             assert zone.zone_type == ZoneType.ORDERED
             assert zone.dimensions == (n, 1, 1)
-            np.testing.assert_allclose(zone.variable[0].values.ravel(), x, rtol=_RTOL_DAT)
-            np.testing.assert_allclose(zone.variable[1].values.ravel(), y, rtol=_RTOL_DAT)
-            np.testing.assert_allclose(zone.variable[2].values.ravel(), c, rtol=_RTOL_DAT)
+            np.testing.assert_allclose(
+                zone.variable[0].values.ravel(), x, rtol=_RTOL_DAT
+            )
+            np.testing.assert_allclose(
+                zone.variable[1].values.ravel(), y, rtol=_RTOL_DAT
+            )
+            np.testing.assert_allclose(
+                zone.variable[2].values.ravel(), c, rtol=_RTOL_DAT
+            )
 
     def test_write_ijk_point_3d(self, output_path: Callable) -> None:
         """3-D IJK zone in POINT format — values and dimensions verified.
@@ -357,9 +373,15 @@ class TestWriteIJKZone:
         with tecio.open(str(path), "r") as r:
             zone = r.zone[0]
             assert zone.dimensions == (i, j, k)
-            np.testing.assert_allclose(zone.variable[0].values.ravel(), x.ravel(), rtol=_RTOL_DAT)
-            np.testing.assert_allclose(zone.variable[1].values.ravel(), y.ravel(), rtol=_RTOL_DAT)
-            np.testing.assert_allclose(zone.variable[2].values.ravel(), z.ravel(), rtol=_RTOL_DAT)
+            np.testing.assert_allclose(
+                zone.variable[0].values.ravel(), x.ravel(), rtol=_RTOL_DAT
+            )
+            np.testing.assert_allclose(
+                zone.variable[1].values.ravel(), y.ravel(), rtol=_RTOL_DAT
+            )
+            np.testing.assert_allclose(
+                zone.variable[2].values.ravel(), z.ravel(), rtol=_RTOL_DAT
+            )
 
     def test_write_ijk_point_matches_block(self, output_path: Callable) -> None:
         """POINT and BLOCK produce identical read-back values for the same data.
@@ -387,7 +409,10 @@ class TestWriteIJKZone:
                     datapacking=packing,
                 )
 
-        with tecio.open(str(path_block), "r") as rb, tecio.open(str(path_point), "r") as rp:
+        with (
+            tecio.open(str(path_block), "r") as rb,
+            tecio.open(str(path_point), "r") as rp,
+        ):
             for vi in range(3):
                 np.testing.assert_allclose(
                     rb.zone[0].variable[vi].values.ravel(),
@@ -429,7 +454,9 @@ class TestWriteIJKZone:
             cc_var = zone.variable[3]
             assert cc_var.value_location == ValueLocation.CELL_CENTERED
             assert cc_var.values.size == (i - 1) * (j - 1) * (k - 1)
-            np.testing.assert_allclose(cc_var.values.ravel(), cc.ravel(), rtol=_RTOL_DAT)
+            np.testing.assert_allclose(
+                cc_var.values.ravel(), cc.ravel(), rtol=_RTOL_DAT
+            )
 
     def test_write_ijk_point_invalid_datapacking_raises(
         self, output_path: Callable
@@ -541,9 +568,7 @@ class TestWriteFEZone:
             assert zone.num_nodes == 4
             assert zone.num_elements == 2
             np.testing.assert_allclose(zone.variable[1].values, y, rtol=_RTOL_DAT)
-            np.testing.assert_allclose(
-                zone.variable[2].values, c.astype(np.float64)
-            )
+            np.testing.assert_allclose(zone.variable[2].values, c.astype(np.float64))
 
     def test_write_fe_quad(self, output_path: Callable) -> None:
         """FEQUADRILATERAL — float64 x/y, float32 scalar.
@@ -867,16 +892,17 @@ class TestWriteFEZone:
                     datapacking=packing,
                 )
 
-        with tecio.open(str(path_block), "r") as rb, tecio.open(str(path_point), "r") as rp:
+        with (
+            tecio.open(str(path_block), "r") as rb,
+            tecio.open(str(path_point), "r") as rp,
+        ):
             for vi in range(3):
                 np.testing.assert_allclose(
                     rb.zone[0].variable[vi].values.ravel(),
                     rp.zone[0].variable[vi].values.ravel(),
                     rtol=_RTOL_DAT,
                 )
-            np.testing.assert_array_equal(
-                rb.zone[0].node_map, rp.zone[0].node_map
-            )
+            np.testing.assert_array_equal(rb.zone[0].node_map, rp.zone[0].node_map)
 
     def test_write_fe_point_cell_centered(self, output_path: Callable) -> None:
         """FE zone in POINT format with a cell-centred variable.

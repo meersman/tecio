@@ -80,7 +80,7 @@ def _write_simple_plt(path: Path, n_zones: int = 1) -> dict:
 def _write_simple_dat(path: Path, n_zones: int = 1) -> dict:
     """Write a trivial DAT file with *n_zones* identical IJK zones."""
     x = np.linspace(0.0, 1.0, 6, dtype=np.float32)
-    c = (x ** 2).astype(np.float32)
+    c = (x**2).astype(np.float32)
 
     with tecio.open(str(path), "w", variables=["x", "c"], title="test_dat") as w:
         for i in range(n_zones):
@@ -160,11 +160,17 @@ class TestOpenWrite:
         with tecio.open(str(path), "r") as r:
             assert r.num_zones == 1  # not 3
 
-    @pytest.mark.parametrize("fmt,ext", [("szplt", ".szplt"), ("plt", ".plt"), ("dat", ".dat")])
+    @pytest.mark.parametrize(
+        "fmt,ext", [("szplt", ".szplt"), ("plt", ".plt"), ("dat", ".dat")]
+    )
     def test_write_all_formats(self, fmt: str, ext: str, tmp_path: Path) -> None:
         """Mode ``'w'`` works for all supported extensions."""
         path = tmp_path / f"out{ext}"
-        writer_fn = {"szplt": _write_simple_szplt, "plt": _write_simple_plt, "dat": _write_simple_dat}[fmt]
+        writer_fn = {
+            "szplt": _write_simple_szplt,
+            "plt": _write_simple_plt,
+            "dat": _write_simple_dat,
+        }[fmt]
         writer_fn(path)
         with tecio.open(str(path), "r") as r:
             assert r.num_vars == 2
@@ -313,8 +319,10 @@ class TestAppendWrite:
         path = tmp_path / "append_fe.szplt"
         _write_simple_szplt(path)
 
-        pts = np.array([[0.0,0.0],[1.0,0.0],[0.5,1.0],[1.0,1.0]], dtype=np.float32)
-        nodes = np.array([[1,2,3],[2,4,3]], dtype=np.int32)
+        pts = np.array(
+            [[0.0, 0.0], [1.0, 0.0], [0.5, 1.0], [1.0, 1.0]], dtype=np.float32
+        )
+        nodes = np.array([[1, 2, 3], [2, 4, 3]], dtype=np.int32)
         x, c = pts[:, 0], np.zeros(4, dtype=np.float32)
 
         with tecio.open(str(path), "a") as w:
@@ -354,7 +362,7 @@ class TestAppendWrite:
 
         with tecio.open(str(src), "r") as r:
             orig_vars = r.variables
-            r.zone[0].num_nodes
+            # r.zone[0].num_nodes
 
         np.zeros(10, dtype=np.float32)
         with tecio.open(str(src), "a") as w:
@@ -364,10 +372,10 @@ class TestAppendWrite:
             passive = [True] * n_vars
             passive[0] = passive[1] = passive[2] = False  # x, y, z
             pts = np.zeros((10, 3), dtype=np.float32)
-            nodes = np.array([[i+1, i+2] for i in range(9)], dtype=np.int32)
+            nodes = np.array([[i + 1, i + 2] for i in range(9)], dtype=np.int32)
             w.write_fe_zone(
                 zone_type=ZoneType.FELINESEG,
-                data=[pts[:,0], pts[:,1], pts[:,2]],
+                data=[pts[:, 0], pts[:, 1], pts[:, 2]],
                 node_map=nodes,
                 passive_vars=passive,
                 title="tiny_new",
@@ -449,14 +457,10 @@ class TestAppendReadWrite:
                 r.zone[1].variable[0].values.ravel(), x_new, rtol=_RTOL_F32
             )
 
-    def test_read_interface_exposes_original_metadata(
-        self, tmp_path: Path
-    ) -> None:
+    def test_read_interface_exposes_original_metadata(self, tmp_path: Path) -> None:
         """``num_vars``, ``variables``, ``title``, ``file_type`` match the source."""
         path = tmp_path / "arw_meta.szplt"
-        with tecio.open(
-            str(path), "w", title="MyTitle", file_type=FileType.FULL
-        ) as w:
+        with tecio.open(str(path), "w", title="MyTitle", file_type=FileType.FULL) as w:
             x = np.linspace(0.0, 1.0, 5, dtype=np.float32)
             w.write_ijk_zone(data=[x, x], variables=["x", "c"])
 
@@ -585,9 +589,30 @@ class TestOpenErrors:
         from tecio.libtecio import ValueLocation as VL
         from tecio.libtecio import ZoneType as ZT
 
-        pts = np.array([[0.25,0],[0.75,0],[1,0.25],[1,0.75],[0.75,1],[0.25,1],[0,0.75],[0,0.25]], dtype=np.float32)
-        x, y = pts[:,0], pts[:,1]
-        face_pairs = np.array([[2,1],[3,2],[4,3],[5,4],[6,5],[7,6],[8,7],[1,8]])
+        pts = np.array(
+            [
+                [0.25, 0],
+                [0.75, 0],
+                [1, 0.25],
+                [1, 0.75],
+                [0.75, 1],
+                [0.25, 1],
+                [0, 0.75],
+                [0, 0.25],
+            ],
+            dtype=np.float32,
+        )
+        x, y = pts[:, 0], pts[:, 1]
+        face_pairs = np.array([
+            [2, 1],
+            [3, 2],
+            [4, 3],
+            [5, 4],
+            [6, 5],
+            [7, 6],
+            [8, 7],
+            [1, 8],
+        ])
         nf = len(face_pairs)
         fn_counts = np.full(nf, 2, dtype=np.int32)
         fn_nodes = face_pairs.ravel().astype(np.int32)
@@ -597,8 +622,11 @@ class TestOpenErrors:
 
         libtecio.tecini142(str(path), variables=["x", "y", "c"])
         libtecio.tecpolyzne142(
-            "oct", ZT.FEPOLYGON,
-            num_nodes=8, num_faces=nf, num_elements=1,
+            "oct",
+            ZT.FEPOLYGON,
+            num_nodes=8,
+            num_faces=nf,
+            num_elements=1,
             total_num_face_nodes=len(fn_nodes),
             value_locations=[VL.NODAL, VL.NODAL, VL.CELL_CENTERED],
         )
@@ -618,4 +646,5 @@ class TestOpenErrors:
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(pytest.main([__file__, "-v"] + sys.argv[1:]))

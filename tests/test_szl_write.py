@@ -69,10 +69,10 @@ class TestWriteIJKZone:
         """
         i, j, k = 3, 4, 5
         x, y, z = create_ordered((i, j, k))
-        x = x.astype(np.float32)                              # → FLOAT
-        y = y.astype(np.float64)                              # → DOUBLE
-        z = z.astype(np.float32)                              # → FLOAT
-        c = scalar_field(x, y, z).astype(np.float64)          # → DOUBLE
+        x = x.astype(np.float32)  # → FLOAT
+        y = y.astype(np.float64)  # → DOUBLE
+        z = z.astype(np.float32)  # → FLOAT
+        c = scalar_field(x, y, z).astype(np.float64)  # → DOUBLE
 
         path = output_path("test_szl_write_ijk_3d.szplt")
         with tecio.open(str(path), "w") as szlfile:
@@ -93,8 +93,12 @@ class TestWriteIJKZone:
             assert zone.variable[1].data_type == DataType.DOUBLE
             assert zone.variable[2].data_type == DataType.FLOAT
             assert zone.variable[3].data_type == DataType.DOUBLE
-            np.testing.assert_allclose(zone.variable[0].values.ravel(), x.ravel(), rtol=_RTOL_F32)
-            np.testing.assert_allclose(zone.variable[1].values.ravel(), y.ravel(), rtol=_RTOL_F64)
+            np.testing.assert_allclose(
+                zone.variable[0].values.ravel(), x.ravel(), rtol=_RTOL_F32
+            )
+            np.testing.assert_allclose(
+                zone.variable[1].values.ravel(), y.ravel(), rtol=_RTOL_F64
+            )
 
     def test_write_ijk_cell_centered(self, output_path: Callable) -> None:
         """3-D zone with nodal coordinates and a cell-centered scalar.
@@ -136,7 +140,9 @@ class TestWriteIJKZone:
             assert cc_var.value_location == ValueLocation.CELL_CENTERED
             assert cc_var.data_type == DataType.DOUBLE
             assert cc_var.values.size == (i - 1) * (j - 1) * (k - 1)
-            np.testing.assert_allclose(cc_var.values.ravel(), cc.ravel(), rtol=_RTOL_F64)
+            np.testing.assert_allclose(
+                cc_var.values.ravel(), cc.ravel(), rtol=_RTOL_F64
+            )
 
     def test_write_ijk_int32_variable(self, output_path: Callable) -> None:
         """Ordered zone with an INT32 variable — round-trip verified exactly.
@@ -382,9 +388,9 @@ class TestWriteFEZone:
         - Node map verified with ``assert_array_equal`` — stored exactly
         """
         x, y, nodes = create_FE_lineseg()
-        x = x.astype(np.float32)                           # FLOAT
-        y = y.astype(np.float32)                           # FLOAT
-        c = np.sin(2 * np.pi * x).astype(np.float64)      # DOUBLE
+        x = x.astype(np.float32)  # FLOAT
+        y = y.astype(np.float32)  # FLOAT
+        c = np.sin(2 * np.pi * x).astype(np.float64)  # DOUBLE
 
         path = output_path("test_szl_write_fe_lineseg.szplt")
         with tecio.open(str(path), "w") as szlfile:
@@ -419,9 +425,9 @@ class TestWriteFEZone:
           ``assert_allclose`` (floats) and ``assert_array_equal`` (integers)
         """
         x, y, nodes = create_FE_tri()
-        x = x.astype(np.float32)                                   # FLOAT
-        y = y.astype(np.float64)                                   # DOUBLE
-        c = (scalar_field(x, y) * 1000).astype(np.int32)          # INT32
+        x = x.astype(np.float32)  # FLOAT
+        y = y.astype(np.float64)  # DOUBLE
+        c = (scalar_field(x, y) * 1000).astype(np.int32)  # INT32
 
         path = output_path("test_szl_write_fe_tri.szplt")
         with tecio.open(str(path), "w") as szlfile:
@@ -457,9 +463,9 @@ class TestWriteFEZone:
         - node_map shape: ``(num_elements, 4)``
         """
         x, y, nodes = create_FE_quad()
-        x = x.astype(np.float64)                            # DOUBLE
-        y = y.astype(np.float64)                            # DOUBLE
-        c = scalar_field(x, y).astype(np.float32)           # FLOAT
+        x = x.astype(np.float64)  # DOUBLE
+        y = y.astype(np.float64)  # DOUBLE
+        c = scalar_field(x, y).astype(np.float32)  # FLOAT
 
         path = output_path("test_szl_write_fe_quad.szplt")
         with tecio.open(str(path), "w") as szlfile:
@@ -492,10 +498,10 @@ class TestWriteFEZone:
           ``assert_array_equal`` to confirm 1-based indices survived intact
         """
         x, y, z, nodes = create_FE_tet()
-        x = x.astype(np.float32)                            # FLOAT
-        y = y.astype(np.float32)                            # FLOAT
-        z = z.astype(np.float32)                            # FLOAT
-        c = scalar_field(x, y).astype(np.float64)           # DOUBLE
+        x = x.astype(np.float32)  # FLOAT
+        y = y.astype(np.float32)  # FLOAT
+        z = z.astype(np.float32)  # FLOAT
+        c = scalar_field(x, y).astype(np.float64)  # DOUBLE
 
         path = output_path("test_szl_write_fe_tet.szplt")
         with tecio.open(str(path), "w") as szlfile:
@@ -529,10 +535,10 @@ class TestWriteFEZone:
         - SZL stores INT16 exactly; verified with ``assert_array_equal``
         """
         x, y, z, nodes = create_FE_pyramid()
-        x = x.astype(np.float32)                                    # FLOAT
-        y = y.astype(np.float64)                                    # DOUBLE
-        z = z.astype(np.float32)                                    # FLOAT
-        c = (scalar_field(x, y) * 100).astype(np.int16)            # INT16
+        x = x.astype(np.float32)  # FLOAT
+        y = y.astype(np.float64)  # DOUBLE
+        z = z.astype(np.float32)  # FLOAT
+        c = (scalar_field(x, y) * 100).astype(np.int16)  # INT16
 
         path = output_path("test_szl_write_fe_pyramid.szplt")
         with tecio.open(str(path), "w") as szlfile:
@@ -565,10 +571,10 @@ class TestWriteFEZone:
           material tags limited to 256 categories
         """
         x, y, z, nodes = create_FE_prism()
-        x = x.astype(np.float32)                                         # FLOAT
-        y = y.astype(np.float64)                                         # DOUBLE
-        z = z.astype(np.float64)                                         # DOUBLE
-        c = ((scalar_field(x, y) + 1.0) * 127).astype(np.uint8)         # BYTE
+        x = x.astype(np.float32)  # FLOAT
+        y = y.astype(np.float64)  # DOUBLE
+        z = z.astype(np.float64)  # DOUBLE
+        c = ((scalar_field(x, y) + 1.0) * 127).astype(np.uint8)  # BYTE
 
         path = output_path("test_szl_write_fe_prism.szplt")
         with tecio.open(str(path), "w") as szlfile:
@@ -599,10 +605,10 @@ class TestWriteFEZone:
         - Value verification: float64 z and int32 c both round-trip exactly
         """
         x, y, z, faces, nodes = create_FE_brick()
-        x = x.astype(np.float32)                               # FLOAT
-        y = y.astype(np.float32)                               # FLOAT
-        z = z.astype(np.float64)                               # DOUBLE
-        c = (scalar_field(x, y) * 1000).astype(np.int32)      # INT32
+        x = x.astype(np.float32)  # FLOAT
+        y = y.astype(np.float32)  # FLOAT
+        z = z.astype(np.float64)  # DOUBLE
+        c = (scalar_field(x, y) * 1000).astype(np.int32)  # INT32
 
         path = output_path("test_szl_write_fe_brick.szplt")
         with tecio.open(str(path), "w") as szlfile:
@@ -642,7 +648,7 @@ class TestWriteFEZone:
         x = x.astype(np.float32)
         y = y.astype(np.float32)
         z = z.astype(np.float32)
-        c = np.array([100, 200], dtype=np.int16)       # CELL_CENTERED INT16
+        c = np.array([100, 200], dtype=np.int16)  # CELL_CENTERED INT16
 
         path = output_path("test_szl_write_fe_face_neighbors.szplt")
         with tecio.open(str(path), "w") as szlfile:
