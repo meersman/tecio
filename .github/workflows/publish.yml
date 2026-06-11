@@ -1,0 +1,155 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*.*.*"       # real release — publishes to PyPI and creates GitHub release
+      - "v*.*.*-test"  # test release — publishes to TestPyPI only
+
+jobs:
+  check-ci:
+    name: Verify CI passed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CI workflow status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: checks } = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha,
+            });
+
+            const ci = checks.check_runs.find(r => r.name === "CI passed");
+
+            if (!ci) {
+              core.setFailed("CI workflow has not run for this commit.");
+            } else if (ci.conclusion !== "success") {
+              core.setFailed(`CI passed with status: ${ci.conclusion}`);
+            } else {
+              core.info("CI passed — proceeding with publish.");
+            }
+
+  build:
+    name: Build distribution
+    needs: check-ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Build wheel and sdist
+        run: python -m build
+
+      - name: Check distribution metadata
+        run: twine check dist/*
+
+      - name: Upload distribution artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  verify:
+    name: Verify wheel install (Python ${{ matrix.python-version }})
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Set TECIO_LIB
+        run: |
+          echo "TECIO_LIB=${{ github.workspace }}/lib/linux_x86_64/libtecio.so" >> "$GITHUB_ENV"
+
+      - name: Install from wheel
+        run: pip install dist/*.whl
+
+      - name: Verify import
+        run: python -c "import tecio; print(f'tecio {tecio.__version__} installed successfully')"
+
+  publish:
+    name: Publish to PyPI
+    needs: [build, verify]
+    if: "!contains(github.ref, '-test')"
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/tecio-python
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-test:
+    name: Publish to TestPyPI
+    needs: [build, verify]
+    if: contains(github.ref, '-test')
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/tecio-python
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  github-release:
+    name: Create GitHub Release
+    needs: publish
+    if: "!contains(github.ref, '-test')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

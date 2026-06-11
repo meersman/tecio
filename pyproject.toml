@@ -3,26 +3,40 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tecio"
+name = "tecio-python"
 version = "0.0.1"
-description = "Scientific data processing tools"
+description = "Python interface for reading and writing Tecplot data files"
 
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "numpy",
 ]
-keywords = ["tecplot", "tecio", "pytecplot", "cfd", "python", "automation"]
+keywords = ["tecplot", "tecio", "cfd", "data", "visualization", "szplt", "plt"]
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Environment :: Console",
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
+    
 ]
 
 [project.urls]
 Homepage = "https://github.com/meersman/tecio"
 Documentation = "https://meersman.github.io/tecio/"
+Repository = "https://github.com/meersman/tecio"
 Issues = "https://github.com/meersman/tecio/issues"
+Changelog = "https://github.com/meersman/tecio/blob/main/docs/changelog.md"
 
 [project.scripts]
 teconvert = "tecio.cli.teconvert:main"
@@ -37,6 +51,8 @@ tecsplit = "tecio.cli.tecsplit:main"
 
 [project.optional-dependencies]
 dev = [
+    "build",
+    "twine",
     "ruff",
     "ty",
     "pytest",
@@ -51,7 +67,7 @@ docs = [
 
 [tool.setuptools.packages.find]
 include = ["tecio*"]
-exclude = ["demos*", "archive*", "test*"]
+exclude = ["archive*", "test*"]
 
 [tool.ruff]
 line-length = 88
@@ -64,13 +80,13 @@ docstring-code-format = true
 
 [tool.ruff.lint]
 select = [
-   "E",  # pycodestyle
-   "D",  # pydocstyle
-   "F",  # Pyflakes
-   "UP",  # pyupgrade
-   "B",  # flake8-bugbear
+   "E",    # pycodestyle
+   "D",    # pydocstyle
+   "F",    # Pyflakes
+   "UP",   # pyupgrade
+   "B",    # flake8-bugbear
    "SIM",  # flake8-simplify
-   "I",  # isort
+   "I",    # isort
 ]
 ignore = ["D203", "D213", "SIM105"]
 

@@ -5,7 +5,7 @@ PACKAGE = tecio
 	install install-dev uninstall \
 	format lint typecheck \
 	test coverage testclean \
-	clean \
+	build distclean clean \
 	versions \
 
 # Default target
@@ -29,6 +29,9 @@ help:
 	@echo "    Cleanup:"
 	@echo "      make clean            Remove generated files"
 	@echo "      make testclean        Remove test artefacts"
+	@echo "      make distclean        Remove distribution build artifacts"
+	@echo "    Distribution:"
+	@echo "      make build            Build wheel and sdist into dist/"
 	@echo ""
 
 # Install package dependencies
@@ -98,6 +101,17 @@ clean:
 	find . -type f -name "test*.dat" -delete
 	rm -rf build/ dist/ .coverage htmlcov/
 	@echo "✓ Cleanup complete"
+
+# Build wheel and sdist distribution artifacts
+build:
+	$(PYTHON) -m build
+	twine check dist/*
+	@echo "✓ Distribution artifacts built in dist/"
+
+# Remove distribution build artifacts only
+distclean:
+	rm -rf build/ dist/ *.egg-info
+	@echo "✓ Distribution artifacts removed"
 
 # Show current versions of tools
 versions:
