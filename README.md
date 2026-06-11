@@ -1,6 +1,6 @@
 # tecio
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![CI](https://github.com/meersman/tecio/actions/workflows/ci.yml/badge.svg)](https://github.com/meersman/tecio/actions/workflows/ci.yml)
 [![Codecov](https://codecov.io/gh/meersman/tecio/branch/main/graph/badge.svg)](https://codecov.io/gh/meersman/tecio)
 [![Docs](https://github.com/meersman/tecio/actions/workflows/docs.yml/badge.svg)](https://meersman.github.io/tecio)
