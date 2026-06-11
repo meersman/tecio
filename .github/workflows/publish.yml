@@ -3,8 +3,8 @@ name: Publish to PyPI
 on:
   push:
     tags:
-      - "v*.*.*"       # real release — publishes to PyPI and creates GitHub release
-      - "v*.*.*-test"  # test release — publishes to TestPyPI only
+      - "v*.*.*"
+      - "v*.*.*-test"
 
 jobs:
   check-ci:
