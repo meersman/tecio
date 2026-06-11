@@ -68,15 +68,15 @@ tecio
 │   ├── tecslice.py
 │   ├── tecsplit.py
 │   └── tecstats.py
-├── dat                 # Higher level Tecplot ascii API
+├── dat                 # Tecplot ASCII Read/Write API
 │   ├── __init__.py
 │   ├── _read.py
 │   └── _write.py
-├── plt
+├── plt                 # PLT Read/Write API
 │   ├── __init__.py
 │   ├── _read.py
 │   └── _write.py
-├── szl                 # Higher level SZL file API
+├── szl                 # SZL Read/Write API
 │   ├── __init__.py
 │   ├── _read.py
 │   └── _write.py
@@ -84,16 +84,22 @@ tecio
 └── utils.py
 ```
 
-## Development
+## Contributing
 
-```bash
-make install-dev  # Install with development dependencies
-make test         # Run unit tests
-make check        # Run format, lint and typechecks
-```
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
  
 ## References
 
 Tecplot data format specification: https://tecplot.azureedge.net/products/360/current/360-data-format.html
 
 Get tecio: https://tecplot.com/products/tecio-library/
+
+## Disclaimer
+
+This project is an independent, community-developed Python interface for the
+TecIO library and is not affiliated with, endorsed by, or supported by
+Tecplot, Inc. in any way.
+
+Tecplot and TecIO are trademarks of Tecplot, Inc. Use of the TecIO library
+requires a separate license from Tecplot, Inc. See
+[tecplot.com](https://www.tecplot.com) for licensing information.
