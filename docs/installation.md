@@ -5,11 +5,10 @@ The {mod}`tecio` package was written and tested for Linux and maxOS operating
 systems. In principle, any system that is capable of running Tecplot with a
 modern Python install should be able to run {mod}`tecio`. 
 
-The recommended installation method is via the pre-built wheel distributed with
-each release:
+The recommended installation method is via PyPI:
 
 ```bash
-pip install tecio-<version>-py3-none-any.whl
+pip install tecio-python
 ```
 
 This will also install or upgrade the required Python dependency,
@@ -20,11 +19,18 @@ On systems where you do not have elevated privileges add the `--user` flag so
 the package is installed into your home directory instead of the system-wide
 site-packages:
 
-    pip install --user tecio-<version>-py3-none-any.whl
+    pip install --user tecio-python
 
 The installed scripts (`tecdump`, `tecstats`, etc.) will be placed in
 `~/.local/bin` on Linux and macOS. Make sure that directory is on your `PATH`.
 :::
+
+Alternatively, install a specific version directly from the wheel distributed
+with each [GitHub release](https://github.com/meersman/tecio/releases):
+
+```bash
+pip install tecio-<version>-py3-none-any.whl
+```
 
 If you have cloned the repository and prefer to install from source:
 

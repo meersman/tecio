@@ -4,102 +4,101 @@
 [![CI](https://github.com/meersman/tecio/actions/workflows/ci.yml/badge.svg)](https://github.com/meersman/tecio/actions/workflows/ci.yml)
 [![Codecov](https://codecov.io/gh/meersman/tecio/branch/main/graph/badge.svg)](https://codecov.io/gh/meersman/tecio)
 [![Docs](https://github.com/meersman/tecio/actions/workflows/docs.yml/badge.svg)](https://meersman.github.io/tecio)
+[![PyPI](https://img.shields.io/pypi/v/tecio-python)](https://pypi.org/project/tecio-python)
+[![Python](https://img.shields.io/pypi/pyversions/tecio-python)](https://pypi.org/project/tecio-python)
 
 Python interface for reading and writing Tecplot data files.
 
 ## Overview
 
-This package wraps Tecplot's TecIO C-library functions for working
-with Tecplot binary formats (szplt and plt).
+`tecio` wraps Tecplot's TecIO C library to provide a Python API for
+reading and writing Tecplot binary formats (`.szplt`, `.plt`) and ASCII
+(`.dat`). It also includes command-line tools for common file operations
+such as converting formats, extracting zones, and computing statistics.
 
-**Requirements:** Python 3.10+, NumPy, Tecplot 360
+**Requirements:** Python 3.10+, NumPy, Tecplot 360 (or the standalone TecIO library)
 
-## Example Usage
+---
+
+## Installation
+
+```bash
+pip install tecio-python
+```
+
+The TecIO shared library (`libtecio.so` / `libtecio.dylib`) is not bundled
+with this package and must be provided separately via a Tecplot 360
+installation or the standalone TecIO library. Set the `TECIO_LIB`
+environment variable to point to the library if it is not on your system
+path:
+
+```bash
+export TECIO_LIB=/path/to/libtecio.so     # Linux
+export TECIO_LIB=/path/to/libtecio.dylib  # macOS
+```
+
+## Quick start
 
 ```python
 import tecio
-from tecio.libtecio import ZoneType
+import numpy as np
 
-# Create szplt reader object for access-on-demand
-szl = tecio.open("flow.szplt")
+x = np.linspace(0, 2 * np.pi, 100)
+y = np.sin(x)
 
-# List available variables in the dataset
-print(szl.variables)
-# ['x', 'y', 'z', 'uvel', 'vvel', 'wvel', 'pres', 'dens', 'temp']
-
-# Create nondimensional pressure variable
-pressure = [
-    szl.zone[i].pres / szl.auxdata["Common.ReferencePressure"]
-    for i in range(len(szl.zone))
-]
-
-# Write out grid and nodimensional pressure variable
-with tecio.open("pres.szplt", "w") as writer:
-    for i in range(len(x)):
-        if szl.zone[i].zone_type == ZoneType.ORDERED:
-            writer.write_ijk_zone(
-                title=szl.zone[i].title,
-                variables=["x", "y", "z", "pressure"],
-                data=[szl.zone[i].x, szl.zone[i].y, szl.zone[i].z, pressure[i]],
-            )
-        else:
-            writer.write_fe_zone(
-                title=szl.zone[i].title,
-                variables=["x", "y", "z", "pressure"],
-                data=[x[i], y[i], z[i], pressure[i]],
-                node_map=szl.zone[i].node_map,
-            )
+with tecio.open("sine.szplt", "w") as tec:
+    tec.write_ijk_zone(data=[x, y], variables=["x", "y"])
 ```
 
-## Structure
+Reading a file:
 
-```text
-tecio
-├── __init__.py
-├── _io.py
-├── cli                 # Console scripts
-│   ├── __init__.py
-│   ├── tecdump.py
-│   ├── tecextract.py
-│   ├── tecfix.py
-│   ├── tecmerge.py
-│   ├── teconvert.py
-│   ├── tecscale.py
-│   ├── tecslice.py
-│   ├── tecsplit.py
-│   └── tecstats.py
-├── dat                 # Tecplot ASCII Read/Write API
-│   ├── __init__.py
-│   ├── _read.py
-│   └── _write.py
-├── plt                 # PLT Read/Write API
-│   ├── __init__.py
-│   ├── _read.py
-│   └── _write.py
-├── szl                 # SZL Read/Write API
-│   ├── __init__.py
-│   ├── _read.py
-│   └── _write.py
-├── libtecio.py         # TecIO Python wrapper functions
-└── utils.py
+```python
+with tecio.open("sine.szplt", "r") as tec:
+    print(tec.variables)   # ['x', 'y']
+    x = tec.zone[0].variable[0].values
+    y = tec.zone[0].variable[1].values
 ```
+
+## API
+
+All file access goes through `tecio.open`, which selects the correct
+format handler from the file extension and returns a context manager:
+
+| Mode | Description |
+|------|-------------|
+| `"r"` | Read an existing file |
+| `"w"` | Write a new file |
+| `"x"` | Write, failing if the file already exists |
+| `"a"` | Append new zones to an existing file |
+| `"a+"` | Append and read in the same session |
+
+Supported formats:
+
+| Extension | Format |
+|-----------|--------|
+| `.szplt` | Tecplot SZL binary (subzone-loadable) |
+| `.plt` / `.bin` | Tecplot PLT binary |
+| `.dat` / `.tec` | Tecplot ASCII |
+
+---
 
 ## Contributing
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
- 
+
+---
+
 ## References
 
-Tecplot data format specification: https://tecplot.azureedge.net/products/360/current/360-data-format.html
+- [Tecplot data format specification](https://tecplot.azureedge.net/products/360/current/360-data-format.html)
+- [TecIO library](https://tecplot.com/products/tecio-library/)
+- [Full documentation](https://meersman.github.io/tecio)
 
-Get tecio: https://tecplot.com/products/tecio-library/
+---
 
 ## Disclaimer
 
-This project is an independent, community-developed Python interface for the
-TecIO library and is not affiliated with, endorsed by, or supported by
-Tecplot, Inc. in any way.
-
-Tecplot and TecIO are trademarks of Tecplot, Inc. Use of the TecIO library
-requires a separate license from Tecplot, Inc. See
-[tecplot.com](https://www.tecplot.com) for licensing information.
+This project is an independent open source library and is not affiliated
+with, endorsed by, or supported by Tecplot, Inc. in any way. Tecplot and
+TecIO are trademarks of Tecplot, Inc. Use of the TecIO library requires a
+separate license from Tecplot, Inc.

@@ -85,6 +85,7 @@ installation
 quickstart
 api/index
 api/cli
+changelog
 genindex
 ```
 
