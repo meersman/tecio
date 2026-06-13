@@ -264,28 +264,57 @@ def _kv_split(text: str) -> dict[str, str]:
 
 
 def _parse_index_list(text: str) -> list[int]:
-    """Parse ``[1,3,5]`` into a list of 0-based integers.
+    """Parse a bracketed index list (with optional range notation) into 0-based ints.
 
-    Example:
-        >>> indices = _parse_index_list("[1,3,5]")
+    Handles both comma-separated individuals and inclusive ranges::
+
+        "[1,3,5]"    → [0, 2, 4]
+        "[1-3,5]"    → [0, 1, 2, 4]
+        "[2-4]"      → [1, 2, 3]
+
+    Args:
+        text: Raw value string including the surrounding brackets, e.g.
+              ``"[1-3,5]"`` or ``"[2]"``.
+
+    Returns:
+        List of 0-based variable indices in the order they were listed.
+
     """
     text = text.strip().lstrip("[").rstrip("]")
-    result = []
+    result: list[int] = []
     for tok in re.split(r"[,\s]+", text):
         tok = tok.strip()
-        if tok:
-            try:
+        if not tok:
+            continue
+        if "-" in tok:
+            # Range notation: "N-M" (both 1-based, inclusive).
+            parts = tok.split("-", 1)
+            with contextlib.suppress(ValueError):
+                start_1 = int(parts[0])
+                end_1 = int(parts[1])
+                result.extend(range(start_1 - 1, end_1))  # → 0-based
+        else:
+            with contextlib.suppress(ValueError):
                 result.append(int(tok) - 1)  # 1-based → 0-based
-            except ValueError:
-                pass
     return result
 
 
 def _parse_varlocation(text: str) -> dict[int, ValueLocation]:
-    """Parse ``VARLOCATION=([i,j,...]=CELLCENTERED)`` → ``{0-based: loc}``.
+    """Parse ``VARLOCATION=([i-j,...]=CELLCENTERED)`` → ``{0-based: loc}``.
 
-    Example:
-        >>> locs = _parse_varlocation("([3,4]=CELLCENTERED)")
+    Handles both individual indices and inclusive range notation::
+
+        "([3,4]=CELLCENTERED)"   → {2: CELL_CENTERED, 3: CELL_CENTERED}
+        "([3-5]=CELLCENTERED)"   → {2: CELL_CENTERED, 3: CELL_CENTERED,
+                                    4: CELL_CENTERED}
+
+    Args:
+        text: Raw VARLOCATION value string, e.g.
+              ``"([3-5]=CELLCENTERED)"``.
+
+    Returns:
+        Dict mapping 0-based variable index to :class:`ValueLocation`.
+
     """
     result: dict[int, ValueLocation] = {}
     for m in re.finditer(r"\[([^\]]+)\]\s*=\s*(\w+)", text):
@@ -296,23 +325,42 @@ def _parse_varlocation(text: str) -> dict[int, ValueLocation]:
             if loc_str == "CELLCENTERED"
             else ValueLocation.NODAL
         )
-        for tok in re.split(r"[,\s]+", indices_str):
-            tok = tok.strip()
-            if tok:
-                with contextlib.suppress(ValueError):
-                    result[int(tok) - 1] = loc
+        for idx_0based in _parse_index_list(f"[{indices_str}]"):
+            result[idx_0based] = loc
     return result
 
 
 def _parse_varsharelist(text: str) -> dict[int, int]:
-    """Parse ``VARSHARELIST=([i]=z,[j]=z)`` → ``{0-based var: 1-based zone}``.
+    """Parse ``VARSHARELIST=([i-j]=z,...)`` → ``{0-based var: 1-based zone}``.
 
-    Example:
-        >>> share = _parse_varsharelist("([1]=2,[2]=2)")
+    Handles both individual indices and inclusive range notation::
+
+        "([1]=2,[3]=2)"   → {0: 2, 2: 2}
+        "([1-2]=1)"       → {0: 1, 1: 1}
+        "([1-3,5]=2)"     → {0: 2, 1: 2, 2: 2, 4: 2}
+
+    Note that the bracketed group may contain either a single integer or a
+    hyphen-separated range.  Mixed forms such as ``[1-3,5]`` are also
+    produced by some writers.
+
+    Args:
+        text: Raw VARSHARELIST value string including its outer parentheses,
+              e.g. ``"([1-2]=1,[4]=2)"``.
+
+    Returns:
+        Dict mapping 0-based variable index to 1-based source zone number.
+
     """
     result: dict[int, int] = {}
-    for m in re.finditer(r"\[(\d+)\]\s*=\s*(\d+)", text):
-        result[int(m.group(1)) - 1] = int(m.group(2))  # 0-based var, 1-based zone
+    # Each match captures one bracketed group and the zone it maps to.
+    # Group 1: everything inside [...] — may be "N", "N-M", or "N-M,P,..."
+    # Group 2: the zone number after "=".
+    for m in re.finditer(r"\[([^\]]+)\]\s*=\s*(\d+)", text):
+        zone_1based = int(m.group(2))
+        indices_str = m.group(1)
+        # Reuse _parse_index_list to handle ranges and comma lists uniformly.
+        for idx_0based in _parse_index_list(f"[{indices_str}]"):
+            result[idx_0based] = zone_1based
     return result
 
 

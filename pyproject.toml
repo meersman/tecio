@@ -45,7 +45,6 @@ tecmerge = "tecio.cli.tecmerge:main"
 tecscale = "tecio.cli.tecscale:main"
 tecslice = "tecio.cli.tecslice:main"
 tecstats = "tecio.cli.tecstats:main"
-tecsplit = "tecio.cli.tecsplit:main"
 
 [project.optional-dependencies]
 dev = [

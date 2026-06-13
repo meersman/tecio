@@ -18,5 +18,4 @@
    tecscale
    tecslice
    tecstats
-   tecsplit
 ```

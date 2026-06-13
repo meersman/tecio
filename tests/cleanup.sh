@@ -7,3 +7,4 @@ rm -f tp?*
 rm -f batch.log
 rm -f batch.log
 rm -f *.csv
+rm -rf output/
