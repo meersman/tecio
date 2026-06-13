@@ -20,9 +20,7 @@ jobs:
               repo: context.repo.repo,
               ref: context.sha,
             });
-
             const ci = checks.check_runs.find(r => r.name === "CI passed");
-
             if (!ci) {
               core.setFailed("CI workflow has not run for this commit.");
             } else if (ci.conclusion !== "success") {
@@ -68,7 +66,7 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -144,13 +142,34 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Extract release notes
+        id: notes
+        run: |
+          VERSION="${{ github.ref_name }}"
+          NOTES_FILE="docs/changelog/${VERSION}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            grep -v "^(" "$NOTES_FILE" | grep -v "^# " > release_notes.md
+            echo "found=true" >> $GITHUB_OUTPUT
+          else
+            echo "No changelog file at ${NOTES_FILE} — using auto-generated notes."
+            echo "found=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Download distribution artifacts
         uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (from changelog)
+        if: steps.notes.outputs.found == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body_path: release_notes.md
+
+      - name: Create GitHub Release (auto-generated notes)
+        if: steps.notes.outputs.found == 'false'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
