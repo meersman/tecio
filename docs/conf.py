@@ -102,3 +102,10 @@ html_theme_options = {
     "pygments_light_style": "github-light",
     "pygments_dark_style": "paraiso-dark",
 }
+
+html_context = {
+    "metatags": (
+        '<meta name="google-site-verification" '
+        'content="_D_nIgTnARlCuz1yYyFmR8r2dT6xcivKJ_jF16URI_w" />'
+    )
+}
