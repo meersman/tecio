@@ -3,6 +3,7 @@
 Wraps the TecIO C library for ``.szplt``, ``.plt``, and ``.dat`` formats.
 Requires Python 3.10+, NumPy, and a Tecplot 360 installation.
 """
+# ruff: noqa: I001
 
 from importlib import metadata
 
@@ -13,11 +14,18 @@ except metadata.PackageNotFoundError:
 
 from . import cli, dat, libtecio, plt, szl, utils
 from ._io import AppendReadWrite, AppendWrite, open
+from ._dataset import Dataset
+from ._variable import Variable
+from ._zone import AuxData, Zone
 
 # Ensure tecio.open displays as the canonical public name in docs and help().
 open.__module__ = "tecio"
 AppendWrite.__module__ = "tecio"
 AppendReadWrite.__module__ = "tecio"
+Dataset.__module__ = "tecio"
+Zone.__module__ = "tecio"
+Variable.__module__ = "tecio"
+AuxData.__module__ = "tecio"
 
 __all__ = [
     "libtecio",
@@ -29,5 +37,9 @@ __all__ = [
     "cli",
     "AppendWrite",
     "AppendReadWrite",
+    "Dataset",
+    "Zone",
+    "Variable",
+    "AuxData",
     "__version__",
 ]
