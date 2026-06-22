@@ -1,5 +1,5 @@
 PYTHON ?= python3
-PACKAGE = tecio
+PACKAGE = tecio-python
 
 .PHONY: help \
 	install install-dev uninstall \
