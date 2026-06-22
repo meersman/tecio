@@ -12,12 +12,15 @@ except metadata.PackageNotFoundError:
     __version__ = "0.0.0"
 
 from . import cli, dat, libtecio, plt, szl, utils
+from ._containers import VariableList, ZoneList
 from ._io import AppendReadWrite, AppendWrite, open
 
 # Ensure tecio.open displays as the canonical public name in docs and help().
 open.__module__ = "tecio"
 AppendWrite.__module__ = "tecio"
 AppendReadWrite.__module__ = "tecio"
+ZoneList.__module__ = "tecio"
+VariableList.__module__ = "tecio"
 
 __all__ = [
     "libtecio",
@@ -29,5 +32,7 @@ __all__ = [
     "cli",
     "AppendWrite",
     "AppendReadWrite",
+    "ZoneList",
+    "VariableList",
     "__version__",
 ]

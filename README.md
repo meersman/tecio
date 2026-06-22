@@ -11,10 +11,10 @@ Python interface for reading and writing Tecplot data files.
 
 ## Overview
 
-`tecio` wraps Tecplot's TecIO C library to provide a Python API for
-reading and writing Tecplot binary formats (`.szplt`, `.plt`) and ASCII
-(`.dat`). It also includes command-line tools for common file operations
-such as converting formats, extracting zones, and computing statistics.
+`tecio` wraps Tecplot's TecIO C library to provide a Python API for reading
+and writing Tecplot binary formats (`.szplt`, `.plt`) and ASCII (`.dat`). It
+also includes command-line tools for common file operations such as converting
+formats, extracting zones, and computing statistics.
 
 **Requirements:** Python 3.10+, NumPy, Tecplot 360 (or the standalone TecIO library)
 
@@ -28,9 +28,8 @@ pip install tecio-python
 
 The TecIO shared library (`libtecio.so` / `libtecio.dylib`) is not bundled
 with this package and must be provided separately via a Tecplot 360
-installation or the standalone TecIO library. Set the `TECIO_LIB`
-environment variable to point to the library if it is not on your system
-path:
+installation or the standalone TecIO library. Set the `TECIO_LIB` environment
+variable to point to the library if it is not on your system path:
 
 ```bash
 export TECIO_LIB=/path/to/libtecio.so     # Linux
@@ -57,6 +56,8 @@ with tecio.open("sine.szplt", "r") as tec:
     print(tec.variables)   # ['x', 'y']
     x = tec.zone[0].variable[0].values
     y = tec.zone[0].variable[1].values
+    # or
+    x, y = tec.zone[0].get_array(["x", "y"])
 ```
 
 ## API
