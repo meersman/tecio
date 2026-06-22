@@ -13,12 +13,13 @@ import ctypes
 from collections.abc import ItemsView, Iterator, KeysView, ValuesView
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, overload
 
 import numpy as np
 import numpy.typing as npt
 
 from .. import libtecio
+from .._containers import VariableList, ZoneList, select_variable_arrays
 from ..libtecio import DataPacking, DataType, FileType, ValueLocation, ZoneType
 
 
@@ -37,9 +38,9 @@ class Read:
         if not Path(file_name).exists():
             raise FileNotFoundError(f"No such file or directory: '{file_name}'")
         self.handle = libtecio.tec_file_reader_open(file_name)
-        self.zone = [
+        self.zone: ZoneList[ReadZone] = ZoneList([
             ReadZone(self.handle, i + 1, self.num_vars) for i in range(self.num_zones)
-        ]
+        ])
         self._path = file_name
         self._auxdata: ReadAuxData | None = None
         self._var_auxdata: list[ReadAuxData | None] | None = None
@@ -177,7 +178,7 @@ class ReadZone:
     zone_index: int
     num_vars: int
     _auxdata: ReadAuxData | None = None
-    _variable: list[ReadVariable] | None = None
+    _variable: VariableList[ReadVariable] | None = None
 
     def __post_init__(self) -> None:
         """Set data dimensions as attributes."""
@@ -185,33 +186,19 @@ class ReadZone:
             self._handle, self.zone_index
         )
 
+    # -- Properties --------------------------------------------------------------------
+
     @property
-    def variable(self) -> list[ReadVariable]:
-        """List of :class:`ReadVariable` objects (0-indexed)."""
+    def variable(self) -> VariableList[ReadVariable]:
+        """Variables in this zone, by 0-based index or exact name."""
         # Check cached private variables -> don't run C functions each time this is
         # called if already defined
         if self._variable is None:
-            self._variable = [
+            self._variable = VariableList([
                 ReadVariable(self._handle, self.zone_index, i + 1)
                 for i in range(self.num_vars)
-            ]
+            ])
         return self._variable
-
-    def __getattr__(self, name: str) -> Any:
-        """Access variable data by name (case-insensitive).
-
-        Example:
-            zone.pressure -> returns the NumPy array for variable "Pressure"
-
-        """
-        # Only called if normal attributes do not exist
-        for var in self.variables:
-            if var.name.lower() == name.lower():  # case-insensitive match
-                return var.values
-            # If no match, raise normal AttributeError
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{name}'"
-        )
 
     @property
     def title(self) -> str:
@@ -325,6 +312,36 @@ class ReadZone:
         if self._auxdata is None:
             self._auxdata = ReadAuxData(self._handle, "zone", self.zone_index)
         return self._auxdata
+
+    # -- Methods -----------------------------------------------------------------------
+
+    @overload
+    def get_array(self, key: int | str) -> npt.NDArray | None: ...
+    @overload
+    def get_array(self, key: list[str]) -> tuple[npt.NDArray | None, ...]: ...
+
+    def get_array(
+        self, key: int | str | list[str]
+    ) -> npt.NDArray | None | tuple[npt.NDArray | None, ...]:
+        """Return variable data array(s) for this zone.
+
+        A single key (0-based index or exact name) returns one array.  A list of exact
+        names returns a tuple of arrays in the order given, suitable for unpacking::
+
+            p = zone.get_array("p")
+            x, y, z = zone.get_array(["x", "y", "z"])
+
+        Returns:
+            One array (or ``None`` if the variable is passive or shared) for a scalar
+            key; a tuple of such arrays for a list of names.  A single-element list
+            yields a 1-tuple, not a bare array.
+
+        Raises:
+            KeyError:   If a name does not exist.
+            IndexError: If an index is out of range.
+
+        """
+        return select_variable_arrays(self.variable, key)
 
 
 @dataclass

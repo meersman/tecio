@@ -1,35 +1,31 @@
 r"""Native binary reader for Tecplot PLT (``.plt``) files.
 
-This module provides a pure-Python / NumPy reader for Tecplot PLT binary
-files (format versions v112 and v191).  It is a **standalone debugging
-module** intended to be integrated into the existing :mod:`plt` module once
-validated.
+This module provides a pure-Python / NumPy reader for Tecplot PLT binary files (format
+versions v112 and v191).  It is a **standalone debugging module** intended to be
+integrated into the existing :mod:`plt` module once validated.
 
 Design goals:
-    * **No byte-swapping boilerplate.**  The INT32 value of ``1`` written
-      immediately after the magic number is used to detect endianness at open
-      time.  All subsequent reads use the correct NumPy byte-order prefix
-      (``"<"`` or ``">"``).
-    * **Lazy variable data.**  Zone and variable *metadata* is parsed during
-      ``__init__`` and stored as lightweight dataclass attributes.  Actual
-      numeric data is read from disk only when ``.values`` (or
-      ``.get_values()``) is called, matching the behaviour of
-      :class:`szl.ReadVariable`.
-    * **No text / geometry support.**  Header records with markers 399.0
-      (geometry) and 499.0 (text) are detected and skipped without parsing
-      their contents.
-    * **v112 and v191 zone headers.**  Zone marker ``299.0`` → v112 header;
-      ``298.0`` → v191 header.  Both are fully supported.
+    * **No byte-swapping boilerplate.** The INT32 value of ``1`` written immediately
+      after the magic number is used to detect endianness at open time.  All subsequent
+      reads use the correct NumPy byte-order prefix (``"<"`` or ``">"``).
+    * **Lazy variable data.** Zone and variable *metadata* is parsed during ``__init__``
+      and stored as lightweight dataclass attributes.  Actual numeric data is read from
+      disk only when ``.values`` (or ``.get_values()``) is called, matching the
+      behaviour of :class:`szl.ReadVariable`.
+    * **No text / geometry support.** Header records with markers 399.0 (geometry) and
+      499.0 (text) are detected and skipped without parsing their contents.
+    * **v112 and v191 zone headers.** Zone marker ``299.0`` → v112 header; ``298.0`` →
+      v191 header.  Both are fully supported.
 
 Limitations
-    * FEPOLYGON and FEPOLYHEDRON zones are parsed for metadata but face-map
-      reading is not yet implemented (``node_map`` returns ``None`` for those
-      types).
+    * FEPOLYGON and FEPOLYHEDRON zones are parsed for metadata but face-map reading is
+      not yet implemented (``node_map`` returns ``None`` for those types).
     * Bit-packed data (``DataType`` 6) is not supported and raises
       ``NotImplementedError``.
 
 Format reference:
     Tecplot 360 Data Format Guide — Binary PLT ``v112`` / ``v191``.
+
 """
 
 from __future__ import annotations
@@ -39,16 +35,17 @@ import os
 import struct
 from collections.abc import ItemsView, Iterator, KeysView, ValuesView
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, overload
 
 import numpy as np
 import numpy.typing as npt
 
+from .._containers import VariableList, ZoneList, select_variable_arrays
 from ..libtecio import DataPacking, DataType, FileType, ValueLocation, ZoneType
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Constants
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 #: Magic strings for the two supported file versions.
 _MAGIC_V112: bytes = b"#!TDV112"
@@ -104,18 +101,18 @@ _PLT_VALUELOCATION_MAP: dict[int, ValueLocation] = {
 }
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Custom exception
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 class PltReadError(RuntimeError):
     """Raised when the PLT binary cannot be parsed."""
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Internal helpers
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def _read_int32(fp: io.BufferedIOBase, byte_order: str) -> int:
@@ -191,9 +188,9 @@ def _peek_float32(fp: io.BufferedIOBase, byte_order: str) -> float:
     return val
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Internal storage dataclasses (populated during header parse)
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 @dataclass
@@ -237,9 +234,9 @@ class _ZoneMeta:
     connectivity_count: int = 0  # total int32 values
 
 
-# ---------------------------------------------------------------------------
-# ReadAuxData — identical API to szl.ReadAuxData
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
+# ReadAuxData
+# --------------------------------------------------------------------------------------
 
 
 class ReadAuxData:
@@ -253,9 +250,7 @@ class ReadAuxData:
     def __init__(self, data: dict[str, str]) -> None:
         self._data: dict[str, str] = data
 
-    # ------------------------------------------------------------------
-    # Mapping interface
-    # ------------------------------------------------------------------
+    # -- Mapping interface -------------------------------------------------------------
 
     def __len__(self) -> int:
         return len(self._data)
@@ -285,9 +280,7 @@ class ReadAuxData:
         """Return iterator over (name, value) pairs."""
         return self._data.items()
 
-    # ------------------------------------------------------------------
-    # Type converters (same as szl.ReadAuxData)
-    # ------------------------------------------------------------------
+    # -- Type converters ---------------------------------------------------------------
 
     def as_int(self, key: str, default: int | None = None) -> int | None:
         """Return auxiliary data value converted to :class:`int`."""
@@ -329,9 +322,9 @@ class ReadAuxData:
         return f"ReadAuxData({self._data!r})"
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # ReadVariable
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 class ReadVariable:
@@ -367,9 +360,7 @@ class ReadVariable:
         self._var_names = var_names
         self._byte_order = byte_order
 
-    # ------------------------------------------------------------------
-    # Metadata (read immediately from zone_meta — no disk I/O)
-    # ------------------------------------------------------------------
+    # -- Metadata (read from zone_meta — no disk I/O) ----------------------------------
 
     @property
     def name(self) -> str:
@@ -409,9 +400,7 @@ class ReadVariable:
         """Return ``True`` unless this variable is passive."""
         return not self.is_passive()
 
-    # ------------------------------------------------------------------
-    # Data access — lazy read from disk
-    # ------------------------------------------------------------------
+    # -- Data access: read from disk only when called ----------------------------------
 
     @property
     def values(
@@ -508,9 +497,9 @@ class ReadVariable:
         return data
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # ReadZone
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 class ReadZone:
@@ -534,7 +523,7 @@ class ReadZone:
         self.num_vars = num_vars
         self._var_names = var_names
         self._byte_order = byte_order
-        self._variable: list[ReadVariable] | None = None
+        self._variable: VariableList[ReadVariable] | None = None
         self._auxdata: ReadAuxData | None = None
 
         # Expose I/J/K directly like szl.ReadZone
@@ -542,9 +531,7 @@ class ReadZone:
         self.J = meta.j_max
         self.K = meta.k_max
 
-    # ------------------------------------------------------------------
-    # Metadata properties
-    # ------------------------------------------------------------------
+    # -- Metadata properties -----------------------------------------------------------
 
     @property
     def title(self) -> str:
@@ -616,15 +603,13 @@ class ReadZone:
         """Always ``True`` for PLT zones (no concept of disabled zones)."""
         return True
 
-    # ------------------------------------------------------------------
-    # Variable access
-    # ------------------------------------------------------------------
+    # -- Variable access ---------------------------------------------------------------
 
     @property
-    def variable(self) -> list[ReadVariable]:
-        """List of :class:`ReadVariable` objects (0-indexed)."""
+    def variable(self) -> VariableList[ReadVariable]:
+        """Variables in this zone, by 0-based index or exact name."""
         if self._variable is None:
-            self._variable = [
+            self._variable = VariableList([
                 ReadVariable(
                     file_path=self._file_path,
                     zone_meta=self._meta,
@@ -634,25 +619,38 @@ class ReadZone:
                     byte_order=self._byte_order,
                 )
                 for i in range(self.num_vars)
-            ]
+            ])
         return self._variable
 
-    def __getattr__(self, name: str) -> Any:
-        """Dynamic attribute access for variable names.
+    @overload
+    def get_array(self, key: int | str) -> npt.NDArray | None: ...
+    @overload
+    def get_array(self, key: list[str]) -> tuple[npt.NDArray | None, ...]: ...
 
-        Example:
-            zone.pressure  # returns NumPy array for variable "Pressure"
+    def get_array(
+        self, key: int | str | list[str]
+    ) -> npt.NDArray | None | tuple[npt.NDArray | None, ...]:
+        """Return variable data array(s) for this zone.
+
+        A single key (0-based index or exact name) returns one array.  A list of exact
+        names returns a tuple of arrays in the order given, suitable for unpacking::
+
+            p = zone.get_array("p")
+            x, y, z = zone.get_array(["x", "y", "z"])
+
+        Returns:
+            One array (or ``None`` if the variable is passive or shared) for a scalar
+            key; a tuple of such arrays for a list of names.  A single-element list
+            yields a 1-tuple, not a bare array.
+
+        Raises:
+            KeyError:   If a name does not exist.
+            IndexError: If an index is out of range.
+
         """
-        for var in self.variable:
-            if var.name.lower() == name.lower():
-                return var.values
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{name!r}'"
-        )
+        return select_variable_arrays(self.variable, key)
 
-    # ------------------------------------------------------------------
-    # Connectivity
-    # ------------------------------------------------------------------
+    # -- Connectivity ------------------------------------------------------------------
 
     @property
     def node_map(self) -> npt.NDArray[np.int64] | None:
@@ -679,9 +677,7 @@ class ReadZone:
 
         return flat.reshape(self.num_elements, -1).astype(np.int64) + 1
 
-    # ------------------------------------------------------------------
-    # Auxiliary data
-    # ------------------------------------------------------------------
+    # -- Auxiliary data ----------------------------------------------------------------
 
     @property
     def auxdata(self) -> ReadAuxData:
@@ -691,9 +687,9 @@ class ReadZone:
         return self._auxdata
 
 
-# ---------------------------------------------------------------------------
-# Main parser — builds all metadata during __init__
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
+# Main parser
+# --------------------------------------------------------------------------------------
 
 
 class _PltParser:
@@ -730,9 +726,7 @@ class _PltParser:
             self._parse_header(fp)
             self._parse_data_section(fp)
 
-    # ------------------------------------------------------------------
-    # Header section
-    # ------------------------------------------------------------------
+    # -- Header section ----------------------------------------------------------------
 
     def _parse_header(self, fp: io.BufferedIOBase) -> None:
         """Parse the PLT header section up to and including EOHMARKER."""
@@ -922,9 +916,7 @@ class _PltParser:
 
         self.zones.append(meta)
 
-    # ------------------------------------------------------------------
-    # Header skip helpers (geometry and text records)
-    # ------------------------------------------------------------------
+    # -- Header skip helpers (geometry and text records) -------------------------------
 
     def _skip_geometry(self, fp: io.BufferedIOBase) -> None:
         """Skip a geometry record (marker already consumed)."""
@@ -996,9 +988,7 @@ class _PltParser:
         """Skip a UserRec record (marker already consumed)."""
         _skip_string(fp, self.byte_order)
 
-    # ------------------------------------------------------------------
-    # Data section
-    # ------------------------------------------------------------------
+    # -- Data section ------------------------------------------------------------------
 
     def _parse_data_section(self, fp: io.BufferedIOBase) -> None:
         """Parse the data section and record variable file offsets.
@@ -1205,9 +1195,9 @@ class _PltParser:
             fp.seek(nbc * 4, os.SEEK_CUR)
 
 
-# ---------------------------------------------------------------------------
-# Public Read class — mirrors szl.Read
-# ---------------------------------------------------------------------------
+# ======================================================================================
+# Public Read class
+# ======================================================================================
 
 
 class Read:
@@ -1248,8 +1238,7 @@ class Read:
         self._dataset_auxdata: dict[str, str] = parser.dataset_auxdata
         # var_auxdata: 0-based index → {name: value}
         self._raw_var_auxdata: dict[int, dict[str, str]] = parser.var_auxdata
-
-        self.zone: list[ReadZone] = [
+        self.zone: ZoneList[ReadZone] = ZoneList([
             ReadZone(
                 file_path=self._path,
                 meta=meta,
@@ -1259,8 +1248,7 @@ class Read:
                 byte_order=parser.byte_order,
             )
             for i, meta in enumerate(parser.zones)
-        ]
-
+        ])
         self._auxdata: ReadAuxData | None = None
         self._var_auxdata: list[ReadAuxData | None] | None = None
 
@@ -1277,9 +1265,7 @@ class Read:
         """
         pass
 
-    # ------------------------------------------------------------------
-    # Dataset metadata properties (parity with szl.Read)
-    # ------------------------------------------------------------------
+    # -- Dataset metadata properties ---------------------------------------------------
 
     @property
     def file_type(self) -> FileType:
