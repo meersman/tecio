@@ -28,7 +28,6 @@ import pytest
 import tecio
 from tecio.libtecio import DataPacking, ValueLocation, ZoneType
 
-
 # ===========================================================================
 # Full-file dump
 # ===========================================================================
