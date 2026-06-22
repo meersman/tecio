@@ -45,6 +45,7 @@ tecmerge = "tecio.cli.tecmerge:main"
 tecscale = "tecio.cli.tecscale:main"
 tecslice = "tecio.cli.tecslice:main"
 tecstats = "tecio.cli.tecstats:main"
+tec2mat = "tecio.cli.tec2mat:main"
 
 [project.optional-dependencies]
 dev = [
@@ -61,6 +62,7 @@ docs = [
     "sphinx-autodoc-typehints>=2.0",
     "myst-parser>=3.0",
 ]
+mat = ["scipy"]
 
 [tool.setuptools.packages.find]
 include = ["tecio*"]

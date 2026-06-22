@@ -7,4 +7,5 @@ rm -f tp?*
 rm -f batch.log
 rm -f batch.log
 rm -f *.csv
+rm -f *.mat
 rm -rf output/

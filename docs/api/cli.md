@@ -15,6 +15,7 @@
    tecfix
    tecmerge
    teconvert
+   tec2mat
    tecscale
    tecslice
    tecstats
