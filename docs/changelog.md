@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of names.
 - `tecsplit` CLI tool to split grid and solutions to separate files.
 - API docs for the new container types and access patterns.
+- `tec2mat` command line tool to convert input Tecplot file to MATLAB
+  compatible `.mat` file format. Importable as a MATLAB structure with all
+  zones, variables, and metadata.
 
 ### Changed
 
