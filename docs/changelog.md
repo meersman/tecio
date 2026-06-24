@@ -16,7 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ReadZone.get_array(key)` for direct array access by index, name, or list
   of names.
 - `tecsplit` CLI tool to split grid and solutions to separate files.
-- API docs for the new container types and access patterns.
 - `tec2mat` command line tool to convert input Tecplot file to MATLAB
   compatible `.mat` file format. Importable as a MATLAB structure with all
   zones, variables, and metadata.
@@ -27,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of plain `list`.
 - Read tests rewritten to match writer-test conventions (fixtures,
   `pytest.raises`, class grouping).
+
+### Fixed
+- Legacy style unstructured zone headers in ASCII files use different keywords
+  for data packing and zone type resulting in `tecio` interpreting these as
+  single point ordered zone. These special cases have been added.
 
 ### Removed
 

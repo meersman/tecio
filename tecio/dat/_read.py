@@ -31,7 +31,7 @@ from ..libtecio import (
 # Shared module-level constants
 # --------------------------------------------------------------------------------------
 
-#: FE zone types fully supported for reading and writing.
+# FE zone types fully supported for reading and writing
 _FE_SIMPLE: frozenset[ZoneType] = frozenset({
     ZoneType.FELINESEG,
     ZoneType.FETRIANGLE,
@@ -40,13 +40,13 @@ _FE_SIMPLE: frozenset[ZoneType] = frozenset({
     ZoneType.FEBRICK,
 })
 
-#: Zone types whose connectivity is face-based (not yet supported).
+# Zone types whose connectivity is face-based
 _FE_POLY: frozenset[ZoneType] = frozenset({
     ZoneType.FEPOLYGON,
     ZoneType.FEPOLYHEDRON,
 })
 
-#: Nodes per element for each supported simple FE type.
+# Nodes per element for each supported simple FE type
 _NODES_PER_ELEM: dict[ZoneType, int] = {
     ZoneType.FELINESEG: 2,
     ZoneType.FETRIANGLE: 3,
@@ -55,7 +55,7 @@ _NODES_PER_ELEM: dict[ZoneType, int] = {
     ZoneType.FEBRICK: 8,
 }
 
-#: ASCII keyword → ZoneType (lower-cased at parse time).
+# ASCII keyword to ZoneType
 _STR_TO_ZONETYPE: dict[str, ZoneType] = {
     "ordered": ZoneType.ORDERED,
     "felineseg": ZoneType.FELINESEG,
@@ -67,20 +67,37 @@ _STR_TO_ZONETYPE: dict[str, ZoneType] = {
     "fepolyhedron": ZoneType.FEPOLYHEDRON,
 }
 
-#: ASCII keyword → FileType.
+# ASCII keyword to FileType
 _STR_TO_FILETYPE: dict[str, FileType] = {
     "full": FileType.FULL,
     "grid": FileType.GRID,
     "solution": FileType.SOLUTION,
 }
 
-#: ASCII keyword → DataPacking (lower-cased at parse time).
+# ASCII keyword to DataPacking
 _STR_TO_DATAPACKING: dict[str, DataPacking] = {
     "point": DataPacking.POINT,
     "block": DataPacking.BLOCK,
 }
 
-#: ZoneType → ASCII keyword (for writing).
+# Legacy F= (format) keyword to (is_fe, DataPacking)
+_STR_TO_LEGACY_FORMAT: dict[str, tuple[bool, DataPacking]] = {
+    "POINT": (False, DataPacking.POINT),
+    "BLOCK": (False, DataPacking.BLOCK),
+    "FEPOINT": (True, DataPacking.POINT),
+    "FEBLOCK": (True, DataPacking.BLOCK),
+}
+
+# Legacy ``ET=`` (element type) keyword to ZoneType
+_STR_TO_ELEMENT_TYPE: dict[str, ZoneType] = {
+    "LINESEG": ZoneType.FELINESEG,
+    "TRIANGLE": ZoneType.FETRIANGLE,
+    "QUADRILATERAL": ZoneType.FEQUADRILATERAL,
+    "TETRAHEDRON": ZoneType.FETETRAHEDRON,
+    "BRICK": ZoneType.FEBRICK,
+}
+
+# ZoneType to ASCII keyword
 _ZONETYPE_STR: dict[ZoneType, str] = {
     ZoneType.ORDERED: "Ordered",
     ZoneType.FELINESEG: "FELineSeg",
@@ -92,13 +109,13 @@ _ZONETYPE_STR: dict[ZoneType, str] = {
     ZoneType.FEPOLYHEDRON: "FEPolyhedron",
 }
 
-#: FileType → ASCII keyword (FULL omitted from output).
+# FileType to ASCII keyword
 _FILETYPE_STR: dict[FileType, str] = {
     FileType.GRID: "GRID",
     FileType.SOLUTION: "SOLUTION",
 }
 
-#: DataType → NumPy dtype string (used by Write for casting).
+# DataType to NumPy dtype string
 _DT_TO_DTYPE: dict[DataType, str] = {
     DataType.FLOAT: "f4",
     DataType.DOUBLE: "f8",
@@ -182,6 +199,37 @@ def _extract_quoted_strings(text: str) -> list[str]:
     ]
 
 
+def _next_token_is_value(text: str, i: int) -> bool:
+    """Return ``True`` if the token at *i* is a value, not the next key.
+
+    Supports the legacy whitespace-separated ``KEY VALUE`` form in zone headers
+    (e.g. ``STRANDID 2``).  A token is treated as the *next key* — and therefore not a
+    value for the preceding key — when it is immediately followed (after optional
+    whitespace) by ``=``.  A quoted token is always a value.
+
+    Example:
+        >>> _next_token_is_value("STRANDID 2", 9)
+        True
+
+    Args:
+        text: The full header string being parsed.
+        i: Index of the first character of the candidate token.
+
+    Returns:
+        ``True`` if the token should be consumed as the current key's value.
+    """
+    n = len(text)
+    if i < n and text[i] == '"':
+        return True
+    j = i
+    while j < n and text[j] not in " \t,=":
+        j += 1
+    # Skip trailing whitespace and see whether the token is followed by '='.
+    while j < n and text[j] in " \t":
+        j += 1
+    return not (j < n and text[j] == "=")
+
+
 def _kv_split(text: str) -> dict[str, str]:
     """Parse a loose ``KEY=VALUE`` string into an upper-cased-key dict.
 
@@ -212,15 +260,22 @@ def _kv_split(text: str) -> dict[str, str]:
             i += 1
             continue
 
-        # Skip whitespace and '='
+        # Determine the separator between key and value.  The modern form is
+        # ``KEY = VALUE``; some legacy files (and ``preplot``) also accept a bare
+        # whitespace separator, e.g. ``STRANDID 2``.
         while i < n and text[i] in " \t":
             i += 1
-        if i >= n or text[i] != "=":
+        if i < n and text[i] == "=":
+            # Standard ``KEY=VALUE``.
+            i += 1
+            while i < n and text[i] in " \t":
+                i += 1
+        elif i >= n or not _next_token_is_value(text, i):
+            # Bare flag keyword with no value (e.g. at end of header or directly
+            # before another ``KEY=`` pair).
             result[key] = ""
             continue
-        i += 1
-        while i < n and text[i] in " \t":
-            i += 1
+        # else: legacy ``KEY VALUE`` form — ``i`` already points at the value.
 
         # Value
         if i >= n:
@@ -260,6 +315,75 @@ def _kv_split(text: str) -> dict[str, str]:
         result[key] = value.strip()
 
     return result
+
+
+def _parse_legacy_format(text: str) -> tuple[bool, DataPacking]:
+    """Parse a legacy ``F=`` value into ``(is_fe, DataPacking)``.
+
+    The ``F`` keyword predates the modern ``ZONETYPE`` / ``DATAPACKING`` pair and
+    encodes both pieces of information at once (``POINT``/``BLOCK`` for ordered zones,
+    ``FEPOINT``/``FEBLOCK`` for finite-element zones).
+
+    Example:
+        >>> is_fe, packing = _parse_legacy_format("FEPOINT")
+
+    Args:
+        text: Raw ``F`` value string, e.g. ``"FEPOINT"`` (case-insensitive, any
+            trailing comma is ignored).
+
+    Returns:
+        Tuple of ``(is_fe, packing)`` where *is_fe* is ``True`` for ``FEPOINT`` /
+        ``FEBLOCK`` and *packing* is the corresponding :class:`DataPacking`.
+
+    Raises:
+        ValueError: If *text* is not one of the four recognised legacy formats.
+    """
+    raw = text.rstrip(",").strip().upper()
+    try:
+        return _STR_TO_LEGACY_FORMAT[raw]
+    except KeyError:
+        raise ValueError(
+            f"Unrecognised legacy zone format F={text!r}; expected one of "
+            "POINT, BLOCK, FEPOINT, FEBLOCK."
+        ) from None
+
+
+def _parse_legacy_element_type(text: str) -> ZoneType:
+    """Parse a legacy ``ET=`` (element type) value into a :class:`ZoneType`.
+
+    Recognises the canonical Tecplot element names (``TRIANGLE``,
+    ``QUADRILATERAL``, ``TETRAHEDRON``, ``BRICK``, ``LINESEG``).  A prefix-based
+    fallback provides a little tolerance for the minor spelling variants some
+    third-party exporters emit, keeping the reader as permissive as ``preplot``.
+
+    Example:
+        >>> zt = _parse_legacy_element_type("QUADRILATERAL")
+
+    Args:
+        text: Raw ``ET`` value string (case-insensitive, any trailing comma is
+            ignored).
+
+    Returns:
+        The matching finite-element :class:`ZoneType`.
+
+    Raises:
+        ValueError: If *text* does not resemble any known element type.
+    """
+    raw = text.rstrip(",").strip().upper()
+    if raw in _STR_TO_ELEMENT_TYPE:
+        return _STR_TO_ELEMENT_TYPE[raw]
+    # Prefix-based fallback for minor spelling variants.
+    if raw.startswith("TRI"):
+        return ZoneType.FETRIANGLE
+    if raw.startswith("QUAD"):
+        return ZoneType.FEQUADRILATERAL
+    if raw.startswith("TET"):
+        return ZoneType.FETETRAHEDRON
+    if raw.startswith("BRICK"):
+        return ZoneType.FEBRICK
+    if raw.startswith("LINE"):
+        return ZoneType.FELINESEG
+    raise ValueError(f"Unrecognised legacy element type ET={text!r} in ZONE header.")
 
 
 def _parse_index_list(text: str) -> list[int]:
@@ -1041,7 +1165,9 @@ class Read:
             ):
                 break
             first_ch = nxt.lstrip()[0] if nxt.lstrip() else ""
-            if first_ch in "0123456789+-":
+            # A data line begins with a numeric token (covers leading-dot values
+            # such as ``.5`` and signed values such as ``-1.2e3``).
+            if first_ch in "0123456789+-.":
                 break
             header_lines.append(tokens.next_stripped())
 
@@ -1060,8 +1186,40 @@ class Read:
         strand_id = int(kv.get("STRANDID", "0") or "0")
         solution_time = float(kv.get("SOLUTIONTIME", "0.0") or "0.0")
 
-        zt_raw = kv.get("ZONETYPE", "ordered").rstrip(",").strip().lower()
-        zone_type = _STR_TO_ZONETYPE.get(zt_raw, ZoneType.ORDERED)
+        # -- Determine zone type and data packing --------------------------------------
+        #
+        # Two header dialects are supported:
+        #   * Modern:  ZONETYPE=FEQuadrilateral, DATAPACKING=POINT
+        #   * Legacy:  F=FEPOINT, ET=QUADRILATERAL
+        #
+        # The FE-vs-ordered distinction comes from ``ZONETYPE`` (modern) or ``F``
+        # (legacy).  ``ET`` (element type) only ever appears on finite-element zones —
+        # ordered/structured data has no elements — so it merely names the element
+        # *shape* once a zone is already known to be FE, and is ignored on ordered
+        # zones.  Modern keywords win when present.
+        legacy_is_fe: bool | None = None
+        legacy_packing: DataPacking | None = None
+        if "F" in kv:
+            legacy_is_fe, legacy_packing = _parse_legacy_format(kv["F"])
+
+        if "ZONETYPE" in kv:
+            zt_raw = kv["ZONETYPE"].rstrip(",").strip().lower()
+            zone_type = _STR_TO_ZONETYPE.get(zt_raw, ZoneType.ORDERED)
+        elif legacy_is_fe is False:
+            # F=POINT/BLOCK: ordered zone.  A stray ET (if any) does not apply.
+            zone_type = ZoneType.ORDERED
+        elif legacy_is_fe or "ET" in kv:
+            # Finite-element zone: F=FEPOINT/FEBLOCK, or an ET keyword with no F
+            # (some exporters omit F).  The element shape comes from ET, which is
+            # then required.
+            if "ET" not in kv:
+                raise ValueError(
+                    "Legacy FE zone header specifies F=FEPOINT/FEBLOCK but is "
+                    "missing the required ET (element type) keyword."
+                )
+            zone_type = _parse_legacy_element_type(kv["ET"])
+        else:
+            zone_type = ZoneType.ORDERED
 
         if zone_type in _FE_POLY:
             raise ValueError(
@@ -1076,17 +1234,25 @@ class Read:
             num_nodes = I * J * K
             num_cells = max(I - 1, 1) * max(J - 1, 1) * max(K - 1, 1)
         else:
+            # FE zones accept both the modern (NODES/ELEMENTS) and legacy (N/E)
+            # spellings for the node and element counts.
             num_nodes = int(kv.get("NODES", kv.get("N", "0")) or "0")
             num_cells = int(kv.get("ELEMENTS", kv.get("E", "0")) or "0")
             I, J, K = num_nodes, num_cells, 0  # noqa: E741
 
-        packing_raw = kv.get("DATAPACKING", "BLOCK").strip().lower()
-        packing = _STR_TO_DATAPACKING.get(packing_raw)
-        if packing is None:
-            raise ValueError(
-                f"DATAPACKING={packing_raw!r} is not supported; "
-                "only BLOCK and POINT are implemented in the ASCII reader."
-            )
+        # Packing: DATAPACKING wins, then legacy F, else BLOCK (Tecplot default).
+        if "DATAPACKING" in kv:
+            packing_raw = kv["DATAPACKING"].strip().lower()
+            packing = _STR_TO_DATAPACKING.get(packing_raw)
+            if packing is None:
+                raise ValueError(
+                    f"DATAPACKING={packing_raw!r} is not supported; "
+                    "only BLOCK and POINT are implemented in the ASCII reader."
+                )
+        elif legacy_packing is not None:
+            packing = legacy_packing
+        else:
+            packing = DataPacking.BLOCK
 
         # Variable locations (0-based index → ValueLocation)
         var_locs: dict[int, ValueLocation] = {}

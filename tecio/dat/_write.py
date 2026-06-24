@@ -35,7 +35,7 @@ from ..libtecio import (
 # Module-level constants
 # -------------------------------------------------------------------------------------
 
-#: FE zone types fully supported for reading and writing.
+# FE zone types fully supported for reading and writing
 _FE_SIMPLE: frozenset[ZoneType] = frozenset({
     ZoneType.FELINESEG,
     ZoneType.FETRIANGLE,
@@ -44,13 +44,13 @@ _FE_SIMPLE: frozenset[ZoneType] = frozenset({
     ZoneType.FEBRICK,
 })
 
-#: Zone types whose connectivity is face-based (not yet supported).
+# Zone types whose connectivity is face-based
 _FE_POLY: frozenset[ZoneType] = frozenset({
     ZoneType.FEPOLYGON,
     ZoneType.FEPOLYHEDRON,
 })
 
-#: Nodes per element for each supported simple FE type.
+# Nodes per element for each supported simple FE type
 _NODES_PER_ELEM: dict[ZoneType, int] = {
     ZoneType.FELINESEG: 2,
     ZoneType.FETRIANGLE: 3,
@@ -59,7 +59,7 @@ _NODES_PER_ELEM: dict[ZoneType, int] = {
     ZoneType.FEBRICK: 8,
 }
 
-#: ASCII keyword → ZoneType (lower-cased at parse time).
+# ASCII keyword to ZoneType
 _STR_TO_ZONETYPE: dict[str, ZoneType] = {
     "ordered": ZoneType.ORDERED,
     "felineseg": ZoneType.FELINESEG,
@@ -71,14 +71,14 @@ _STR_TO_ZONETYPE: dict[str, ZoneType] = {
     "fepolyhedron": ZoneType.FEPOLYHEDRON,
 }
 
-#: ASCII keyword → FileType.
+# ASCII keyword to FileType
 _STR_TO_FILETYPE: dict[str, FileType] = {
     "full": FileType.FULL,
     "grid": FileType.GRID,
     "solution": FileType.SOLUTION,
 }
 
-#: ZoneType → ASCII keyword (for writing).
+# ZoneType  ASCII keyword
 _ZONETYPE_STR: dict[ZoneType, str] = {
     ZoneType.ORDERED: "Ordered",
     ZoneType.FELINESEG: "FELineSeg",
@@ -90,13 +90,13 @@ _ZONETYPE_STR: dict[ZoneType, str] = {
     ZoneType.FEPOLYHEDRON: "FEPolyhedron",
 }
 
-#: FileType → ASCII keyword (FULL omitted from output).
+# FileType to ASCII keyword
 _FILETYPE_STR: dict[FileType, str] = {
     FileType.GRID: "GRID",
     FileType.SOLUTION: "SOLUTION",
 }
 
-#: DataType → NumPy dtype string (used by Write for casting).
+# DataType to NumPy dtype string
 _DT_TO_DTYPE: dict[DataType, str] = {
     DataType.FLOAT: "f4",
     DataType.DOUBLE: "f8",
@@ -105,8 +105,17 @@ _DT_TO_DTYPE: dict[DataType, str] = {
     DataType.BYTE: "u1",
 }
 
-#: Values per line for Write data blocks.
+# Values per line for Write data blocks
 _VALUES_PER_LINE: int = 5
+
+#: Indentation applied to every zone-header line after the first
+_INDENT: str = "  "
+
+# Indentation applied to data and connectivity lines
+_DATA_INDENT: str = _INDENT + "  "
+
+#: Separator written between adjacent values on a data line
+_VALUE_SEP: str = "  "
 
 
 # =====================================================================================
@@ -149,16 +158,22 @@ def _infer_data_type(arr: npt.NDArray) -> DataType:
 
 def _make_float_fmt(sig_digits: int) -> str:
     """Return a ``format()``-compatible scientific-notation format string."""
-    return f".{max(sig_digits - 1, 0)}e"
+    return f" .{max(sig_digits - 1, 0)}e"
 
 
 def _stage_float_array(buf: io.StringIO, arr: npt.NDArray, fmt: str) -> None:
-    """Write a 1-D float array to *buf* in scientific notation."""
+    """Write a 1-D float array to *buf* in scientific notation.
+
+    Values are written ``_VALUES_PER_LINE`` per line, each line indented by
+    ``_DATA_INDENT`` and the values separated by ``_VALUE_SEP`` so that columns align.
+    """
     flat = np.asarray(arr).ravel()
     vpl = _VALUES_PER_LINE
     for start in range(0, flat.size, vpl):
         chunk = flat[start : start + vpl]
-        buf.write("\t".join(format(float(v), fmt) for v in chunk) + "\n")
+        buf.write(
+            _DATA_INDENT + _VALUE_SEP.join(format(float(v), fmt) for v in chunk) + "\n"
+        )
 
 
 def _stage_point_rows(
@@ -181,12 +196,14 @@ def _stage_point_rows(
     # Stack into a (n_points, n_vars) matrix then write row by row.
     matrix = np.column_stack(cols) if len(cols) > 1 else cols[0].reshape(-1, 1)
     for row in matrix:
-        buf.write("\t".join(format(float(v), fmt) for v in row) + "\n")
+        buf.write(
+            _DATA_INDENT + _VALUE_SEP.join(format(float(v), fmt) for v in row) + "\n"
+        )
 
 
 def _stage_connectivity_row(buf: io.StringIO, row: npt.NDArray) -> None:
     """Write one element's node indices to *buf* as space-separated ints."""
-    buf.write(" ".join(str(int(n)) for n in row) + "\n")
+    buf.write(_DATA_INDENT + " ".join(str(int(n)) for n in row) + "\n")
 
 
 # =====================================================================================
@@ -824,17 +841,21 @@ class Write:
         """Write a ``ZONE`` header block into the staging buffer *buf*."""
         zt_str = _ZONETYPE_STR[zone_type]
 
+        # First line is never indented; every subsequent header line is indented.
         buf.write(f"ZONE T={_quote(title)}\n")
-        buf.write(f" STRANDID={strand_id}, SOLUTIONTIME={float(solution_time)}\n")
+        buf.write(
+            f"{_INDENT}STRANDID={strand_id}, SOLUTIONTIME={float(solution_time)}\n"
+        )
 
         if zone_type == ZoneType.ORDERED:
-            buf.write(f" I={imax}, J={jmax}, K={kmax}, ZONETYPE={zt_str}\n")
+            buf.write(f"{_INDENT}I={imax}, J={jmax}, K={kmax}, ZONETYPE={zt_str}\n")
         else:
             buf.write(
-                f" Nodes={num_nodes}, Elements={num_elements}, ZONETYPE={zt_str}\n"
+                f"{_INDENT}Nodes={num_nodes}, Elements={num_elements}, "
+                f"ZONETYPE={zt_str}\n"
             )
 
-        buf.write(f" DATAPACKING={datapacking.name}\n")
+        buf.write(f"{_INDENT}DATAPACKING={datapacking.name}\n")
 
         if value_locations_global:
             cc = [
@@ -844,22 +865,23 @@ class Write:
             ]
             if cc:
                 buf.write(
-                    f" VARLOCATION=([{','.join(str(i) for i in cc)}]=CELLCENTERED)\n"
+                    f"{_INDENT}VARLOCATION=([{','.join(str(i) for i in cc)}]"
+                    "=CELLCENTERED)\n"
                 )
 
         if passive_vars:
             pidx = [str(i + 1) for i, f in enumerate(passive_vars) if f]
             if pidx:
-                buf.write(f" PASSIVEVARLIST=[{','.join(pidx)}]\n")
+                buf.write(f"{_INDENT}PASSIVEVARLIST=[{','.join(pidx)}]\n")
 
         if var_sharing and any(var_sharing):
             entries = [f"[{i + 1}]={z}" for i, z in enumerate(var_sharing) if z]
             if entries:
-                buf.write(f" VARSHARELIST=({','.join(entries)})\n")
+                buf.write(f"{_INDENT}VARSHARELIST=({','.join(entries)})\n")
 
         if con_sharing:
-            buf.write(f" CONNECTIVITYSHAREZONE={con_sharing}\n")
+            buf.write(f"{_INDENT}CONNECTIVITYSHAREZONE={con_sharing}\n")
 
         if aux:
             for name, value in aux.items():
-                buf.write(f" AUXDATA {name}={_quote(value)}\n")
+                buf.write(f"{_INDENT}AUXDATA {name}={_quote(value)}\n")
