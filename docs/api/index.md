@@ -107,7 +107,6 @@ Returned by {func}`tecio.open` when using ``'a'`` or ``'a+'`` mode.
 :hidden:
 
 open
-containers
 append_write
 append_read_write
 szl

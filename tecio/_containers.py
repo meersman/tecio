@@ -209,7 +209,16 @@ class VariableList(Generic[_VarT]):
         return [var.name for var in self._items]
 
     def __repr__(self) -> str:
-        return f"VariableList({self.names()!r})"
+        n = len(self._items)
+        if n == 0:
+            return "VariableList([])"
+        head = 20
+        lines = [f"    {v!r}," for v in self._items[:head]]
+        if n > head:
+            more = n - head
+            lines.append(f"    ... and {more} more variable{'' if more == 1 else 's'},")
+        body = "\n".join(lines)
+        return f"VariableList([\n{body}\n])"
 
 
 # ======================================================================================
@@ -269,4 +278,13 @@ class ZoneList(Generic[_ZoneT]):
         return self._items[key]
 
     def __repr__(self) -> str:
-        return f"ZoneList({len(self._items)} zones)"
+        n = len(self._items)
+        if n == 0:
+            return "ZoneList([])"
+        head = 5
+        lines = [f"    {z!r}," for z in self._items[:head]]
+        if n > head:
+            more = n - head
+            lines.append(f"    ... and {more} more zone{'' if more == 1 else 's'},")
+        body = "\n".join(lines)
+        return f"ZoneList([\n{body}\n])"

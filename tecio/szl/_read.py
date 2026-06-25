@@ -38,12 +38,37 @@ class Read:
         if not Path(file_name).exists():
             raise FileNotFoundError(f"No such file or directory: '{file_name}'")
         self.handle = libtecio.tec_file_reader_open(file_name)
+        self._closed = False
         self.zone: ZoneList[ReadZone] = ZoneList([
             ReadZone(self.handle, i + 1, self.num_vars) for i in range(self.num_zones)
         ])
         self._path = file_name
         self._auxdata: ReadAuxData | None = None
         self._var_auxdata: list[ReadAuxData | None] | None = None
+
+    def __repr__(self) -> str:
+        """Set a nice repr string for the read object."""
+        cls = type(self).__name__
+        name = self._path.replace("\\", "/").rsplit("/", 1)[-1]
+        if self._closed:
+            return f"{cls}(path={name!r}, <closed>)"
+        try:
+            parts = [f"path={name!r}"]
+            title = self.title
+            if title:
+                if len(title) > 40:
+                    title = title[:25] + "\u2026"
+                parts.append(f"title={title!r}")
+            parts += [
+                f"file_type={self.file_type.name}",
+                f"zones={self.num_zones}",
+                f"variables={self.num_vars}",
+            ]
+            if self.num_auxdata_items:
+                parts.append(f"aux={self.num_auxdata_items}")
+            return f"{cls}({', '.join(parts)})"
+        except Exception:
+            return f"{cls}(path={name!r}, <unavailable>)"
 
     def __enter__(self) -> Read:
         """Context manager for Read class."""
@@ -156,6 +181,7 @@ class Read:
         if self.handle is not None:
             libtecio.tec_file_reader_close(self.handle)
             self.handle = None
+            self._closed = True
 
 
 @dataclass
@@ -179,6 +205,18 @@ class ReadZone:
     num_vars: int
     _auxdata: ReadAuxData | None = None
     _variable: VariableList[ReadVariable] | None = None
+
+    def __repr__(self) -> str:
+        """Set a more descriptive repr string for reading zones."""
+        title = self.title
+        if len(title) > 30:
+            title = title[:29] + "\u2026"
+        if self.zone_type == ZoneType.ORDERED:
+            size = f"I={self.I}, J={self.J}, K={self.K}"
+        else:
+            size = f"N={self.num_nodes}, E={self.num_elements}"
+        extra = f", aux={len(self.auxdata)}" if len(self.auxdata) else ""
+        return f"ReadZone({title!r}, {self.zone_type.name}, {size}{extra})"
 
     def __post_init__(self) -> None:
         """Set data dimensions as attributes."""
@@ -360,6 +398,21 @@ class ReadVariable:
     _handle: ctypes.c_void_p
     zone_index: int
     var_index: int
+
+    def __repr__(self) -> str:
+        """Set repr string with only relevant metadata."""
+        parts = [repr(self.name)]
+        if self.is_passive():
+            parts.append("passive")
+        elif self.shared_zone is not None:
+            parts.append(f"shared(zone={self.shared_zone})")
+        else:
+            parts.append(f"dtype={self.data_type.name}")
+            if self.values is not None:
+                parts.append(f"shape={self.values.shape}")
+            if self.value_location == ValueLocation.CELL_CENTERED:
+                parts.append("CELL_CENTERED")
+        return f"ReadVariable({', '.join(parts)})"
 
     @property
     def name(self) -> str:

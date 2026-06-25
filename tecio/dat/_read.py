@@ -680,6 +680,21 @@ class ReadVariable:
         self._is_passive: bool = is_passive
         self._shared_zone: int | None = shared_zone
 
+    def __repr__(self) -> str:
+        """Set repr string with only relevant metadata."""
+        parts = [repr(self.name)]
+        if self.is_passive():
+            parts.append("passive")
+        elif self.shared_zone is not None:
+            parts.append(f"shared(zone={self.shared_zone})")
+        else:
+            parts.append(f"dtype={self.data_type.name}")
+            if self.values is not None:
+                parts.append(f"shape={self.values.shape}")
+            if self.value_location == ValueLocation.CELL_CENTERED:
+                parts.append("CELL_CENTERED")
+        return f"ReadVariable({', '.join(parts)})"
+
     @property
     def name(self) -> str:
         """Return variable name string."""
@@ -763,13 +778,6 @@ class ReadVariable:
             raise ValueError("Both start and end indices must be specified.")
         return self._data[start - 1 : end - 1]
 
-    def __repr__(self) -> str:
-        return (
-            f"ReadVariable(name={self._name!r}, "
-            f"data_type={self.data_type.name}, "
-            f"num_values={self.num_values})"
-        )
-
 
 # ======================================================================================
 # ReadZone
@@ -816,6 +824,18 @@ class ReadZone:
         self.auxdata: ReadAuxData = auxdata
         self.node_map: npt.NDArray | None = node_map
         self.datapacking: DataPacking = datapacking
+
+    def __repr__(self) -> str:
+        """Set a more descriptive repr string for reading zones."""
+        title = self.title
+        if len(title) > 30:
+            title = title[:29] + "\u2026"
+        if self.zone_type == ZoneType.ORDERED:
+            size = f"I={self.I}, J={self.J}, K={self.K}"
+        else:
+            size = f"N={self.num_nodes}, E={self.num_elements}"
+        extra = f", aux={len(self.auxdata)}" if len(self.auxdata) else ""
+        return f"ReadZone({title!r}, {self.zone_type.name}, {size}{extra})"
 
     # -- Properties --------------------------------------------------------------------
 
@@ -897,14 +917,6 @@ class ReadZone:
         """Always ``True`` for zones successfully parsed from a file."""
         return True
 
-    def __repr__(self) -> str:
-        return (
-            f"ReadZone(title={self.title!r}, "
-            f"zone_type={self.zone_type.name}, "
-            f"datapacking={self.datapacking.name}, "
-            f"I={self.I}, J={self.J}, K={self.K})"
-        )
-
 
 # ======================================================================================
 # Public Read API
@@ -933,7 +945,6 @@ class Read:
 
     def __init__(self, path: str) -> None:
         self._path: str = str(path)
-
         self._title: str = ""
         self._file_type: FileType = FileType.FULL
         self._variable_names: list[str] = []
@@ -942,8 +953,29 @@ class Read:
         self._auxdata: ReadAuxData = ReadAuxData()
         # Index 0 is a None placeholder so that 1-based indexing works directly.
         self._var_auxdata: list[ReadAuxData | None] = [None]
-
         self._parse()
+
+    def __repr__(self) -> str:
+        """Set a nice repr string for the read object."""
+        cls = type(self).__name__
+        name = self._path.replace("\\", "/").rsplit("/", 1)[-1]
+        try:
+            parts = [f"path={name!r}"]
+            title = self.title
+            if title:
+                if len(title) > 40:
+                    title = title[:25] + "\u2026"
+                parts.append(f"title={title!r}")
+            parts += [
+                f"file_type={self.file_type.name}",
+                f"zones={self.num_zones}",
+                f"variables={self.num_vars}",
+            ]
+            if self.num_auxdata_items:
+                parts.append(f"aux={self.num_auxdata_items}")
+            return f"{cls}({', '.join(parts)})"
+        except Exception:
+            return f"{cls}(path={name!r}, <unavailable>)"
 
     def __enter__(self) -> Read:
         """Context manager for Read class."""
