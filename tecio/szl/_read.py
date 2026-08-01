@@ -320,26 +320,58 @@ class ReadZone:
         return libtecio.tec_zone_get_strand_id(self._handle, self.zone_index)
 
     @property
+    def shared_connectivity(self) -> int | None:
+        """Source zone index if this zone's connectivity is shared, else None.
+
+        Mirrors :attr:`ReadVariable.shared_zone`, but for the FE node map
+        rather than a single variable: FE zones can share their entire
+        connectivity (node map, and face neighbors if present) from an
+        earlier zone via ``ShareConnectivityFromZone`` instead of storing
+        their own copy.
+
+        Returns:
+            1-based zone index the connectivity is shared from, or ``None``
+            if this zone owns its connectivity (including all ORDERED
+            zones, which have no explicit connectivity to share).
+        """
+        if self.zone_type == ZoneType.ORDERED:
+            return None
+        return libtecio.tec_zone_connectivity_get_shared_zone(
+            self._handle,
+            self.zone_index,
+        )
+
+    def _connectivity_zone(self) -> int:
+        """Return the zone index that actually holds this variable's connectivity.
+
+        Resolve zone index containing the nade map arraysto be used in :mod:`libtecio`
+        function calls.
+        """
+        shared = self.shared_connectivity
+        return shared if shared is not None else self.zone_index
+
+    @property
     def node_map(self) -> npt.NDArray[np.int64] | None:
         """Node connectivity array ``(num_elements, nodes_per_cell)``.
 
         Returns:
             (n x m) node map array for n-cells and m-nodes per cell.
         """
-        is64bit = libtecio.is_64bit(self._handle, self.zone_index)
         if self.zone_type == ZoneType.ORDERED:
             return None
-        elif is64bit:
+        is64bit = libtecio.is_64bit(self._handle, self.zone_index)
+        connectivity_zone = self._connectivity_zone()
+        if is64bit:
             return libtecio.tec_zone_node_map_get_64(
                 self._handle,
-                self.zone_index,
+                connectivity_zone,
                 self.num_elements,
                 self.nodes_per_cell,
             )
         else:
             return libtecio.tec_zone_node_map_get(
                 self._handle,
-                self.zone_index,
+                connectivity_zone,
                 self.num_elements,
                 self.nodes_per_cell,
             ).astype(np.int64)
@@ -370,9 +402,10 @@ class ReadZone:
             x, y, z = zone.get_array(["x", "y", "z"])
 
         Returns:
-            One array (or ``None`` if the variable is passive or shared) for a scalar
+            One array (or ``None`` only if the variable is passive) for a scalar
             key; a tuple of such arrays for a list of names.  A single-element list
-            yields a 1-tuple, not a bare array.
+            yields a 1-tuple, not a bare array.  A shared variable resolves to its
+            source zone's array, per :attr:`ReadVariable.values`.
 
         Raises:
             KeyError:   If a name does not exist.
@@ -424,17 +457,33 @@ class ReadVariable:
         return libtecio.tec_var_is_enabled(self._handle, self.var_index)
 
     @property
-    def data_type(self) -> DataType:
-        """Data type enum for this variable in this zone."""
-        return libtecio.tec_zone_var_get_type(
+    def shared_zone(self) -> int | None:
+        """Source zone index if shared, or None."""
+        return libtecio.tec_zone_var_get_shared_zone(
             self._handle, self.zone_index, self.var_index
+        )
+
+    def _data_zone(self) -> int:
+        """Return the zone index that actually holds this variable's data.
+
+        Resolve zone index containing data arrays to be used in :mod:`libtecio` function
+        calls.
+        """
+        shared = self.shared_zone
+        return shared if shared is not None else self.zone_index
+
+    @property
+    def data_type(self) -> DataType:
+        """Data type enum for this variable."""
+        return libtecio.tec_zone_var_get_type(
+            self._handle, self._data_zone(), self.var_index
         )
 
     @property
     def value_location(self) -> ValueLocation:
         """Value location (NODAL or CELL_CENTERED)."""
         return libtecio.tec_zone_var_get_value_location(
-            self._handle, self.zone_index, self.var_index
+            self._handle, self._data_zone(), self.var_index
         )
 
     def is_passive(self) -> bool:
@@ -444,17 +493,10 @@ class ReadVariable:
         )
 
     @property
-    def shared_zone(self) -> int | None:
-        """Source zone index if shared, or None."""
-        return libtecio.tec_zone_var_get_shared_zone(
-            self._handle, self.zone_index, self.var_index
-        )
-
-    @property
     def num_values(self) -> int:
         """Number of values in the data array."""
         return libtecio.tec_zone_var_get_num_values(
-            self._handle, self.zone_index, self.var_index
+            self._handle, self._data_zone(), self.var_index
         )
 
     @property
@@ -468,7 +510,12 @@ class ReadVariable:
         | npt.NDArray[np.uint8]
         | None
     ):
-        """All values as a NumPy array, or None if passive/shared."""
+        """All values as a NumPy array, or None if passive.
+
+        Note:
+            Resolves to the source zone's actual data for a shared variable as if it
+            were local to this zone.
+        """
         return self.get_values()
 
     def get_values(
@@ -495,15 +542,17 @@ class ReadVariable:
         Returns:
             NumPy array of values with appropriate dtype. Ordered zones return arrays
             reshaped to (I, J, K) or (I-1, J-1, K-1) for full reads. FE unstructured
-            zones return flat 1-D arrays. Returns None if variable is passive or shared.
+            zones return flat 1-D arrays. A shared variable resolves to the source
+            zone's array. Returns None only if the variable is passive.
 
         Raises:
             ValueError: If only one of start/end is specified.
         """
-        # First check if variable is passive or shared (no data to return)
-        if self.is_passive() or (self.shared_zone is not None):
+        # First check if variable is passive (no data to return)
+        if self.is_passive():
             return None
 
+        data_zone = self._data_zone()
         data_type = self.data_type
         full_read = value_range == (None, None)
 
@@ -528,23 +577,23 @@ class ReadVariable:
 
         if data_type == DataType.FLOAT:
             arr = libtecio.tec_zone_var_get_float_values(
-                self._handle, self.zone_index, self.var_index, start_index, num_values
+                self._handle, data_zone, self.var_index, start_index, num_values
             )
         elif data_type == DataType.DOUBLE:
             arr = libtecio.tec_zone_var_get_double_values(
-                self._handle, self.zone_index, self.var_index, start_index, num_values
+                self._handle, data_zone, self.var_index, start_index, num_values
             )
         elif data_type == DataType.INT32:
             arr = libtecio.tec_zone_var_get_int32_values(
-                self._handle, self.zone_index, self.var_index, start_index, num_values
+                self._handle, data_zone, self.var_index, start_index, num_values
             )
         elif data_type == DataType.INT16:
             arr = libtecio.tec_zone_var_get_int16_values(
-                self._handle, self.zone_index, self.var_index, start_index, num_values
+                self._handle, data_zone, self.var_index, start_index, num_values
             )
         elif data_type == DataType.BYTE:
             arr = libtecio.tec_zone_var_get_uint8_values(
-                self._handle, self.zone_index, self.var_index, start_index, num_values
+                self._handle, data_zone, self.var_index, start_index, num_values
             )
         else:
             raise ValueError(f"Unknown data type: {data_type}")

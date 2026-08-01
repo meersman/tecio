@@ -7,11 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
-
-### Added
-
-- `tecsplit` CLI tool to split grid and solutions to separate files.
+```{include} changelog/v0.2.0.md
+```
 
 ---
 
@@ -24,8 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ```
 
 ---
-
-[Unreleased]: https://github.com/meersman/tecio/compare/v0.1.0...HEAD
 
 ```{toctree}
 :hidden:

@@ -275,14 +275,16 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="tecslice",
         description=(
-            "Slice a Tecplot file along IJK indices (ordered zones) and/or "
-            "solution time (all zone types).  "
+            # -|--------------------|---------------------------------------------|
+            "Slice a Tecplot file along IJK indices (ordered zones) and/or\n"
+            "solution time (all zone types).\n"
             "Slice notation: start:end:skip (any component may be omitted)."
         ),
         epilog=(
-            "IJK indices are 1-based and inclusive.  skip may be negative.\n"
+            # -|--------------------|---------------------------------------------|
+            "IJK indices are 1-based and inclusive. skip may be negative.\n"
             "Time start/end are float values; skip is an integer stride.\n\n"
-            "Examples\n"
+            "Example usage:\n"
             "  Every other I point\n"
             "    $ tecslice -i ::2 -o thinned.szplt flow.szplt\n"
             "  I=2..10, J up to 5\n"
@@ -528,9 +530,9 @@ def _build_protected_set(
     required_sources: set[int] = set()
     for zi in keep_indices:
         for var in zones[zi].variable:
-            sv = var.shared_zone  # 0-based, or None
+            sv = var.shared_zone  # 1-based, or None
             if sv is not None:
-                required_sources.add(sv)
+                required_sources.add(sv - 1)  # -> 0-based, to match keep_indices
 
     # A zone needs protection only if it is required but not already kept.
     return required_sources - keep_indices
@@ -563,7 +565,7 @@ def _collect_zone_arrays(
     for j in range(num_vars):
         var = zone.variable[j]
         passive_vars.append(var.is_passive())
-        sv = var.shared_zone  # 0-based source zone index, or None
+        sv = var.shared_zone  # 1-based source zone index, or None
         share_int = sv if sv is not None else 0
 
         var_sharing.append(share_int)
@@ -633,10 +635,12 @@ def _write_zone_verbatim(
     if zone.zone_type == ZoneType.ORDERED:
         writer.write_ijk_zone(data=writer_data, **kw)
     else:
+        con_sharing = zone.shared_connectivity
         writer.write_fe_zone(
             zone_type=zone.zone_type,
             data=writer_data,
-            node_map=zone.node_map,
+            node_map=None if con_sharing else zone.node_map,
+            con_sharing=con_sharing,
             **kw,
         )
 
@@ -689,10 +693,12 @@ def _write_zone_protected(
     if zone.zone_type == ZoneType.ORDERED:
         writer.write_ijk_zone(data=writer_data, **kw)
     else:
+        con_sharing = zone.shared_connectivity
         writer.write_fe_zone(
             zone_type=zone.zone_type,
             data=writer_data,
-            node_map=zone.node_map,
+            node_map=None if con_sharing else zone.node_map,
+            con_sharing=con_sharing,
             **kw,
         )
 

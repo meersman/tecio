@@ -15,10 +15,10 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from . import utils
+from . import _utils
 
 # Load tecio library
-TECIO_LIB_PATH = utils.get_tecio_lib()
+TECIO_LIB_PATH = _utils.get_tecio_lib()
 lib = ctypes.cdll.LoadLibrary(TECIO_LIB_PATH)
 
 
@@ -573,6 +573,12 @@ lib.tecZoneVarGetSharedZone.restype = ctypes.c_int32
 lib.tecZoneVarGetSharedZone.argtypes = [
     ctypes.c_void_p,
     ctypes.c_int32,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecZoneConnectivityGetSharedZone.restype = ctypes.c_int32
+lib.tecZoneConnectivityGetSharedZone.argtypes = [
+    ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.POINTER(ctypes.c_int32),
 ]
@@ -1662,6 +1668,37 @@ def tec_zone_var_get_shared_zone(
         raise TecioError(
             f"tecZoneVarGetSharedZone Error: handle={handle}, "
             f"zone_index={zone_index}, var_index={var_index}, return_code={ret}"
+        )
+
+    return shared_zone.value if shared_zone.value != 0 else None
+
+
+def tec_zone_connectivity_get_shared_zone(
+    handle: ctypes.c_void_p, zone_index: int
+) -> int | None:
+    """Get the shared zone index for unstructured mesh connectivity data.
+
+    Args:
+        handle (ctypes.c_void_p): File handle.
+        zone_index (int): 1-based zone index.
+
+    Returns:
+        Shared zone index, or None if not shared.
+
+    Raises:
+        TecioError: On C library error.
+    """
+    shared_zone = ctypes.c_int32(0)
+
+    ret = lib.tecZoneConnectivityGetSharedZone(
+        handle,
+        ctypes.c_int32(zone_index),
+        ctypes.byref(shared_zone),
+    )
+    if ret != 0:
+        raise TecioError(
+            f"tecZoneConnectivityGetSharedZone Error: handle={handle}, "
+            f"zone_index={zone_index}, return_code={ret}"
         )
 
     return shared_zone.value if shared_zone.value != 0 else None

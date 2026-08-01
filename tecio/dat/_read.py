@@ -124,6 +124,16 @@ _DT_TO_DTYPE: dict[DataType, str] = {
     DataType.BYTE: "u1",
 }
 
+# ASCII DT= keyword (and common aliases) to DataType
+_STR_TO_DATATYPE: dict[str, DataType] = {
+    "single": DataType.FLOAT,
+    "float": DataType.FLOAT,
+    "double": DataType.DOUBLE,
+    "longint": DataType.INT32,
+    "shortint": DataType.INT16,
+    "byte": DataType.BYTE,
+}
+
 #: Values per line for Write data blocks.
 _VALUES_PER_LINE: int = 5
 
@@ -486,6 +496,42 @@ def _parse_varsharelist(text: str) -> dict[int, int]:
     return result
 
 
+def _parse_dt(text: str) -> list[DataType]:
+    """Parse ``DT=(SINGLE SINGLE ...)`` -> one :class:`DataType` per variable.
+
+    Note:
+        Tokens may be separated by whitespace, commas, or both.
+
+    Args:
+        text: Raw DT value string including its outer parentheses, e.g. ``"(SINGLE,
+              SINGLE, DOUBLE)"``.
+
+    Returns:
+        One :class:`DataType` per variable, in dataset variable order.
+
+    Raises:
+        ValueError: If a token isn't a recognized Tecplot data type keyword.
+
+    Example:
+        >>> _parse_dt("(SINGLE SINGLE DOUBLE)")
+        [DataType.FLOAT, DataType.FLOAT, DataType.DOUBLE]
+    """
+    inner = text.strip()
+    if inner.startswith("(") and inner.endswith(")"):
+        inner = inner[1:-1]
+    tokens = [tok for tok in re.split(r"[,\s]+", inner) if tok]
+    result: list[DataType] = []
+    for tok in tokens:
+        dt = _STR_TO_DATATYPE.get(tok.strip().lower())
+        if dt is None:
+            raise ValueError(
+                f"DT={text!r} contains unrecognized data type {tok!r}; expected one "
+                "of SINGLE, DOUBLE, LONGINT, SHORTINT, BYTE."
+            )
+        result.append(dt)
+    return result
+
+
 def _parse_auxdata_line(line: str) -> tuple[str, str]:
     """Parse ``DATASETAUXDATA name="value"`` → ``(name, value)``.
 
@@ -704,8 +750,10 @@ class ReadVariable:
     def data_type(self) -> DataType:
         """Return :class:`DataType` inferred from the stored NumPy dtype.
 
-        Passive and shared variables return :attr:`DataType.FLOAT` as a placeholder
-        since no data array is stored.
+        A shared variable reports the source zone's actual dtype, since its data array
+        is resolved from that zone (see :attr:`shared_zone`).  Only a passive variable
+        (which has no data array anywhere in the file) returns :attr:`DataType.FLOAT` as
+        a placeholder.
         """
         if self._data is None:
             return DataType.FLOAT
@@ -747,7 +795,13 @@ class ReadVariable:
 
     @property
     def values(self) -> npt.NDArray | None:
-        """Return the data array, or ``None`` for passive/shared variables."""
+        """Return the data array.
+
+        Returns the source zone's array for a shared variable (see
+        :attr:`shared_zone`) exactly as if this zone owned the data itself.
+        ``None`` only for a passive variable, which has no data anywhere in
+        the file.
+        """
         return self._data
 
     def get_values(
@@ -764,7 +818,9 @@ class ReadVariable:
                 1-based start (inclusive) and end (exclusive).
 
         Returns:
-            arr (numpy.ndarray | None)
+            The array (or a slice of it), or ``None`` for a passive variable.
+            A shared variable resolves to the source zone's array, per
+            :attr:`values`.
 
         Raises:
             ValueError: If only one of start/end is given.
@@ -787,13 +843,14 @@ class ReadVariable:
 class ReadZone:
     """Zone data parsed from a Tecplot ASCII DAT file.
 
-    Interface matches :class:`szl.ReadZone`.
-
     Attributes:
         datapacking: :class:`~tecio.libtecio.DataPacking` member reflecting the
             ``DATAPACKING`` keyword found in the zone header (``BLOCK`` or
             ``POINT``).  The data arrays are identical either way; this attribute
             records how the values were laid out on disk.
+        shared_connectivity: 1-based source zone index if this zone's connectivity is
+            shared via ``CONNECTIVITYSHAREZONE``, else ``None``.  :attr:`node_map`
+            automatically resolves to the source zone's array.
 
     Example:
         >>> zone = ReadZone(title, zone_type, I, J, K, ...)
@@ -812,6 +869,7 @@ class ReadZone:
         auxdata: ReadAuxData,
         node_map: npt.NDArray | None = None,
         datapacking: DataPacking = DataPacking.BLOCK,
+        shared_connectivity: int | None = None,
     ) -> None:
         self.title: str = title
         self.zone_type: ZoneType = zone_type
@@ -824,6 +882,7 @@ class ReadZone:
         self.auxdata: ReadAuxData = auxdata
         self.node_map: npt.NDArray | None = node_map
         self.datapacking: DataPacking = datapacking
+        self.shared_connectivity: int | None = shared_connectivity
 
     def __repr__(self) -> str:
         """Set a more descriptive repr string for reading zones."""
@@ -902,9 +961,10 @@ class ReadZone:
             x, y, z = zone.get_array(["x", "y", "z"])
 
         Returns:
-            One array (or ``None`` if the variable is passive or shared) for a scalar
-            key; a tuple of such arrays for a list of names.  A single-element list
-            yields a 1-tuple, not a bare array.
+            Array correcsponding to scalar key (or ``None`` only if the variable is
+            passive); a tuple of such arrays for a list of names. A single-element list
+            yields a 1-tuple, not a bare array. A shared variable resolves to its
+            source zone's array, per :attr:`ReadVariable.values`.
 
         Raises:
             KeyError:   If a name does not exist.
@@ -1291,6 +1351,18 @@ class Read:
         if "VARLOCATION" in kv:
             var_locs = _parse_varlocation(kv["VARLOCATION"])
 
+        # Per-variable data types. Tecplot default when DT= is omitted is SINGLE for
+        # every variable.
+        if "DT" in kv:
+            var_types = _parse_dt(kv["DT"])
+            if len(var_types) != len(self._variable_names):
+                raise ValueError(
+                    f"DT={kv['DT']!r} declares {len(var_types)} data types, but "
+                    f"the dataset has {len(self._variable_names)} variables."
+                )
+        else:
+            var_types = [DataType.FLOAT] * len(self._variable_names)
+
         # Passive variables (0-based)
         passive_set: set[int] = set()
         if "PASSIVEVARLIST" in kv:
@@ -1322,6 +1394,7 @@ class Read:
                 var_locs,
                 passive_set,
                 share_map,
+                var_types,
             )
         else:
             var_arrays = self._read_block_var_data(
@@ -1332,6 +1405,7 @@ class Read:
                 var_locs,
                 passive_set,
                 share_map,
+                var_types,
             )
 
         # -- Read connectivity (FE zones only) -----------------------------------------
@@ -1362,6 +1436,17 @@ class Read:
                 return arr.reshape(shape, order="F")
             return arr
 
+        # Resolve variable data shared from an earlier zone (VARSHARELIST). Sharing is
+        # only valid against a zone that has already been parsed (DAT files reference
+        # zones by position, forward-only); an out-of-range reference is left as
+        # ``None`` rather than raising, since malformed input shouldn't crash a read
+        # that's otherwise recoverable.
+        for var_idx, src_zone_1based in share_map.items():
+            if 1 <= src_zone_1based <= len(self._zones):
+                var_arrays[var_idx] = (
+                    self._zones[src_zone_1based - 1].variable[var_idx].values
+                )
+
         read_vars = [
             ReadVariable(
                 name=name,
@@ -1389,6 +1474,7 @@ class Read:
                 auxdata=ReadAuxData(zone_aux),
                 node_map=node_map,
                 datapacking=packing,
+                shared_connectivity=con_share_zone if con_share_zone else None,
             )
         )
 
@@ -1396,7 +1482,14 @@ class Read:
 
     @staticmethod
     def _read_float_block(tokens: _LineBuffer, n_values: int) -> npt.NDArray:
-        """Read exactly *n_values* floats from *tokens* into a float64 array.
+        """Read *n_values* floats from *tokens* into an intermediate float64 array.
+
+        This is a pure text-parsing primitive. Callers cast the result to each
+        variable's real dtype  afterward, once individual per-variable arrays have been
+        split out.
+
+        See Also:
+            :meth:`_read_block_var_data`/:meth:`_read_point_var_data`.
 
         Examples:
             >>> arr = Read._read_float_block(tokens, 100)
@@ -1432,15 +1525,26 @@ class Read:
         var_locs: dict[int, ValueLocation],
         passive_set: set[int],
         share_map: dict[int, int],
+        var_types: list[DataType],
     ) -> list[npt.NDArray | None]:
         """Read ``DATAPACKING=BLOCK`` variable data for one zone.
 
         One contiguous block of values is read per active variable, in dataset variable
-        order.  Passive and shared variables contribute a ``None`` placeholder to the
-        returned list.
+        order. Each block is parsed as text into an intermediate ``float64`` array
+        (``_read_float_block`` doesn't know or care about per-variable types), then cast
+        to that variable's actual declared dtype (from ``DT=``, or the spec's documented
+        SINGLE default) right here, where each variable's array is finalized.
+
+        Note:
+            Passive and shared variables contribute a ``None`` placeholder to the
+            returned list. The caller resolves shared variables against the zones parsed
+            so far afterward, since this function only reads bytes off disk and has no
+            zone list to resolve against.
 
         Example:
-            >>> arrays = Read._read_block_var_data(tokens, 3, 100, 80, {}, set(), {})
+            >>> arrays = Read._read_block_var_data(
+            ...     tokens, 3, 100, 80, {}, set(), {}, [DataType.FLOAT] * 3
+            ... )
 
         """
         var_arrays: list[npt.NDArray | None] = [None] * num_vars
@@ -1449,7 +1553,8 @@ class Read:
                 continue  # no data block for passive/shared variables
             loc = var_locs.get(var_idx, ValueLocation.NODAL)
             n_vals = num_cells if loc == ValueLocation.CELL_CENTERED else num_nodes
-            var_arrays[var_idx] = Read._read_float_block(tokens, n_vals)
+            raw = Read._read_float_block(tokens, n_vals)
+            var_arrays[var_idx] = raw.astype(_DT_TO_DTYPE[var_types[var_idx]])
         return var_arrays
 
     @staticmethod
@@ -1461,23 +1566,30 @@ class Read:
         var_locs: dict[int, ValueLocation],
         passive_set: set[int],
         share_map: dict[int, int],
+        var_types: list[DataType],
     ) -> list[npt.NDArray | None]:
         """Read ``DATAPACKING=POINT`` variable data for one zone.
 
         The spec writes two interleaved sections:
 
-        * **Nodal section** — ``num_nodes`` rows, one per node.  Each row contains the
-          values of all active nodal variables in dataset order.
-        * **Cell-centred section** — ``num_cells`` rows, one per element.  Each row
-          contains the values of all active CC variables in dataset order.
+            * **Nodal section** — ``num_nodes`` rows, one per node.  Each row contains
+              the values of all active nodal variables in dataset order.
+            * **Cell-centered section** — ``num_cells`` rows, one per element.  Each row
+              contains the values of all active CC variables in dataset order.
 
-        When all variables are nodal (the common case from CFD exporters) the CC section
-        is empty and is skipped automatically.  Passive and shared variables are
-        excluded from both sections and contribute a ``None`` placeholder to the
-        returned list.
+        When all variables are nodal the cell-centered section is empty and is skipped
+        automatically. Passive and shared variables are excluded from both sections and
+        contribute a ``None`` placeholder to the returned list. Each column is cast to
+        its variable's actual declared dtype (from ``DT=``, or the spec's documented
+        SINGLE default) right where it's extracted from the interleaved rows.
+
+        See Also:
+            :meth:`_read_block_var_data`
 
         Example:
-            >>> arrays = Read._read_point_var_data(tokens, 3, 100, 80, {}, set(), {})
+            >>> arrays = Read._read_point_var_data(
+            ...     tokens, 3, 100, 80, {}, set(), {}, [DataType.FLOAT] * 3
+            ... )
 
         """
         # Active variable indices, preserving dataset order.
@@ -1505,7 +1617,9 @@ class Read:
             # Row-major: flat[node * n_nodal + col] = value for that variable.
             matrix = flat.reshape(num_nodes, n_nodal)
             for col, var_idx in enumerate(nodal_active):
-                var_arrays[var_idx] = np.ascontiguousarray(matrix[:, col])
+                var_arrays[var_idx] = np.ascontiguousarray(
+                    matrix[:, col], dtype=_DT_TO_DTYPE[var_types[var_idx]]
+                )
 
         # Cell-centred section: num_cells rows × len(cc_active) columns.
         n_cc = len(cc_active)
@@ -1513,7 +1627,9 @@ class Read:
             flat = Read._read_float_block(tokens, num_cells * n_cc)
             matrix = flat.reshape(num_cells, n_cc)
             for col, var_idx in enumerate(cc_active):
-                var_arrays[var_idx] = np.ascontiguousarray(matrix[:, col])
+                var_arrays[var_idx] = np.ascontiguousarray(
+                    matrix[:, col], dtype=_DT_TO_DTYPE[var_types[var_idx]]
+                )
 
         return var_arrays
 

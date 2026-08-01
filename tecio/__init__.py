@@ -11,7 +11,7 @@ try:
 except metadata.PackageNotFoundError:
     __version__ = "0.0.0"
 
-from . import cli, dat, libtecio, plt, szl, utils
+from . import cli, dat, libtecio, plt, szl
 from ._containers import VariableList, ZoneList
 from ._io import AppendReadWrite, AppendWrite, open
 
@@ -28,7 +28,6 @@ __all__ = [
     "dat",
     "plt",
     "szl",
-    "utils",
     "cli",
     "AppendWrite",
     "AppendReadWrite",

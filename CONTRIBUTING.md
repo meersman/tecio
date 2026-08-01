@@ -1,7 +1,8 @@
 # Contributing
 
-Thanks for your interest in contributing to tecio! This is a small personal
-project, so contributions are welcome but please keep expectations proportionate.
+Thanks for your interest in contributing to tecio! This is one of many
+personal side projects, so while contributions are welcome, I may take some
+time to review PRs.
 
 ## How to contribute
 

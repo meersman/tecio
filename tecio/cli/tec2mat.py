@@ -69,7 +69,10 @@ Output structure:
           .var_locations          cell    'NODAL' | 'CELL_CENTERED' | ''
           .var_dtypes             cell    'FLOAT' | 'DOUBLE' | 'INT32' | ...
           .var_shared_from        array   1-based source zone, or 0 if not shared
-          .node_map               array   (num_elements x nodes_per_cell), FE only
+          .node_map               array   (num_elements x nodes_per_cell), FE only,
+                                          omitted if connectivity is shared
+          .node_map_shared_from   double  1-based source zone, FE only, present only
+                                          if this zone shares its connectivity
 
     Variable arrays are stored at their on-disk NumPy dtype, so single/double/integer
     precision is preserved.  The real variable names are kept only in ``info.var_names``
@@ -79,7 +82,9 @@ Output structure:
     Passive and shared variables carry no data: their ``var_<k>`` field is an empty
     matrix ``[]``.  A shared variable is therefore never duplicated on disk -- the data
     lives in its source zone and ``var_shared_from`` records where, so the MATLAB user
-    can dereference it (see the examples below).
+    can dereference it (see the examples below).  Shared FE connectivity follows the
+    same convention: a zone sharing its node map has no ``node_map`` field at all, only
+    ``node_map_shared_from``.
 
 Examples:
     Convert an SZL file to ``flow.mat``::
@@ -119,6 +124,17 @@ Examples:
             end
         end
 
+    Shared FE connectivity resolves the same way, via ``node_map_shared_from``::
+
+        function m = tecnodemap(d, zoneIdx)
+            z = d.(sprintf('zone_%d', zoneIdx));
+            if isfield(z, 'node_map')
+                m = z.node_map;
+            else
+                m = d.(sprintf('zone_%d', z.node_map_shared_from)).node_map;
+            end
+        end
+
 See Also:
     * :mod:`tecio.cli.teconvert`: Convert between Tecplot file formats (``.szplt``,
       ``.plt``, ``.dat``) without leaving the Tecplot ecosystem.
@@ -153,9 +169,9 @@ import numpy as np
 from .. import open as tecio_open
 from ..libtecio import ZoneType
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Constants
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 #: Zone types whose connectivity is face-based and cannot be read; their
 #: node map is omitted from the output.
@@ -165,17 +181,18 @@ _FE_POLY: frozenset[ZoneType] = frozenset({
 })
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Argument parsing
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="tec2mat",
         description=(
-            "Convert a Tecplot file to a MATLAB .mat file.  Each input file maps to "
-            "one output file, with every zone stored as a named struct."
+            # -|-------------------|---------------------------------------------|
+            "Convert a Tecplot file to a MATLAB .mat file.  Each input file maps\n"
+            "to one output file, with every zone stored as a named struct."
         ),
         epilog=(
             "Example usage:\n"
@@ -236,9 +253,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Conversion helpers
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def _build_info_dict(reader: Any) -> dict[str, Any]:
@@ -360,19 +377,28 @@ def _zone_to_dict(zone: Any, num_vars: int) -> dict[str, Any]:
     d["var_dtypes"] = np.array(dtypes, dtype=object)
     d["var_shared_from"] = shared_from
 
-    # Connectivity for simple FE zones only.  Ordered zones have no node map,
-    # and poly zones expose none through the readers.
+    # Connectivity for simple FE zones only.  Ordered zones have no node map, and poly
+    # zones expose none through the readers.
+    #
+    # A zone that shares connectivity is handled the same way as a shared variable
+    # above: rather than duplicating the (potentially large) node map into every zone's
+    # struct, store the 1-based source zone number so the MATLAB user can dereference
+    # zone_<src>.node_map themselves.
     if zone.zone_type != ZoneType.ORDERED and zone.zone_type not in _FE_POLY:
-        node_map = zone.node_map
-        if node_map is not None:
-            d["node_map"] = node_map
+        con_src = zone.shared_connectivity
+        if con_src is not None:
+            d["node_map_shared_from"] = np.int32(con_src)
+        else:
+            node_map = zone.node_map
+            if node_map is not None:
+                d["node_map"] = node_map
 
     return d
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Main entry point
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -384,9 +410,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     args = _parse_args(argv)
 
-    # SciPy is an optional dependency, imported lazily so that merely importing
-    # this module (e.g. to call main() from a script) does not require SciPy
-    # unless the tool is actually run.
+    # SciPy is an optional dependency, imported lazily so that merely importing this
+    # module (e.g. to call main() from a script) does not require SciPy unless the tool
+    # is actually run.
     try:
         from scipy import io as scipy_io
     except ImportError:

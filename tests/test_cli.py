@@ -35,23 +35,31 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
 
 import tecio
-from tecio.cli.tecdump import main as tecdump_main
-from tecio.cli.tecextract import main as tecextract_main
-from tecio.cli.tecfix import main as tecfix_main
-from tecio.cli.tecmerge import main as tecmerge_main
-from tecio.cli.teconvert import main as teconvert_main
-from tecio.cli.tecscale import main as tecscale_main
-from tecio.cli.tecslice import main as tecslice_main
-from tecio.cli.tecstats import main as tecstats_main
+from tecio.cli.tec2mat import main as tec2mat
+from tecio.cli.tecdump import main as tecdump
+from tecio.cli.tecextract import main as tecextract
+from tecio.cli.tecfix import main as tecfix
+from tecio.cli.tecmerge import main as tecmerge
+from tecio.cli.teconvert import main as teconvert
+from tecio.cli.tecscale import main as tecscale
+from tecio.cli.tecslice import main as tecslice
+from tecio.cli.tecstats import main as tecstats
+from tecio.libtecio import ZoneType
 
-# ---------------------------------------------------------------------------
+try:
+    import scipy.io as sio
+except ImportError:  # pragma: no cover -> tec2mat requires scipy
+    sio = None
+
+# --------------------------------------------------------------------------------------
 # Constants
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 _TEST_DIR = Path(tecio.__file__).parent.parent / "tests"
 _FORMATS = ["szplt", "plt", "dat"]
@@ -60,10 +68,15 @@ _ONERA: dict[str, Path] = {fmt: _TEST_DIR / f"Onera.{fmt}" for fmt in _FORMATS}
 _NUM_ZONES = 2
 _NUM_VARS = 18
 
+# Per-zone (nodes, elements, nodes_per_cell) -- FluidVolume FEBrick, WingSurface
+# FEQuad. Used only by the tec2mat tests below.
+_Z1_NODES, _Z1_ELEMS, _Z1_NPC = 46417, 43008, 8
+_Z2_NODES, _Z2_ELEMS, _Z2_NPC = 1453, 1408, 4
 
-# ---------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def _is_readable(path: Path) -> bool:
@@ -83,9 +96,53 @@ def _copy_onera(src_fmt: str, dst_dir: Path, name: str) -> Path:
     return dst
 
 
-# ---------------------------------------------------------------------------
+def _load_mat(path: Path, *, squeeze: bool = True) -> dict[str, Any]:
+    """Load a ``.mat`` file as MATLAB structs (``mat_struct`` objects).
+
+    Used only by the tec2mat tests.
+    """
+    return sio.loadmat(str(path), struct_as_record=False, squeeze_me=squeeze)
+
+
+def _struct(container: dict[str, Any], name: str) -> Any:
+    """Return struct *name*, unwrapping the 1x1 object array left by squeeze=False.
+
+    Used only by the tec2mat tests.
+    """
+    obj = container[name]
+    if isinstance(obj, np.ndarray):
+        obj = obj.reshape(-1)[0]
+    return obj
+
+
+def _write_synthetic_ijk(path: Path) -> None:
+    """Write a small 2-zone ASCII DAT exercising passive and shared variables.
+
+    Zone 1 (``Z1``) has all three variables active.  Zone 2 (``Z2``) shares
+    variable 1 from zone 1, marks variable 2 passive, and keeps variable 3
+    active.  Each active array has four values.
+
+    Ordered (IJK) zones have no connectivity, so this only exercises
+    variable sharing -- see ``shared_dataset``/``shared_path`` above for FE
+    zones with connectivity sharing too.
+    """
+    x = np.array([0.0, 1.0, 2.0, 3.0], dtype=np.float64)
+    y = np.array([0.0, 0.5, 1.0, 1.5], dtype=np.float64)
+    p = np.array([10.0, 11.0, 12.0, 13.0], dtype=np.float64)
+    p2 = np.array([20.0, 21.0, 22.0, 23.0], dtype=np.float64)
+    with tecio.open(str(path), "w", title="syn", variables=["x", "y", "p"]) as w:
+        w.write_ijk_zone(data=[x, y, p], title="Z1")
+        w.write_ijk_zone(
+            data=[p2],
+            title="Z2",
+            passive_vars=[False, True, False],
+            var_sharing=[1, 0, 0],
+        )
+
+
+# --------------------------------------------------------------------------------------
 # Fixtures
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session")
@@ -105,9 +162,94 @@ def onera_path(request) -> Path:
     return _ONERA[request.param]
 
 
-# ===========================================================================
+# --------------------------------------------------------------------------------------
+# Shared-data fixture
+# --------------------------------------------------------------------------------------
+
+
+def _write_shared_dataset(path: Path) -> None:
+    """Write a 3-zone FETETRAHEDRON dataset with real variable/connectivity sharing.
+
+    Zone 1 (t=0.0): owns x, y, z, connectivity, c, and w.
+    Zone 2 (t=1.0): shares x, y, z, connectivity, and w from zone 1; c is its own.
+    Zone 3 (t=2.0): shares x, y, z, and connectivity from zone 1, and shares c
+                    from zone 2 -- so sharing sources aren't all "zone 1". w is
+                    its own, so the zone has at least one genuinely active
+                    variable (a zone with every variable shared has nothing
+                    left to write and the writer correctly rejects it).
+    """
+    x = np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float32)
+    y = np.array([0.0, 0.0, 1.0, 0.0], dtype=np.float32)
+    z = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
+    nodes = np.array([[1, 2, 3, 4]], dtype=np.int64)
+    c1 = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float64)
+    c2 = np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float64)
+    w1 = np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float64)
+    w3 = np.array([50.0, 60.0, 70.0, 80.0], dtype=np.float64)
+
+    with tecio.open(str(path), "w", variables=["x", "y", "z", "c", "w"]) as w:
+        w.write_fe_zone(
+            zone_type=ZoneType.FETETRAHEDRON,
+            data=[x, y, z, c1, w1],
+            node_map=nodes,
+            title="Zone1_Owner",
+            strand_id=1,
+            solution_time=0.0,
+        )
+        w.write_fe_zone(
+            zone_type=ZoneType.FETETRAHEDRON,
+            data=[c2],
+            var_sharing=[1, 1, 1, 0, 1],
+            con_sharing=1,
+            title="Zone2_SharesFromZone1",
+            strand_id=1,
+            solution_time=1.0,
+        )
+        w.write_fe_zone(
+            zone_type=ZoneType.FETETRAHEDRON,
+            data=[w3],
+            var_sharing=[1, 1, 1, 2, 0],
+            con_sharing=1,
+            title="Zone3_SharesFromZone1And2",
+            strand_id=1,
+            solution_time=2.0,
+        )
+
+
+@pytest.fixture(scope="session")
+def shared_dataset(tmp_path_factory) -> dict[str, Path]:
+    """Write the shared dataset once per session, in every format."""
+    out_dir = tmp_path_factory.mktemp("shared_dataset")
+    paths: dict[str, Path] = {}
+    for fmt, ext in zip(_FORMATS, ["szplt", "plt", "dat"], strict=True):
+        p = out_dir / f"shared.{ext}"
+        _write_shared_dataset(p)
+        paths[fmt] = p
+    return paths
+
+
+@pytest.fixture(params=_FORMATS)
+def shared_path(request, shared_dataset: dict[str, Path]) -> Path:
+    """Yield the shared-dataset input file for each supported format."""
+    return shared_dataset[request.param]
+
+
+_FLAG_TO_EXT = {"-szplt": ".szplt", "-plt": ".plt", "-dat": ".dat"}
+
+
+def _other_format_flag(src: Path) -> str:
+    """Return a teconvert format flag guaranteed to differ from *src*'s own format.
+
+    ``shared_path`` is parametrized over all three formats, so a fixed
+    target flag would silently no-op (and write nothing at all) whenever
+    the source happens to already be that format.
+    """
+    return {".szplt": "-plt", ".plt": "-dat", ".dat": "-szplt"}[src.suffix]
+
+
+# ======================================================================================
 # tecdump
-# ===========================================================================
+# ======================================================================================
 
 
 class TestTecdump:
@@ -115,7 +257,7 @@ class TestTecdump:
 
     def test_basic_output(self, onera_path: Path, capsys) -> None:
         """File header fields appear in stdout; return code is 0."""
-        ret = tecdump_main([str(onera_path)])
+        ret = tecdump([str(onera_path)])
         assert ret == 0
         out = capsys.readouterr().out
         assert "File Type" in out
@@ -125,7 +267,7 @@ class TestTecdump:
 
     def test_zone_record_present(self, onera_path: Path, capsys) -> None:
         """Zone titles FluidVolume and WingSurface appear in the output."""
-        ret = tecdump_main([str(onera_path)])
+        ret = tecdump([str(onera_path)])
         assert ret == 0
         out = capsys.readouterr().out
         assert "FluidVolume" in out
@@ -133,32 +275,32 @@ class TestTecdump:
 
     def test_ignore_zones_flag(self, onera_path: Path, capsys) -> None:
         """--ignore-zones suppresses zone records."""
-        ret = tecdump_main(["--ignore-zones", str(onera_path)])
+        ret = tecdump(["--ignore-zones", str(onera_path)])
         assert ret == 0
         assert "Zone Record" not in capsys.readouterr().out
 
     def test_ignore_vars_flag(self, onera_path: Path, capsys) -> None:
         """--ignore-vars suppresses variable value output."""
-        ret = tecdump_main(["--ignore-vars", str(onera_path)])
+        ret = tecdump(["--ignore-vars", str(onera_path)])
         assert ret == 0
         assert "Values" not in capsys.readouterr().out
 
     def test_zone_filter(self, onera_path: Path) -> None:
         """-zone 1 limits output to zone 1 without error."""
-        assert tecdump_main(["-zone", "1", str(onera_path)]) == 0
+        assert tecdump(["-zone", "1", str(onera_path)]) == 0
 
     def test_variable_filter(self, onera_path: Path) -> None:
         """-variable 1 limits output to variable 1 without error."""
-        assert tecdump_main(["-variable", "1", str(onera_path)]) == 0
+        assert tecdump(["-variable", "1", str(onera_path)]) == 0
 
     def test_maxvals(self, onera_path: Path) -> None:
         """-maxvals changes the array truncation threshold without error."""
-        assert tecdump_main(["-maxvals", "5", str(onera_path)]) == 0
+        assert tecdump(["-maxvals", "5", str(onera_path)]) == 0
 
 
-# ===========================================================================
+# ======================================================================================
 # teconvert
-# ===========================================================================
+# ======================================================================================
 
 
 class TestTeconvert:
@@ -180,7 +322,7 @@ class TestTeconvert:
     ) -> None:
         """Convert between every supported format pair; output must be readable."""
         dst = tmp_path / f"out{dst_ext}"
-        ret = teconvert_main([
+        ret = teconvert([
             dst_flag,
             "--force",
             "-o",
@@ -202,31 +344,31 @@ class TestTeconvert:
     )
     def test_same_format_noop(self, fmt: str, flag: str) -> None:
         """Same-format conversion warns and returns 0."""
-        ret = teconvert_main([flag, str(_ONERA[fmt])])
+        ret = teconvert([flag, str(_ONERA[fmt])])
         assert ret == 0
 
     def test_missing_input_returns_1(self, tmp_path: Path) -> None:
         """Non-existent source file returns exit code 1."""
-        assert teconvert_main(["-dat", str(tmp_path / "ghost.szplt")]) == 1
+        assert teconvert(["-dat", str(tmp_path / "ghost.szplt")]) == 1
 
     def test_existing_output_no_force_returns_1(self, tmp_path: Path) -> None:
         """Existing output without --force returns exit code 1."""
         dst = tmp_path / "out.dat"
         dst.touch()
-        assert teconvert_main(["-dat", "-o", str(dst), str(_ONERA["szplt"])]) == 1
+        assert teconvert(["-dat", "-o", str(dst), str(_ONERA["szplt"])]) == 1
 
     def test_force_overwrites_existing(self, tmp_path: Path) -> None:
         """--force overwrites an existing output file."""
         dst = tmp_path / "out.dat"
         dst.touch()
-        ret = teconvert_main(["-dat", "--force", "-o", str(dst), str(_ONERA["szplt"])])
+        ret = teconvert(["-dat", "--force", "-o", str(dst), str(_ONERA["szplt"])])
         assert ret == 0
         assert dst.stat().st_size > 0
 
 
-# ===========================================================================
+# ======================================================================================
 # tecextract
-# ===========================================================================
+# ======================================================================================
 
 
 class TestTecextract:
@@ -235,13 +377,13 @@ class TestTecextract:
     def test_extract_all(self, onera_path: Path, tmp_path: Path) -> None:
         """No filter produces a readable verbatim copy."""
         dst = tmp_path / "out.szplt"
-        assert tecextract_main(["-o", str(dst), "--force", str(onera_path)]) == 0
+        assert tecextract(["-o", str(dst), "--force", str(onera_path)]) == 0
         assert _is_readable(dst)
 
     def test_extract_zone_1_only(self, onera_path: Path, tmp_path: Path) -> None:
         """``-zones 1`` extracts FluidVolume; output has 1 zone."""
         dst = tmp_path / "out.szplt"
-        ret = tecextract_main(["-zones", "1", "-o", str(dst), str(onera_path)])
+        ret = tecextract(["-zones", "1", "-o", str(dst), str(onera_path)])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 1
@@ -249,7 +391,7 @@ class TestTecextract:
     def test_extract_zone_2_only(self, onera_path: Path, tmp_path: Path) -> None:
         """``-zones 2`` extracts WingSurface; output has 1 zone."""
         dst = tmp_path / "out.szplt"
-        ret = tecextract_main(["-zones", "2", "-o", str(dst), str(onera_path)])
+        ret = tecextract(["-zones", "2", "-o", str(dst), str(onera_path)])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 1
@@ -260,7 +402,7 @@ class TestTecextract:
         subzone layout — writing a single-variable SZL file is not supported.
         """
         dst = tmp_path / "out.dat"
-        ret = tecextract_main(["-variables", "1", "-o", str(dst), str(_ONERA["szplt"])])
+        ret = tecextract(["-variables", "1", "-o", str(dst), str(_ONERA["szplt"])])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_vars == 1
@@ -271,13 +413,13 @@ class TestTecextract:
         variables 1, 2, and 3 (x, y, z) to compute its subzone layout.
         """
         dst = tmp_path / "out.szplt"
-        ret = tecextract_main(["-variables", "1", "-o", str(dst), str(_ONERA["szplt"])])
+        ret = tecextract(["-variables", "1", "-o", str(dst), str(_ONERA["szplt"])])
         assert ret == 1
 
     def test_extract_multiple_variables(self, tmp_path: Path) -> None:
         """``-variables 1,2,3`` produces a file with exactly 3 variables."""
         dst = tmp_path / "out.szplt"
-        ret = tecextract_main([
+        ret = tecextract([
             "-variables",
             "1,2,3",
             "-o",
@@ -292,7 +434,7 @@ class TestTecextract:
     def test_extract_zone_and_variable(self, tmp_path: Path) -> None:
         """Combined zone + variable filter applies both restrictions."""
         dst = tmp_path / "out.szplt"
-        ret = tecextract_main([
+        ret = tecextract([
             "-zones",
             "2",
             "-variables",
@@ -310,13 +452,13 @@ class TestTecextract:
     def test_output_format_controlled_by_extension(self, tmp_path: Path) -> None:
         """Writing to .dat produces a readable ASCII output."""
         dst = tmp_path / "out.dat"
-        assert tecextract_main(["-o", str(dst), "--force", str(_ONERA["szplt"])]) == 0
+        assert tecextract(["-o", str(dst), "--force", str(_ONERA["szplt"])]) == 0
         assert _is_readable(dst)
 
     def test_zone_out_of_range_returns_1(self, tmp_path: Path) -> None:
         """Zone index beyond num_zones (2) returns exit code 1."""
         assert (
-            tecextract_main([
+            tecextract([
                 "-zones",
                 "99",
                 "-o",
@@ -329,7 +471,7 @@ class TestTecextract:
     def test_variable_out_of_range_returns_1(self, tmp_path: Path) -> None:
         """Variable index beyond num_vars (18) returns exit code 1."""
         assert (
-            tecextract_main([
+            tecextract([
                 "-variables",
                 "99",
                 "-o",
@@ -342,7 +484,7 @@ class TestTecextract:
     def test_missing_input_returns_1(self, tmp_path: Path) -> None:
         """Non-existent source file returns exit code 1."""
         assert (
-            tecextract_main([
+            tecextract([
                 "-o",
                 str(tmp_path / "out.szplt"),
                 str(tmp_path / "ghost.szplt"),
@@ -354,20 +496,20 @@ class TestTecextract:
         """Existing output without --force returns exit code 1."""
         dst = tmp_path / "out.szplt"
         dst.touch()
-        assert tecextract_main(["-o", str(dst), str(_ONERA["szplt"])]) == 1
+        assert tecextract(["-o", str(dst), str(_ONERA["szplt"])]) == 1
 
     def test_force_overwrites_existing(self, tmp_path: Path) -> None:
         """--force overwrites an existing output file."""
         dst = tmp_path / "out.szplt"
         dst.touch()
-        ret = tecextract_main(["--force", "-o", str(dst), str(_ONERA["szplt"])])
+        ret = tecextract(["--force", "-o", str(dst), str(_ONERA["szplt"])])
         assert ret == 0
         assert dst.stat().st_size > 0
 
 
-# ===========================================================================
+# ======================================================================================
 # tecfix
-# ===========================================================================
+# ======================================================================================
 
 
 class TestTecfix:
@@ -378,7 +520,7 @@ class TestTecfix:
     ) -> None:
         """A file with no NaN/Inf yields a clean copy and a 'clean' message."""
         dst = tmp_path / "fixed.szplt"
-        ret = tecfix_main(["-o", str(dst), "--force", str(onera_path)])
+        ret = tecfix(["-o", str(dst), "--force", str(onera_path)])
         assert ret == 0
         assert _is_readable(dst)
         assert "clean" in capsys.readouterr().out.lower()
@@ -386,7 +528,7 @@ class TestTecfix:
     def test_clean_copy_preserves_structure(self, tmp_path: Path) -> None:
         """Fixed file has the same zone and variable counts as the source."""
         dst = tmp_path / "fixed.szplt"
-        tecfix_main(["--force", "-o", str(dst), str(_ONERA["szplt"])])
+        tecfix(["--force", "-o", str(dst), str(_ONERA["szplt"])])
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == _NUM_ZONES
             assert r.num_vars == _NUM_VARS
@@ -394,36 +536,36 @@ class TestTecfix:
     def test_dry_run_does_not_write(self, onera_path: Path, tmp_path: Path) -> None:
         """--dry-run scans for issues without creating an output file."""
         dst = tmp_path / "fixed.szplt"
-        assert tecfix_main(["--dry-run", str(onera_path)]) == 0
+        assert tecfix(["--dry-run", str(onera_path)]) == 0
         assert not dst.exists()
 
     def test_dry_run_clean_message(self, onera_path: Path, capsys) -> None:
         """--dry-run on a clean file reports it is clean."""
-        tecfix_main(["--dry-run", str(onera_path)])
+        tecfix(["--dry-run", str(onera_path)])
         assert "clean" in capsys.readouterr().out.lower()
 
     def test_missing_input_returns_1(self, tmp_path: Path) -> None:
         """Non-existent source file returns exit code 1."""
-        assert tecfix_main([str(tmp_path / "ghost.szplt")]) == 1
+        assert tecfix([str(tmp_path / "ghost.szplt")]) == 1
 
     def test_existing_output_no_force_returns_1(self, tmp_path: Path) -> None:
         """Existing output without --force returns exit code 1."""
         dst = tmp_path / "fixed.szplt"
         dst.touch()
-        assert tecfix_main(["-o", str(dst), str(_ONERA["szplt"])]) == 1
+        assert tecfix(["-o", str(dst), str(_ONERA["szplt"])]) == 1
 
     def test_force_overwrites_existing(self, tmp_path: Path) -> None:
         """--force overwrites an existing output file."""
         dst = tmp_path / "fixed.szplt"
         dst.touch()
-        ret = tecfix_main(["--force", "-o", str(dst), str(_ONERA["szplt"])])
+        ret = tecfix(["--force", "-o", str(dst), str(_ONERA["szplt"])])
         assert ret == 0
         assert dst.stat().st_size > 0
 
 
-# ===========================================================================
+# ======================================================================================
 # tecmerge
-# ===========================================================================
+# ======================================================================================
 
 
 class TestTecmerge:
@@ -442,7 +584,7 @@ class TestTecmerge:
         src1 = _copy_onera("szplt", tmp_path, "a")
         src2 = _copy_onera("dat", tmp_path, "b")
         dst = tmp_path / "merged.szplt"
-        ret = tecmerge_main(["-o", str(dst), str(src1), str(src2)])
+        ret = tecmerge(["-o", str(dst), str(src1), str(src2)])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == _NUM_ZONES * 2
@@ -451,7 +593,7 @@ class TestTecmerge:
     def test_merge_mixed_formats(self, tmp_path: Path) -> None:
         """SZL + DAT inputs are merged into a single readable output."""
         dst = tmp_path / "merged.szplt"
-        ret = tecmerge_main(["-o", str(dst), str(_ONERA["szplt"]), str(_ONERA["dat"])])
+        ret = tecmerge(["-o", str(dst), str(_ONERA["szplt"]), str(_ONERA["dat"])])
         assert ret == 0
         assert _is_readable(dst)
 
@@ -461,7 +603,7 @@ class TestTecmerge:
         src2 = _copy_onera("dat", tmp_path, "b")
         src3 = _copy_onera("szplt", tmp_path, "c")
         dst = tmp_path / "merged.szplt"
-        ret = tecmerge_main(["-o", str(dst), str(src1), str(src2), str(src3)])
+        ret = tecmerge(["-o", str(dst), str(src1), str(src2), str(src3)])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == _NUM_ZONES * 3
@@ -471,7 +613,7 @@ class TestTecmerge:
         src1 = _copy_onera("szplt", tmp_path, "t0")
         src2 = _copy_onera("dat", tmp_path, "t1")
         dst = tmp_path / "transient.szplt"
-        ret = tecmerge_main([
+        ret = tecmerge([
             "--assign-time-strands",
             "-start",
             "0.0",
@@ -496,7 +638,7 @@ class TestTecmerge:
         src2 = _copy_onera("dat", tmp_path, "t1")
         src3 = _copy_onera("szplt", tmp_path, "t2")
         dst = tmp_path / "transient_end.szplt"
-        ret = tecmerge_main([
+        ret = tecmerge([
             "--assign-time-strands",
             "-start",
             "0.0",
@@ -518,7 +660,7 @@ class TestTecmerge:
     def test_missing_start_with_assign_ts_returns_1(self, tmp_path: Path) -> None:
         """--assign-time-strands without -start returns exit code 1."""
         assert (
-            tecmerge_main([
+            tecmerge([
                 "--assign-time-strands",
                 "-delta",
                 "1.0",
@@ -532,7 +674,7 @@ class TestTecmerge:
     def test_missing_delta_and_end_returns_1(self, tmp_path: Path) -> None:
         """--assign-time-strands without -delta or -end returns exit code 1."""
         assert (
-            tecmerge_main([
+            tecmerge([
                 "--assign-time-strands",
                 "-start",
                 "0.0",
@@ -546,7 +688,7 @@ class TestTecmerge:
     def test_missing_input_returns_1(self, tmp_path: Path) -> None:
         """Non-existent input file returns exit code 1."""
         assert (
-            tecmerge_main([
+            tecmerge([
                 "-o",
                 str(tmp_path / "out.szplt"),
                 str(tmp_path / "ghost.szplt"),
@@ -559,7 +701,7 @@ class TestTecmerge:
         dst = tmp_path / "merged.szplt"
         dst.touch()
         assert (
-            tecmerge_main([
+            tecmerge([
                 "-o",
                 str(dst),
                 str(_ONERA["szplt"]),
@@ -572,7 +714,7 @@ class TestTecmerge:
         """--force overwrites an existing output file."""
         dst = tmp_path / "merged.szplt"
         dst.touch()
-        ret = tecmerge_main([
+        ret = tecmerge([
             "--force",
             "-o",
             str(dst),
@@ -583,9 +725,9 @@ class TestTecmerge:
         assert dst.stat().st_size > 0
 
 
-# ===========================================================================
+# ======================================================================================
 # tecscale
-# ===========================================================================
+# ======================================================================================
 
 
 class TestTecscale:
@@ -594,7 +736,7 @@ class TestTecscale:
     def test_scale_by_index(self, onera_path: Path, tmp_path: Path) -> None:
         """Scale variable 1 (x) by a constant factor; output is readable."""
         dst = tmp_path / "scaled.szplt"
-        ret = tecscale_main([
+        ret = tecscale([
             "-variable",
             "1",
             "-scale",
@@ -609,7 +751,7 @@ class TestTecscale:
     def test_scale_by_name(self, onera_path: Path, tmp_path: Path) -> None:
         """Scale the Pressure variable identified by name."""
         dst = tmp_path / "scaled.szplt"
-        ret = tecscale_main([
+        ret = tecscale([
             "-variable",
             "Pressure",
             "-scale",
@@ -624,7 +766,7 @@ class TestTecscale:
     def test_scale_with_offset(self, onera_path: Path, tmp_path: Path) -> None:
         """Applying both scale and offset returns exit code 0."""
         dst = tmp_path / "scaled.szplt"
-        ret = tecscale_main([
+        ret = tecscale([
             "-variable",
             "Temperature",
             "-scale",
@@ -641,7 +783,7 @@ class TestTecscale:
     def test_scale_single_zone(self, onera_path: Path, tmp_path: Path) -> None:
         """-zone restricts scaling to zone 1 only."""
         dst = tmp_path / "scaled.szplt"
-        ret = tecscale_main([
+        ret = tecscale([
             "-variable",
             "Density",
             "-scale",
@@ -660,7 +802,7 @@ class TestTecscale:
         src = _ONERA["szplt"]
         dst = tmp_path / "scaled.szplt"
         scale = 2.0
-        tecscale_main([
+        tecscale([
             "-variable",
             "1",
             "-scale",
@@ -680,7 +822,7 @@ class TestTecscale:
         """When -zone 1 is active, zone 2 values are identical to source."""
         src = _ONERA["szplt"]
         dst = tmp_path / "scaled.szplt"
-        tecscale_main([
+        tecscale([
             "-variable",
             "Pressure",
             "-scale",
@@ -703,7 +845,7 @@ class TestTecscale:
     ) -> None:
         """Unknown variable name returns exit code 1."""
         assert (
-            tecscale_main([
+            tecscale([
                 "-variable",
                 "DOES_NOT_EXIST_XYZ",
                 "-o",
@@ -718,7 +860,7 @@ class TestTecscale:
     ) -> None:
         """Variable index beyond num_vars (18) returns exit code 1."""
         assert (
-            tecscale_main([
+            tecscale([
                 "-variable",
                 "99",
                 "-o",
@@ -733,7 +875,7 @@ class TestTecscale:
     ) -> None:
         """Zone index beyond num_zones (2) returns exit code 1."""
         assert (
-            tecscale_main([
+            tecscale([
                 "-variable",
                 "1",
                 "-zone",
@@ -748,7 +890,7 @@ class TestTecscale:
     def test_missing_input_returns_1(self, tmp_path: Path) -> None:
         """Non-existent source file returns exit code 1."""
         assert (
-            tecscale_main([
+            tecscale([
                 "-variable",
                 "1",
                 "-o",
@@ -762,14 +904,12 @@ class TestTecscale:
         """Existing output without --force returns exit code 1."""
         dst = tmp_path / "out.szplt"
         dst.touch()
-        assert (
-            tecscale_main(["-variable", "1", "-o", str(dst), str(_ONERA["szplt"])]) == 1
-        )
+        assert tecscale(["-variable", "1", "-o", str(dst), str(_ONERA["szplt"])]) == 1
 
 
-# ===========================================================================
+# ======================================================================================
 # tecslice
-# ===========================================================================
+# ======================================================================================
 
 
 class TestTecslice:
@@ -785,7 +925,7 @@ class TestTecslice:
     ) -> None:
         """IJK ::2 on FE data returns 0; each zone is copied verbatim."""
         dst = tmp_path / "sliced.szplt"
-        ret = tecslice_main(["-i", "::2", "-o", str(dst), str(onera_path)])
+        ret = tecslice(["-i", "::2", "-o", str(dst), str(onera_path)])
         assert ret == 0
         assert dst.exists()
         assert "unstructured" in capsys.readouterr().err.lower()
@@ -793,7 +933,7 @@ class TestTecslice:
     def test_ijk_slice_preserves_all_zones(self, tmp_path: Path) -> None:
         """Verbatim copy retains the full zone and variable counts."""
         dst = tmp_path / "sliced.szplt"
-        tecslice_main(["-i", "::2", "-j", "::2", "-o", str(dst), str(_ONERA["szplt"])])
+        tecslice(["-i", "::2", "-j", "::2", "-o", str(dst), str(_ONERA["szplt"])])
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == _NUM_ZONES
             assert r.num_vars == _NUM_VARS
@@ -803,7 +943,7 @@ class TestTecslice:
     ) -> None:
         """No slice flags prints a warning to stderr and returns 0."""
         dst = tmp_path / "copy.szplt"
-        ret = tecslice_main(["-o", str(dst), str(onera_path)])
+        ret = tecslice(["-o", str(dst), str(onera_path)])
         assert ret == 0
         assert dst.exists()
         assert "no slice" in capsys.readouterr().err.lower()
@@ -811,7 +951,7 @@ class TestTecslice:
     def test_time_filter_on_static_keeps_all_zones(self, tmp_path: Path) -> None:
         """Static zones (strand 0) are always kept regardless of time filter."""
         dst = tmp_path / "sliced.szplt"
-        ret = tecslice_main(["-t", "0.5:1.0", "-o", str(dst), str(_ONERA["szplt"])])
+        ret = tecslice(["-t", "0.5:1.0", "-o", str(dst), str(_ONERA["szplt"])])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == _NUM_ZONES
@@ -819,7 +959,7 @@ class TestTecslice:
     def test_strand_filter_on_static_keeps_all_zones(self, tmp_path: Path) -> None:
         """--strand-id on a static file keeps all zones (strand 0 is immune)."""
         dst = tmp_path / "sliced.szplt"
-        ret = tecslice_main([
+        ret = tecslice([
             "--strand-id",
             "1",
             "-t",
@@ -835,14 +975,14 @@ class TestTecslice:
     def test_output_format_controlled_by_extension(self, tmp_path: Path) -> None:
         """Output extension controls the file format."""
         dst = tmp_path / "sliced.dat"
-        ret = tecslice_main(["-i", "::2", "-o", str(dst), str(_ONERA["szplt"])])
+        ret = tecslice(["-i", "::2", "-o", str(dst), str(_ONERA["szplt"])])
         assert ret == 0
         assert _is_readable(dst)
 
     def test_invalid_time_skip_returns_1(self, tmp_path: Path) -> None:
         """Negative time skip (::-1) returns exit code 1."""
         assert (
-            tecslice_main([
+            tecslice([
                 "-t",
                 "::-1",
                 "-o",
@@ -855,7 +995,7 @@ class TestTecslice:
     def test_missing_input_returns_1(self, tmp_path: Path) -> None:
         """Non-existent source file returns exit code 1."""
         assert (
-            tecslice_main([
+            tecslice([
                 "-i",
                 "::2",
                 "-o",
@@ -869,13 +1009,13 @@ class TestTecslice:
         """Existing output without --force returns exit code 1."""
         dst = tmp_path / "sliced.szplt"
         dst.touch()
-        assert tecslice_main(["-i", "::2", "-o", str(dst), str(_ONERA["szplt"])]) == 1
+        assert tecslice(["-i", "::2", "-o", str(dst), str(_ONERA["szplt"])]) == 1
 
     def test_force_overwrites_existing(self, tmp_path: Path) -> None:
         """--force overwrites an existing output file."""
         dst = tmp_path / "sliced.szplt"
         dst.touch()
-        ret = tecslice_main([
+        ret = tecslice([
             "--force",
             "-i",
             "::2",
@@ -887,9 +1027,9 @@ class TestTecslice:
         assert dst.stat().st_size > 0
 
 
-# ===========================================================================
+# ======================================================================================
 # tecstats
-# ===========================================================================
+# ======================================================================================
 
 
 class TestTecstats:
@@ -897,7 +1037,7 @@ class TestTecstats:
 
     def test_basic_console_output(self, onera_path: Path, capsys) -> None:
         """Statistics table is printed with the expected headers; returns 0."""
-        ret = tecstats_main([str(onera_path)])
+        ret = tecstats([str(onera_path)])
         assert ret == 0
         out = capsys.readouterr().out
         assert "Zone" in out
@@ -907,56 +1047,56 @@ class TestTecstats:
 
     def test_zone_titles_in_output(self, onera_path: Path, capsys) -> None:
         """Zone titles FluidVolume and WingSurface appear in the table."""
-        tecstats_main([str(onera_path)])
+        tecstats([str(onera_path)])
         out = capsys.readouterr().out
         assert "FluidVolume" in out
         assert "WingSurface" in out
 
     def test_zone_filter(self, onera_path: Path) -> None:
         """-zone 1 runs without error."""
-        assert tecstats_main(["-zone", "1", str(onera_path)]) == 0
+        assert tecstats(["-zone", "1", str(onera_path)]) == 0
 
     def test_variable_filter(self, onera_path: Path) -> None:
         """-variable 10 (Pressure) runs without error."""
-        assert tecstats_main(["-variable", "10", str(onera_path)]) == 0
+        assert tecstats(["-variable", "10", str(onera_path)]) == 0
 
     def test_zone_and_variable_filter(self, onera_path: Path) -> None:
         """Combined -zone 2 -variable 10 runs without error."""
-        assert tecstats_main(["-zone", "2", "-variable", "10", str(onera_path)]) == 0
+        assert tecstats(["-zone", "2", "-variable", "10", str(onera_path)]) == 0
 
     def test_csv_created_with_stats_suffix(self, tmp_path: Path) -> None:
         """-csv creates <stem>_stats.csv next to the input file."""
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
-        assert tecstats_main(["-csv", str(src)]) == 0
+        assert tecstats(["-csv", str(src)]) == 0
         assert (tmp_path / "Onera_stats.csv").exists()
 
     def test_csv_zone_suffix(self, tmp_path: Path) -> None:
         """-csv -zone N produces <stem>_zone_N_stats.csv."""
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
-        assert tecstats_main(["-csv", "-zone", "1", str(src)]) == 0
+        assert tecstats(["-csv", "-zone", "1", str(src)]) == 0
         assert (tmp_path / "Onera_zone_1_stats.csv").exists()
 
     def test_csv_variable_suffix(self, tmp_path: Path) -> None:
         """-csv -variable N produces <stem>_var_N_stats.csv."""
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
-        assert tecstats_main(["-csv", "-variable", "10", str(src)]) == 0
+        assert tecstats(["-csv", "-variable", "10", str(src)]) == 0
         assert (tmp_path / "Onera_var_10_stats.csv").exists()
 
     def test_csv_zone_and_variable_suffix(self, tmp_path: Path) -> None:
         """Combined filters produce <stem>_zone_N_var_M_stats.csv."""
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
-        assert tecstats_main(["-csv", "-zone", "2", "-variable", "10", str(src)]) == 0
+        assert tecstats(["-csv", "-zone", "2", "-variable", "10", str(src)]) == 0
         assert (tmp_path / "Onera_zone_2_var_10_stats.csv").exists()
 
     def test_csv_header_and_data_rows(self, tmp_path: Path) -> None:
         """CSV has the correct header and 36 data rows (2 zones × 18 vars)."""
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
-        tecstats_main(["-csv", str(src)])
+        tecstats(["-csv", str(src)])
         lines = (tmp_path / "Onera_stats.csv").read_text(encoding="utf-8").splitlines()
         expected_header = (
             "zone_num,zone_title,var_num,var_name,min,max,mean,std,location,note"
@@ -968,7 +1108,7 @@ class TestTecstats:
         """Zone title column contains the expected zone names."""
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
-        tecstats_main(["-csv", str(src)])
+        tecstats(["-csv", str(src)])
         content = (tmp_path / "Onera_stats.csv").read_text(encoding="utf-8")
         assert "FluidVolume" in content
         assert "WingSurface" in content
@@ -978,7 +1118,7 @@ class TestTecstats:
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
         (tmp_path / "Onera_stats.csv").touch()
-        assert tecstats_main(["-csv", str(src)]) == 1
+        assert tecstats(["-csv", str(src)]) == 1
 
     def test_csv_force_overwrites_existing(self, tmp_path: Path) -> None:
         """--force replaces an existing CSV with fresh content."""
@@ -986,18 +1126,429 @@ class TestTecstats:
         shutil.copy(_ONERA["szplt"], src)
         stale = tmp_path / "Onera_stats.csv"
         stale.write_text("stale", encoding="utf-8")
-        ret = tecstats_main(["-csv", "--force", str(src)])
+        ret = tecstats(["-csv", "--force", str(src)])
         assert ret == 0
         assert stale.read_text(encoding="utf-8") != "stale"
 
     def test_missing_input_returns_1(self, tmp_path: Path) -> None:
         """Non-existent source file returns exit code 1."""
-        assert tecstats_main([str(tmp_path / "ghost.szplt")]) == 1
+        assert tecstats([str(tmp_path / "ghost.szplt")]) == 1
 
 
-# ---------------------------------------------------------------------------
+# ======================================================================================
+# Sharing preservation
+# ======================================================================================
+
+
+def _run_teconvert_other_format(tmp_path: Path, src: Path) -> tuple[Path, int]:
+    """Run teconvert to a format guaranteed to differ from *src*'s own."""
+    flag = _other_format_flag(src)
+    dst = tmp_path / f"copy{_FLAG_TO_EXT[flag]}"
+    ret = teconvert([flag, "-o", str(dst), "--force", str(src)])
+    return dst, ret
+
+
+class TestSharingPreservation:
+    """Verify variable/connectivity sharing survives each tool correctly.
+
+    Covers both fixed bugs (a shared variable used to come out as an empty
+    placeholder in tecextract/tecmerge; tecstats double-offset the zone
+    number) and new capability (tecextract/tecmerge now remap sharing to the
+    new, compacted zone indices instead of unconditionally dropping it).
+    """
+
+    # -- tecextract: source zone included -> remap -------------------------------------
+
+    def test_tecextract_remaps_sharing_when_source_included(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """Extracting all 3 zones preserves sharing at the (unchanged) indices."""
+        dst = tmp_path / f"extract_all{shared_path.suffix}"
+        ret = tecextract(["-o", str(dst), "--force", str(shared_path)])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            assert r.num_zones == 3
+            assert r.zone[1].variable[0].shared_zone == 1  # zone 2's x <- zone 1
+            assert r.zone[1].shared_connectivity == 1
+            assert r.zone[2].variable[0].shared_zone == 1  # zone 3's x <- zone 1
+            assert r.zone[2].variable[3].shared_zone == 2  # zone 3's c <- zone 2
+            np.testing.assert_allclose(
+                r.zone[1].variable[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
+            )
+
+    def test_tecextract_remaps_sharing_to_compacted_indices(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """Extracting zones 1 and 3 (dropping 2) remaps zone 3's shares correctly.
+
+        Zone 3 shares x/y/z/connectivity from zone 1 (still present, becomes
+        output zone 2) but shares c from zone 2 (excluded) -- so c must fall
+        back to real data while x/y/z/connectivity remap to output zone 1.
+        """
+        dst = tmp_path / f"extract_1_3{shared_path.suffix}"
+        ret = tecextract(["-zones", "1,3", "-o", str(dst), "--force", str(shared_path)])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            assert r.num_zones == 2
+            # Output zone 2 (was source zone 3): x/y/z/connectivity remap to
+            # output zone 1 (was source zone 1).
+            assert r.zone[1].variable[0].shared_zone == 1
+            assert r.zone[1].shared_connectivity == 1
+            # c was shared from zone 2, which isn't in this extraction --
+            # must be real, independent data, not an empty placeholder.
+            assert r.zone[1].variable[3].shared_zone is None
+            c_vals = r.zone[1].variable[3].values
+            assert c_vals is not None
+            np.testing.assert_allclose(c_vals.ravel(), [5.0, 6.0, 7.0, 8.0])
+
+    def test_tecextract_materializes_when_source_excluded(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """Extracting only zone 2 (source zone 1 excluded) writes real data.
+
+        This is the regression case for the original bug: zone 2's shared
+        x/y/z/connectivity must come out as actual values, not an empty
+        array that would corrupt or crash the output.
+        """
+        dst = tmp_path / f"extract_2_only{shared_path.suffix}"
+        ret = tecextract(["-zones", "2", "-o", str(dst), "--force", str(shared_path)])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            assert r.num_zones == 1
+            zone = r.zone[0]
+            assert zone.variable[0].shared_zone is None
+            assert zone.shared_connectivity is None
+            np.testing.assert_allclose(
+                zone.variable[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
+            )
+            np.testing.assert_array_equal(zone.node_map, [[1, 2, 3, 4]])
+
+    # -- tecmerge: sharing preserved within each file -> offset for later files --------
+
+    def test_tecmerge_preserves_sharing_per_file(self, tmp_path: Path) -> None:
+        """Merging two copies preserves sharing within each file's own block.
+
+        File 2's zones must share from file 2's own (re-offset) zone
+        indices, not file 1's -- sharing is always file-local.
+        """
+        src1 = tmp_path / "a.szplt"
+        src2 = tmp_path / "b.szplt"
+        _write_shared_dataset(src1)
+        _write_shared_dataset(src2)
+        dst = tmp_path / "merged.szplt"
+
+        ret = tecmerge(["-o", str(dst), str(src1), str(src2)])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            assert r.num_zones == 6
+            # File 1's block: zones 1-3, unchanged indices.
+            assert r.zone[1].variable[0].shared_zone == 1
+            assert r.zone[2].variable[3].shared_zone == 2
+            # File 2's block: zones 4-6, offset by 3.
+            assert r.zone[4].variable[0].shared_zone == 4
+            assert r.zone[4].shared_connectivity == 4
+            assert r.zone[5].variable[3].shared_zone == 5
+
+    # -- 1:1 zone-copy tools: sharing preserved unchanged ------------------------------
+
+    @pytest.mark.parametrize(
+        "run_tool",
+        [
+            lambda tmp_path, src: (
+                tmp_path / "copy.szplt",
+                tecfix(["-o", str(tmp_path / "copy.szplt"), "--force", str(src)]),
+            ),
+            lambda tmp_path, src: (
+                tmp_path / "copy.szplt",
+                tecscale([
+                    "-variable",
+                    "c",
+                    "-scale",
+                    "1.0",
+                    "-o",
+                    str(tmp_path / "copy.szplt"),
+                    "--force",
+                    str(src),
+                ]),
+            ),
+            lambda tmp_path, src: _run_teconvert_other_format(tmp_path, src),
+            lambda tmp_path, src: (
+                tmp_path / "copy.szplt",
+                tecslice(["-o", str(tmp_path / "copy.szplt"), str(src)]),
+            ),
+        ],
+        ids=["tecfix", "tecscale", "teconvert", "tecslice_verbatim"],
+    )
+    def test_verbatim_copy_tools_preserve_sharing(
+        self, run_tool, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """A tool that copies every zone in order keeps sharing at the same indices."""
+        dst, ret = run_tool(tmp_path, shared_path)
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            assert r.num_zones == 3
+            assert r.zone[1].variable[0].shared_zone == 1
+            assert r.zone[1].shared_connectivity == 1
+            assert r.zone[2].variable[3].shared_zone == 2
+            # Shared values still resolve to the real source data.
+            np.testing.assert_allclose(
+                r.zone[1].variable[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
+            )
+
+    # -- tecstats: off-by-one fix ------------------------------------------------------
+
+    def test_tecstats_shared_note_zone_number_correct(
+        self, shared_path: Path, capsys
+    ) -> None:
+        """The 'shared (zone N)' note uses the correct 1-based zone number.
+
+        Regression test for a double-offset: shared_zone is already
+        1-based, and the note used to add 1 again.
+        """
+        ret = tecstats([str(shared_path)])
+        assert ret == 0
+        out = capsys.readouterr().out
+        # Zone 2's x is shared from zone 1, and zone 3's c is shared from
+        # zone 2 specifically -- both distinct notes should appear exactly,
+        # confirming the fix isn't just "any single value happens to look
+        # right" (the old +1 bug would have printed "zone 2" and "zone 3"
+        # here instead).
+        assert "shared (zone 1)" in out
+        assert "shared (zone 2)" in out
+
+
+# ======================================================================================
+# tec2mat
+# ======================================================================================
+
+
+@pytest.mark.skipif(sio is None, reason="scipy is required by tec2mat itself")
+class TestTec2mat:
+    """Tests for tec2mat — converts a Tecplot file to a MATLAB .mat file."""
+
+    # -- File naming and basic output --------------------------------------------------
+
+    def test_default_output_name(self, onera_path: Path, tmp_path: Path) -> None:
+        """With no -o, output is <stem>.mat next to the input file."""
+        src = tmp_path / onera_path.name
+        shutil.copy(onera_path, src)
+        assert tec2mat([str(src)]) == 0
+        assert (tmp_path / "Onera.mat").exists()
+
+    def test_explicit_output_path(self, onera_path: Path, tmp_path: Path) -> None:
+        """-o writes the .mat to the requested path."""
+        dst = tmp_path / "out.mat"
+        assert tec2mat(["-o", str(dst), str(onera_path)]) == 0
+        assert dst.exists()
+        assert dst.stat().st_size > 0
+
+    # -- Info struct -------------------------------------------------------------------
+
+    def test_info_struct(self, onera_path: Path, tmp_path: Path) -> None:
+        """The info struct mirrors the dataset title, counts, and variable names."""
+        dst = tmp_path / "out.mat"
+        assert tec2mat(["-o", str(dst), str(onera_path)]) == 0
+        info = _struct(_load_mat(dst), "info")
+        assert int(info.num_zones) == _NUM_ZONES
+        assert int(info.num_vars) == _NUM_VARS
+        names = [str(v) for v in np.atleast_1d(info.var_names)]
+        with tecio.open(str(onera_path), "r") as r:
+            assert str(info.title) == r.title
+            assert str(info.file_type) == r.file_type.name
+            assert names == r.variables
+
+    # -- Zone structs ------------------------------------------------------------------
+
+    def test_zone_structs_present(self, onera_path: Path, tmp_path: Path) -> None:
+        """One struct per zone is emitted, 1-based, with no extras."""
+        dst = tmp_path / "out.mat"
+        tec2mat(["-o", str(dst), str(onera_path)])
+        d = _load_mat(dst)
+        assert "zone_1" in d
+        assert "zone_2" in d
+        assert "zone_3" not in d
+
+    def test_zone_metadata(self, onera_path: Path, tmp_path: Path) -> None:
+        """Zone titles, types, and node/element counts are preserved."""
+        dst = tmp_path / "out.mat"
+        tec2mat(["-o", str(dst), str(onera_path)])
+        d = _load_mat(dst)
+        z1 = _struct(d, "zone_1")
+        z2 = _struct(d, "zone_2")
+        assert str(z1.title) == "FluidVolume"
+        assert str(z1.zone_type) == "FEBRICK"
+        assert int(z1.num_nodes) == _Z1_NODES
+        assert int(z1.num_elements) == _Z1_ELEMS
+        assert str(z2.title) == "WingSurface"
+        assert str(z2.zone_type) == "FEQUADRILATERAL"
+        assert int(z2.num_nodes) == _Z2_NODES
+        assert int(z2.num_elements) == _Z2_ELEMS
+
+    def test_node_map_for_fe_zones(self, onera_path: Path, tmp_path: Path) -> None:
+        """Both FE zones carry a 1-based (num_elements x nodes_per_cell) node map."""
+        dst = tmp_path / "out.mat"
+        tec2mat(["-o", str(dst), str(onera_path)])
+        d = _load_mat(dst)
+        z1 = _struct(d, "zone_1")
+        z2 = _struct(d, "zone_2")
+        assert z1.node_map.shape == (_Z1_ELEMS, _Z1_NPC)
+        assert z2.node_map.shape == (_Z2_ELEMS, _Z2_NPC)
+        assert int(z1.node_map.min()) >= 1
+        assert int(z2.node_map.min()) >= 1
+
+    def test_variable_arrays_match_node_count(
+        self, onera_path: Path, tmp_path: Path
+    ) -> None:
+        """Every active nodal variable has one value per node."""
+        dst = tmp_path / "out.mat"
+        tec2mat(["-o", str(dst), str(onera_path)])
+        z1 = _struct(_load_mat(dst), "zone_1")
+        for k in range(1, _NUM_VARS + 1):
+            assert getattr(z1, f"var_{k}").size == _Z1_NODES
+
+    def test_metadata_arrays_active_nodal(
+        self, onera_path: Path, tmp_path: Path
+    ) -> None:
+        """Onera variables are all active, nodal, and unshared."""
+        dst = tmp_path / "out.mat"
+        tec2mat(["-o", str(dst), str(onera_path)])
+        z1 = _struct(_load_mat(dst), "zone_1")
+        assert [str(s) for s in np.atleast_1d(z1.var_status)] == ["active"] * _NUM_VARS
+        assert [str(s) for s in np.atleast_1d(z1.var_locations)] == [
+            "NODAL"
+        ] * _NUM_VARS
+        assert np.array_equal(np.atleast_1d(z1.var_shared_from), [0] * _NUM_VARS)
+
+    # -- dtype preservation ------------------------------------------------------------
+
+    def test_dtype_preserved(self, onera_path: Path, tmp_path: Path) -> None:
+        """Each stored array keeps the reader's on-disk dtype (DAT=double, PLT/SZL=single)."""  # noqa: E501
+        dst = tmp_path / "out.mat"
+        tec2mat(["-o", str(dst), str(onera_path)])
+        z1 = _struct(_load_mat(dst), "zone_1")
+        with tecio.open(str(onera_path), "r") as r:
+            zone0 = r.zone[0]
+            for k in range(1, _NUM_VARS + 1):
+                vals = zone0.variable[k - 1].values
+                assert vals is not None
+                assert getattr(z1, f"var_{k}").dtype == vals.dtype
+
+    # -- Options: --compress -----------------------------------------------------------
+
+    def test_compress_reduces_size(self, tmp_path: Path) -> None:
+        """-c yields a smaller file than the uncompressed conversion."""
+        plain = tmp_path / "plain.mat"
+        comp = tmp_path / "comp.mat"
+        assert tec2mat(["-o", str(plain), str(_ONERA["szplt"])]) == 0
+        assert tec2mat(["-c", "-o", str(comp), str(_ONERA["szplt"])]) == 0
+        assert comp.stat().st_size < plain.stat().st_size
+
+    def test_compress_roundtrips(self, tmp_path: Path) -> None:
+        """A compressed file still loads with the expected structure."""
+        dst = tmp_path / "comp.mat"
+        assert tec2mat(["--compress", "-o", str(dst), str(_ONERA["szplt"])]) == 0
+        info = _struct(_load_mat(dst), "info")
+        assert int(info.num_zones) == _NUM_ZONES
+
+    # -- Options: --oned-as ------------------------------------------------------------
+
+    def test_oned_as_column_default(self, tmp_path: Path) -> None:
+        """1-D FE variable arrays default to N x 1 column vectors."""
+        dst = tmp_path / "out.mat"
+        assert tec2mat(["-o", str(dst), str(_ONERA["szplt"])]) == 0
+        z1 = _struct(_load_mat(dst, squeeze=False), "zone_1")
+        assert z1.var_1.shape == (_Z1_NODES, 1)
+
+    def test_oned_as_row(self, tmp_path: Path) -> None:
+        """--oned-as row stores 1-D FE variable arrays as 1 x N row vectors."""
+        dst = tmp_path / "out.mat"
+        ret = tec2mat(["--oned-as", "row", "-o", str(dst), str(_ONERA["szplt"])])
+        assert ret == 0
+        z1 = _struct(_load_mat(dst, squeeze=False), "zone_1")
+        assert z1.var_1.shape == (1, _Z1_NODES)
+
+    # -- Passive / Shared / Active (synthetic IJK data) --------------------------------
+
+    def test_synthetic_zone1_all_active(self, tmp_path: Path) -> None:
+        """In the synthetic file, zone 1 has three active variables with data."""
+        src = tmp_path / "syn.dat"
+        _write_synthetic_ijk(src)
+        dst = tmp_path / "syn.mat"
+        assert tec2mat(["-o", str(dst), str(src)]) == 0
+        z1 = _struct(_load_mat(dst), "zone_1")
+        assert [str(s) for s in np.atleast_1d(z1.var_status)] == [
+            "active",
+            "active",
+            "active",
+        ]
+        for k in (1, 2, 3):
+            assert getattr(z1, f"var_{k}").size == 4
+
+    def test_synthetic_passive_and_shared(self, tmp_path: Path) -> None:
+        """Zone 2: var 1 shared, var 2 passive (both empty), var 3 active."""
+        src = tmp_path / "syn.dat"
+        _write_synthetic_ijk(src)
+        dst = tmp_path / "syn.mat"
+        assert tec2mat(["-o", str(dst), str(src)]) == 0
+        z2 = _struct(_load_mat(dst), "zone_2")
+        assert [str(s) for s in np.atleast_1d(z2.var_status)] == [
+            "shared",
+            "passive",
+            "active",
+        ]
+        # Shared and passive variables carry no data (MATLAB []).
+        assert np.size(z2.var_1) == 0
+        assert np.size(z2.var_2) == 0
+        # The active variable retains its data.
+        assert np.size(z2.var_3) == 4
+        # var 1 is shared from zone 1 (1-based); the others are not shared.
+        assert np.array_equal(np.atleast_1d(z2.var_shared_from), [1, 0, 0])
+
+    # -- Connectivity sharing ----------------------------------------------------------
+
+    def test_synthetic_node_map_shared_from(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """A zone sharing FE connectivity stores node_map_shared_from, not a duplicate.
+
+        The IJK-based synthetic fixture above can't exercise this at all --
+        ordered zones have no connectivity -- so this reuses the
+        ``shared_dataset``/``shared_path`` fixture (see TestSharingPreservation)
+        instead, which is FE-based with real con_sharing.
+        """
+        dst = tmp_path / "shared.mat"
+        assert tec2mat(["-o", str(dst), "--force", str(shared_path)]) == 0
+        d = _load_mat(dst)
+        z1 = _struct(d, "zone_1")
+        z2 = _struct(d, "zone_2")
+        assert hasattr(z1, "node_map")
+        assert not hasattr(z2, "node_map")
+        assert int(z2.node_map_shared_from) == 1
+
+    # -- Error and overwrite paths -----------------------------------------------------
+
+    def test_missing_input_returns_1(self, tmp_path: Path) -> None:
+        """A non-existent source file returns exit code 1."""
+        assert tec2mat([str(tmp_path / "ghost.dat")]) == 1
+
+    def test_existing_output_no_force_returns_1(self, tmp_path: Path) -> None:
+        """An existing output without --force returns exit code 1."""
+        dst = tmp_path / "out.mat"
+        dst.touch()
+        assert tec2mat(["-o", str(dst), str(_ONERA["szplt"])]) == 1
+
+    def test_force_overwrites_existing(self, tmp_path: Path) -> None:
+        """--force overwrites an existing output file."""
+        dst = tmp_path / "out.mat"
+        dst.touch()
+        ret = tec2mat(["-f", "-o", str(dst), str(_ONERA["szplt"])])
+        assert ret == 0
+        assert dst.stat().st_size > 0
+
+
+# --------------------------------------------------------------------------------------
 # Direct execution
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import sys
