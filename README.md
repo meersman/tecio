@@ -53,7 +53,7 @@ Reading a file:
 
 ```python
 with tecio.open("sine.szplt", "r") as tec:
-    print(tec.variables)   # ['x', 'y']
+    print(tec.variables)  # ['x', 'y']
     x = tec.zone[0].variable[0].values
     y = tec.zone[0].variable[1].values
     # or

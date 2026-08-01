@@ -34,11 +34,11 @@ Reading the file back follows the same pattern:
 
 ```python
 with tecio.open("line.szplt", "r") as r:
-    print(r.title)       # 'Sine Curve'
-    print(r.variables)   # ['x', 'y']
+    print(r.title)  # 'Sine Curve'
+    print(r.variables)  # ['x', 'y']
 
     zone = r.zone[0]
-    x_read = zone.variable[0].values   # NumPy array, shape (256, 1, 1)
+    x_read = zone.variable[0].values  # NumPy array, shape (256, 1, 1)
     y_read = zone.variable[1].values
 ```
 
@@ -68,7 +68,6 @@ import tecio
 from tecio.libtecio import ZoneType
 
 with tecio.open("fe_cells.szplt", "w") as szlfile:
-
     # -- Write a FE line segment ---------------------------------------------
     x = np.array([0, 0.5, 1])
     y = np.array([0, 1, 0])
@@ -216,12 +215,11 @@ import tecio
 nx, ny = 128, 128
 x = np.linspace(0.0, 1.0, nx)
 y = np.linspace(0.0, 1.0, ny)
-X, Y = np.meshgrid(x, y, indexing="ij")   # shape (nx, ny)
+X, Y = np.meshgrid(x, y, indexing="ij")  # shape (nx, ny)
 
 times = np.linspace(0.0, 4.0 * np.pi, 60)
 
 with tecio.open("transient.szplt", "w", title="Travelling Wave") as w:
-
     # Set dataset auxiliary data before the first zone
     w.add_auxdataset_dict({
         "Common.XVar": 1,
@@ -246,7 +244,7 @@ with tecio.open("transient.szplt", "w", title="Travelling Wave") as w:
             w.write_ijk_zone(
                 title=f"t = {t:.3f}",
                 data=[phi],
-                var_sharing=[1, 1, 0],   # x←zone1, y←zone1, phi=new
+                var_sharing=[1, 1, 0],  # x←zone1, y←zone1, phi=new
                 strand_id=1,
                 solution_time=t,
             )
@@ -257,14 +255,14 @@ listed in the order they were written:
 
 ```python
 with tecio.open("transient.szplt", "r") as r:
-    print(r.num_zones)           # 60
+    print(r.num_zones)  # 60
 
     # Solution times across all zones
     times_read = [r.zone[i].solution_time for i in range(r.num_zones)]
 
     # Grid is only stored in zone 0; later zones return None for shared vars
-    phi_t0 = r.zone[0].variable[2].values    # shape (128, 128, 1)
-    phi_t1 = r.zone[1].variable[2].values    # shape (128, 128, 1)
+    phi_t0 = r.zone[0].variable[2].values  # shape (128, 128, 1)
+    phi_t1 = r.zone[1].variable[2].values  # shape (128, 128, 1)
     x_shared = r.zone[1].variable[0].values  # None — shared from zone 0
 ```
 
@@ -352,8 +350,8 @@ built-in `help()` function:
 ```python
 import tecio
 
-help(tecio.open)               # top-level open function
-help(tecio.szl.Write)          # SZL writer class and all its methods
+help(tecio.open)  # top-level open function
+help(tecio.szl.Write)  # SZL writer class and all its methods
 help(tecio.libtecio.ZoneType)  # enum values and descriptions
 ```
 

@@ -15,11 +15,13 @@ following styles is acceptable, both are explicit enough to be readable:
 ```python
 # Import the module and reference through it
 from tecio import libtecio
+
 libtecio.ZoneType.ORDERED
 libtecio.tec_file_writer_open(...)
 
 # Or import specific names directly
 from tecio.libtecio import ZoneType, DataType, ValueLocation
+
 ZoneType.ORDERED
 ```
 
@@ -46,11 +48,11 @@ name-based and slice-based access:
 
 ```python
 with tecio.open("flow.szplt") as r:
-    r.zone[0]                       # -> ReadZone
-    r.zone[1:4]                     # -> ZoneList (sub-range, same kind)
-    r.zone[0].variable               # -> VariableList
-    r.zone[0].variable["x"]          # -> ReadVariable, by exact name
-    r.zone[0].variable[2]            # -> ReadVariable, by 0-based index
+    r.zone[0]  # -> ReadZone
+    r.zone[1:4]  # -> ZoneList (sub-range, same kind)
+    r.zone[0].variable  # -> VariableList
+    r.zone[0].variable["x"]  # -> ReadVariable, by exact name
+    r.zone[0].variable[2]  # -> ReadVariable, by 0-based index
 ```
 
 Indexing a {class}`~tecio.ZoneList` or {class}`~tecio.VariableList` always
@@ -60,9 +62,9 @@ single zone, use ``ReadZone.get_array``, available on every format's zone
 object:
 
 ```python
-    p = r.zone[0].get_array("p")                 # ndarray | None
-    p = r.zone[0].get_array(2)                    # by 0-based index
-    x, y, z = r.zone[0].get_array(["x", "y", "z"])  # tuple, for unpacking
+p = r.zone[0].get_array("p")  # ndarray | None
+p = r.zone[0].get_array(2)  # by 0-based index
+x, y, z = r.zone[0].get_array(["x", "y", "z"])  # tuple, for unpacking
 ```
 
 A single key (index or name) returns one array; a list of names returns a
@@ -72,8 +74,8 @@ zones (e.g. a transient sequence), iterate explicitly so the outer axis stays
 in your code, and stack only when you know the shapes match:
 
 ```python
-    seq = [z.get_array("p") for z in r.zone]   # list[ndarray | None]
-    stack = np.stack(seq)                       # only if every zone matches
+seq = [z.get_array("p") for z in r.zone]  # list[ndarray | None]
+stack = np.stack(seq)  # only if every zone matches
 ```
 
 ``get_array`` returns ``None`` for a passive or shared variable, and raises

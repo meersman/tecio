@@ -43,8 +43,9 @@ fractal dimension $\approx 2.06$.
 import numpy as np
 
 sigma = 10.0
-beta  = 8.0 / 3.0
-rho   = 28.0
+beta = 8.0 / 3.0
+rho = 28.0
+
 
 def lorenz(state):
     x, y, z = state
@@ -88,10 +89,10 @@ $\Delta t = 0.01$ over $5000$ steps, giving a total integration time of
 $T = 50$.
 
 ```python
-dt      = 0.01
+dt = 0.01
 n_steps = 5000
 
-traj  = np.zeros((n_steps, 3))
+traj = np.zeros((n_steps, 3))
 state = np.array([1.0, 1.0, 1.0])
 
 for i in range(n_steps):
@@ -102,7 +103,7 @@ for i in range(n_steps):
     k3 = lorenz(state + 0.5 * dt * k2)
     k4 = lorenz(state + dt * k3)
 
-    state = state + (dt / 6.0) * (k1 + 2*k2 + 2*k3 + k4)
+    state = state + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 ```
 
 The full trajectory is stored row-wise in `traj` and then split into
@@ -179,11 +180,11 @@ for i in range(0, n_steps, 10):
         title="Trajectory",
         variables=["x", "y", "z", "t", "tau"],
         data=[
-            x[:i+1],
-            y[:i+1],
-            z[:i+1],
-            np.arange(i+1) * dt,           # t  = absolute time
-            (np.arange(i+1) - i - 1) * dt, # tau = time relative to head
+            x[: i + 1],
+            y[: i + 1],
+            z[: i + 1],
+            np.arange(i + 1) * dt,  # t  = absolute time
+            (np.arange(i + 1) - i - 1) * dt,  # tau = time relative to head
         ],
         strand_id=1,
         solution_time=i * dt,
@@ -206,7 +207,7 @@ for i in range(0, n_steps, 10):
     szl.write_ijk_zone(
         title="Particle",
         variables=["x", "y", "z", "t", "tau"],
-        data=[x[i:i+1], y[i:i+1], z[i:i+1]],
+        data=[x[i : i + 1], y[i : i + 1], z[i : i + 1]],
         passive_vars=[False, False, False, True, True],
         strand_id=2,
         solution_time=i * dt,
