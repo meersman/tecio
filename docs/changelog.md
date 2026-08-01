@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `tecaux` - command line tool to add aux data to Tecplot files.
+- `flush` option added to SZL zone writers to flush data to temporary files
+  and release memory.
 
 ---
 

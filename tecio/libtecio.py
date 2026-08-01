@@ -689,6 +689,12 @@ lib.tecFileWriterOpen.argtypes = [
     ctypes.c_void_p,  # gridFileHandle (optional)
     ctypes.POINTER(ctypes.c_void_p),  # out fileHandle
 ]
+lib.tecFileWriterFlush.restype = ctypes.c_int32
+lib.tecFileWriterFlush.argtypes = [
+    ctypes.c_void_p,  # fileHandle
+    ctypes.c_int32,  # numZonesToRetain
+    ctypes.POINTER(ctypes.c_int32),  # zonesToRetain
+]
 lib.tecFileWriterClose.restype = ctypes.c_int32
 lib.tecFileWriterClose.argtypes = [
     ctypes.POINTER(ctypes.c_void_p),
@@ -2207,6 +2213,57 @@ def tec_file_writer_open(
             f"variables={variables!r}, file_type={file_type!r}, return_code={ret}"
         )
     return handle
+
+
+def tec_file_writer_flush(
+    handle: ctypes.c_void_p,
+    num_zones_to_retain: int = 0,
+    zones_to_retain: Sequence[int] | None = None,
+) -> None:
+    """Flush written zone data to a temporary intermediate file.
+
+    Args:
+        handle (ctypes.c_void_p): Writer handle.
+        num_zones_to_retain (int): Number of zones to keep in memory.
+        zones_to_retain (Sequence[int] | None): 1-based zone indices to retain.
+
+    Raises:
+        TecioError: On C library error.
+
+    Important:
+        SZL Only!
+
+    Note:
+        Used to reduce memory usage for large files. All zone data written so far, other
+        than any zones listed in ``zones_to_retain``, is written out to a temporary file
+        on disk and released from memory.
+
+    Note:
+        Retained zones can still be modified.
+
+    Note:
+        Temporary files created by flushing are merged into the final output file when
+        :func:`tec_file_writer_close` is called.
+    """
+    zones_ptr = None
+    if zones_to_retain is not None and len(zones_to_retain) > 0:
+        zones_array = (ctypes.c_int32 * len(zones_to_retain))(*zones_to_retain)
+        zones_ptr = ctypes.cast(zones_array, ctypes.POINTER(ctypes.c_int32))
+    else:
+        zones_ptr = ctypes.POINTER(ctypes.c_int32)()
+
+    ret = lib.tecFileWriterFlush(
+        handle,
+        ctypes.c_int32(num_zones_to_retain),
+        zones_ptr,
+    )
+    if ret != 0:
+        raise TecioError(
+            f"tecFileWriterFlush Error: handle={handle}, "
+            f"num_zones_to_retain={num_zones_to_retain}, "
+            f"zones_to_retain={zones_to_retain}, "
+            f"return_code={ret}"
+        )
 
 
 def tec_file_writer_close(handle: ctypes.c_void_p) -> None:
