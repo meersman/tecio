@@ -123,15 +123,22 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="tecfix",
         description=(
-            "Rewrite a Tecplot file with NaN / Inf variable arrays set to passive. "
+            # -|--------------------|--------------------------------------------|
+            "Rewrite a Tecplot file with NaN / Inf variable arrays set to passive.\n"
             "Affected variables are documented in zone-level auxiliary data."
         ),
         epilog=(
-            "Examples\n"
-            "  tecfix flow.szplt                  # writes flow_fixed.szplt\n"
-            "  tecfix --output clean.szplt flow.szplt\n"
-            "  tecfix --force flow.szplt          # overwrite existing _fixed file\n"
-            "  tecfix --dry-run flow.szplt        # report bad variables, no output\n"
+            # -|--------------------|--------------------------------------------|
+            "Example usage:\n"
+            "  Output flow.szplt without diverging zones/variables as\n"
+            "  flow_fixed.szplt\n"
+            "    $ tecfix flow.szplt\n"
+            "  Specify output file name\n"
+            "    $ tecfix --output clean.szplt flow.szplt\n"
+            "  Overwrite existing _fixed file\n"
+            "    $ tecfix --force flow.szplt\n"
+            "  Report bad variables and zones without output\n"
+            "    $ tecfix --dry-run flow.szplt\n"
         ),
         formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
             prog, width=70, max_help_position=24
@@ -189,7 +196,7 @@ def _classify_array(arr: npt.NDArray) -> str | None:
 
     """
     # Some readers (e.g. DAT) may return an empty or None array for passive
-    # or otherwise unavailable variables.  Treat these as clean -- there is
+    # or otherwise unavailable variables.  Treat these as clean -> there is
     # nothing to inspect and numpy operations like isnan would error or
     # return misleading results on a zero-size array.
     if arr is None or arr.size == 0:
@@ -207,9 +214,9 @@ def _classify_array(arr: npt.NDArray) -> str | None:
     return None
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Per-zone processing
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def _process_zone(
@@ -262,7 +269,7 @@ def _process_zone(
 
     for j, var in enumerate(zone.variable):
         already_passive = var.is_passive()
-        sv = var.shared_zone  # None or 0-based source zone index
+        sv = var.shared_zone  # 1-based source zone index, or None
 
         # Pass sharing through verbatim.  tecfix writes all zones in the
         # same order as the source, so source zone N is always output zone N.
@@ -329,9 +336,9 @@ def _process_zone(
     )
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Main entry point
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -362,9 +369,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 1
 
-    # ------------------------------------------------------------------
-    # Scan / fix
-    # ------------------------------------------------------------------
+    # -- Scan / fix --------------------------------------------------------------------
 
     total_fixed = 0  # count of (zone, variable) pairs made passive
 
@@ -411,9 +416,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
                 return 0
 
-            # ------------------------------------------------------------------
-            # Write fixed output.
-            # ------------------------------------------------------------------
+            # -- Write fixed output ----------------------------------------------------
+
             print(f"Fixing: {src}  →  {dst}")
 
             with tecio_open(
@@ -504,10 +508,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if zt == ZoneType.ORDERED:
                         writer.write_ijk_zone(data=writer_data, **common_kw)
                     else:
+                        con_sharing = zone.shared_connectivity
                         writer.write_fe_zone(
                             zone_type=zt,
                             data=writer_data,
-                            node_map=zone.node_map,
+                            node_map=None if con_sharing else zone.node_map,
+                            con_sharing=con_sharing,
                             **common_kw,
                         )
 

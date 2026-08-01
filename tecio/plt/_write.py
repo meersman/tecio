@@ -1,4 +1,12 @@
-"""Higher level API for writing PLT binary files using the classic TecIO API."""
+"""Higher level API for writing PLT binary files using the classic TecIO API.
+
+Note:
+    PLT's classic API sets output precision once for the *entire file* via ``VIsDouble``
+    at ``tecini142`` time.  ``tecdat142``'s own ``IsDouble`` argument does not control
+    per-variable output precision, and there is no per-variable type array in
+    ``teczne142`` either. Every variable in a PLT file is written at the single,
+    file-wide precision set by :attr:`Write.precision`.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +17,7 @@ import numpy as np
 import numpy.typing as npt
 
 from .. import libtecio
+from .._meta import WriterMeta, ZoneMeta
 from ..libtecio import (
     DataPacking,
     DataType,
@@ -31,6 +40,38 @@ _FE_SIMPLE: frozenset[ZoneType] = frozenset({
     ZoneType.FETETRAHEDRON,
     ZoneType.FEBRICK,
 })
+
+# ASCII/enum-name aliases for the two precision options
+_STR_TO_PRECISION: dict[str, DataType] = {
+    "single": DataType.FLOAT,
+    "float": DataType.FLOAT,
+    "double": DataType.DOUBLE,
+}
+
+
+def _normalize_precision(precision: DataType | str) -> DataType:
+    """Return the :class:`DataType` for *precision*, accepting a string alias.
+
+    Accepts the enum directly, or a case-insensitive string.
+
+    Raises:
+        ValueError: If *precision* isn't FLOAT/DOUBLE (or a recognized string alias for
+                    one of them).
+    """
+    if isinstance(precision, str):
+        try:
+            precision = _STR_TO_PRECISION[precision.strip().lower()]
+        except KeyError:
+            raise ValueError(
+                f"precision={precision!r} is not recognized; use 'single' or "
+                "'double' (or DataType.FLOAT / DataType.DOUBLE)."
+            ) from None
+    if precision not in (DataType.FLOAT, DataType.DOUBLE):
+        raise ValueError(
+            f"precision={precision!r} is not supported; PLT's VIsDouble only "
+            "accepts DataType.FLOAT or DataType.DOUBLE."
+        )
+    return precision
 
 
 # =====================================================================================
@@ -76,6 +117,76 @@ def _infer_data_type(dt: DataType | np.dtype) -> DataType:
         return DataType.BYTE
 
     raise ValueError(f"Unsupported dtype: {dt_np}")
+
+
+# =====================================================================================
+# Local functions
+# =====================================================================================
+
+
+def _write_data(data: npt.ArrayLike, dtype: np.dtype | DataType | None = None) -> None:
+    """Write a single variable's data using ``tecdat142``.
+
+    ``tecdat142`` only accepts ``float32`` or ``float64``; integer types are
+    upcast to ``float64``.  The array is ravelled in Fortran (column-major)
+    order before writing, which matches Tecplot's expected BLOCK layout.
+
+    Args:
+        data: Array-like of values to write.
+        dtype: Intended :class:`DataType` for the variable.
+
+    Output defaults:
+    1. Inferrs data_typeype for nummpy arrays
+    2. Defaults to double precision for array-like (list, tuple, etc)
+    3. Optionally casts to input DataType or numpy dtype.
+    4. Assumes data is in the correct shape and order (column major / Fortran order)
+    """
+    # Mappings between C-supported data types and numpy dtypes
+    dtype_to_datatype: dict[np.dtype, DataType] = {
+        np.dtype(np.float64): DataType.DOUBLE,
+        np.dtype(np.float32): DataType.FLOAT,
+        np.dtype(np.int32): DataType.INT32,
+        np.dtype(np.int16): DataType.INT16,
+        np.dtype(np.uint8): DataType.BYTE,
+    }
+
+    # Convert input array-like data to NumPy arrays
+    arr = np.asarray(data)
+
+    if dtype is not None:
+        data_type = _infer_data_type(dtype)
+    else:
+        data_type = dtype_to_datatype[arr.dtype]
+
+    # tecdat142 already returns a contiguous array so no need to cast before calling
+    if data_type in (DataType.FLOAT, DataType.INT16, DataType.BYTE):
+        # All fit within float32's precision
+        libtecio.tecdat142(arr.ravel(order="F"), is_double=False)
+    else:
+        # INT32 max value (~2.1e9) exceeds float32's integer ceiling (2**24 ~= 16.7e6),
+        # so write as a double
+        libtecio.tecdat142(arr.ravel(order="F"), is_double=True)
+
+
+def _write_connectivity(
+    node_map: npt.ArrayLike,
+    face_neighbors: npt.ArrayLike | None = None,
+) -> None:
+    """Write FE connectivity: node map and optional face-neighbour data.
+
+    Args:
+        node_map:       Integer array of shape ``(num_cells, nodes_per_cell)``
+                        with 1-based node indices.
+        face_neighbors: Optional face-neighbour connection array.
+    """
+    nodes_flat = np.ascontiguousarray(node_map, dtype=np.int32).ravel(order="C")
+    libtecio.tecnode142(nodes_flat)
+
+    if face_neighbors is not None:
+        face_flat = np.ascontiguousarray(face_neighbors, dtype=np.int32).ravel(
+            order="C"
+        )
+        libtecio.tecface142(face_flat)
 
 
 # =====================================================================================
@@ -158,6 +269,12 @@ class Write:
     file_type: FileType
     """File type (FULL, GRID, or SOLUTION)."""
 
+    precision: DataType
+    """Whole-file storage precision (:attr:`DataType.FLOAT` or :attr:`DataType.DOUBLE`).
+    Maps directly to ``VIsDouble`` in ``tecini142``. PLT's classic API has no
+    per-variable or per-zone type. Defaults to :attr:`DataType.DOUBLE`.
+    """
+
     current_zone: int
     """The index of the most recently written zone.
 
@@ -180,12 +297,21 @@ class Write:
         title: str = "untitled",
         variables: list[str] | None = None,
         file_type: FileType = FileType.FULL,
+        *,
+        precision: DataType | str = DataType.DOUBLE,
     ) -> None:
-        """Store configuration; open the file immediately if *variables* given."""
+        """Store configuration; open the file immediately if *variables* given.
+
+        Raises:
+            ValueError: If *precision* is not :attr:`DataType.FLOAT` /
+                        :attr:`DataType.DOUBLE` (or a recognized string alias for one of
+                        them).
+        """
         self.path = path
         self.title = title
         self.variables: list[str] | None = variables
         self.file_type = file_type
+        self.precision: DataType = _normalize_precision(precision)
         self.current_zone: int = 0
 
         # Buffered aux data — flushed to disk before the first zone is created.
@@ -197,6 +323,18 @@ class Write:
         # Track whether the file has been opened so we know whether to call
         # tecini142 inside open().
         self._opened: bool = False
+
+        # Running record of everything committed to the file so far (header,
+        # aux counts, per-zone dimensions/sharing).  Used to validate
+        # var_sharing / con_sharing on later zones against what an earlier
+        # zone actually wrote, rather than trusting the caller's arrays
+        # alone.
+        self._meta = WriterMeta(
+            path=self.path,
+            title=self.title,
+            file_type=self.file_type,
+            file_format="plt",
+        )
 
         if self.variables is not None:
             self._open(self.variables)
@@ -232,6 +370,11 @@ class Write:
             )
         return self.variables
 
+    @property
+    def meta(self) -> WriterMeta:
+        """Read-only record of everything written to this file so far."""
+        return self._meta
+
     # -- File lifecycle ---------------------------------------------------------------
 
     def _open(self, var_names: list[str]) -> None:
@@ -250,8 +393,10 @@ class Write:
             title=self.title,
             file_format=FileFormat.PLT,
             file_type=self.file_type,
+            vis_double=self.precision,
         )
         self._opened = True
+        self._meta.set_variables(self.variables)
 
     def close(self) -> None:
         """Finalize and close the PLT file (safe to call more than once).
@@ -314,11 +459,13 @@ class Write:
             for name, value in subdict.items():
                 libtecio.tecvauxstr142(var_idx + 1, str(name), str(value))
 
-        # Clear buffers — each item is written exactly once.
+        # Record counts, then clear buffers — each item is written exactly once.
+        self._meta.note_dataset_aux(len(self.auxdataset))
+        self._meta.note_var_aux(sum(len(subdict) for subdict in self.auxvar.values()))
         self.auxdataset.clear()
         self.auxvar.clear()
 
-    # -- Zone writers -----------------------------------------------------------------
+    # -- Structured zone writer --------------------------------------------------------
 
     def write_ijk_zone(
         self,
@@ -413,8 +560,9 @@ class Write:
             self._open(variables)
             self.flush_aux()
 
-        # Per-active-variable data types inferred from array dtypes
-        variable_types = [_infer_data_type(arr.dtype) for arr in arrays]
+        # Per-active-variable data types inferred from array dtypes (currently overrided
+        # to precision)
+        variable_types = [self.precision] * len(arrays)
 
         # Default value locations — all nodal
         if value_locations is None:
@@ -447,50 +595,97 @@ class Write:
                 )
             if len(arrays) != expected_vars:
                 raise ValueError(
-                    f"Expected {expected_vars} data arrays for active variables, "
-                    f"got {len(arrays)}."
+                    f"Expected {expected_vars} data arrays, got {len(arrays)}."
                 )
 
-        # Infer zone dimensions from first nodal array or first cell array if no nodal
-        nodal_indices = [
-            i for i, loc in enumerate(value_locations) if loc == ValueLocation.NODAL
-        ]
-        cell_indices = [
-            i
-            for i, loc in enumerate(value_locations)
-            if loc == ValueLocation.CELL_CENTERED
-        ]
-        if len(nodal_indices) >= 1:
-            ndims = arrays[nodal_indices[0]].ndim
-            if ndims not in (1, 2, 3):
-                raise ValueError(
-                    f"Arrays must be 1D, 2D, or 3D; got {ndims}-D array.  "
-                    "For time-dependent data, write each time step as a separate zone."
-                )
-
-            nodal_shape = arrays[nodal_indices[0]].shape + (1,) * (3 - ndims)
-            cell_shape = tuple(max(i - 1, 1) for i in nodal_shape)
-            imax, jmax, kmax = nodal_shape
-        elif len(cell_indices) >= 1:
-            ndims = arrays[cell_indices[0]].ndim
-            if ndims not in (1, 2, 3):
-                raise ValueError(
-                    f"Arrays must be 1D, 2D, or 3D; got {ndims}-D array.  "
-                    "For time-dependent data, write each time step as a separate zone."
-                )
-
-            cell_shape = arrays[cell_indices[0]].shape + (1,) * (3 - ndims)
-            nodal_shape = tuple(max(i + 1, 1) for i in cell_shape)
-            imax, jmax, kmax = nodal_shape
-        else:
-            raise ValueError(
-                "Could not determine nodal and cell-centered indices. "
-                f"Got Nodal: {nodal_indices}, Cell-centered: {cell_indices}"
+        # Determine which dataset variables are supplied locally (not passive or shared)
+        # and translate to 0-based local index
+        active_var_idx = [
+            var_idx
+            for var_idx, (is_passive, share_zone) in enumerate(
+                zip(passive_vars, var_sharing, strict=True),
+                start=1,
             )
+            if not is_passive and not share_zone
+        ]
+        active_local_idx = {var_idx: i for i, var_idx in enumerate(active_var_idx)}
 
-        # Validate individual array shapes
-        for i, (arr, loc) in enumerate(zip(arrays, value_locations, strict=True)):
-            if arr.ndim != ndims:
+        # Determine validation reference data array shape. NODAL local or shared
+        # variable arrays gives shape dimensions directly. CELL_CENTERED arrays can be
+        # ambiguous if there is a degenerate axis (2D cells vs 3D with only 1 cell along
+        # an axis appear the same). Therefore CELL_CENTERED is only used as fallback
+        # method if no NODAL variables are available.
+        nodal_shape: tuple[int, ...] | None = None
+        ndims: int | None = None  # set only when nodal_shape came from a local array
+        cell_fallback: tuple[int, ...] | None = None
+        cell_fallback_ndims: int | None = None
+
+        for var_idx in range(1, len(self._check_variables()) + 1):
+            if passive_vars[var_idx - 1]:
+                continue
+            src = var_sharing[var_idx - 1]
+            if src:
+                if nodal_shape is None:
+                    src_zone = self._meta.zone(src)
+                    if src_zone is None or src_zone.dimensions is None:
+                        raise ValueError(
+                            f"Variable {var_idx} shares from zone {src}, "
+                            "which has not been written yet, or is not an "
+                            "ORDERED zone."
+                        )
+                    nodal_shape = src_zone.dimensions
+                continue
+
+            arr = arrays[active_local_idx[var_idx]]
+            loc = value_locations[active_local_idx[var_idx]]
+            arr_ndims = arr.ndim
+            if arr_ndims not in (1, 2, 3):
+                raise ValueError(
+                    f"Arrays must be 1D, 2D, or 3D; got {arr_ndims}-D array.  "
+                    "For time-dependent data, write each time step as a separate zone."
+                )
+            shape = arr.shape + (1,) * (3 - arr_ndims)
+            if loc == ValueLocation.NODAL:
+                if nodal_shape is None:
+                    nodal_shape, ndims = shape, arr_ndims
+            elif cell_fallback is None:
+                cell_fallback, cell_fallback_ndims = shape, arr_ndims
+
+        if nodal_shape is None:
+            if cell_fallback is not None:
+                nodal_shape = tuple(n + 1 for n in cell_fallback)
+                ndims = cell_fallback_ndims
+            else:
+                raise ValueError("Could not determine zone dimensions.")
+
+        cell_shape = tuple(max(n - 1, 1) for n in nodal_shape)
+        imax, jmax, kmax = nodal_shape
+
+        # Validate every non-passive dataset variable array (including shared vars)
+        # against reference
+        for var_idx in range(1, len(self._check_variables()) + 1):
+            if passive_vars[var_idx - 1]:
+                continue
+            src = var_sharing[var_idx - 1]
+            if src:
+                src_zone = self._meta.zone(src)
+                if src_zone is None or src_zone.dimensions is None:
+                    raise ValueError(
+                        f"Variable {var_idx} shares from zone {src}, which "
+                        "has not been written yet, or is not an ORDERED "
+                        "zone."
+                    )
+                if src_zone.dimensions != nodal_shape:
+                    raise ValueError(
+                        f"Variable {var_idx} shares from zone {src} with "
+                        f"dimensions {src_zone.dimensions}, which does not "
+                        f"match this zone's dimensions {nodal_shape}."
+                    )
+                continue
+
+            i = active_local_idx[var_idx]
+            arr, loc = arrays[i], value_locations[i]
+            if ndims is not None and arr.ndim != ndims:
                 raise ValueError(f"Array {i} is {arr.ndim}D, expected {ndims}D.")
             shape = arr.shape + (1,) * (3 - arr.ndim)
             if loc == ValueLocation.NODAL and shape != nodal_shape:
@@ -503,21 +698,13 @@ class Write:
                     f"expected {cell_shape}."
                 )
 
-        # Determine active variable indices (1-based, dataset-level)
-        active_var_idx = [
-            var_idx
-            for var_idx, (is_passive, share_zone) in enumerate(
-                zip(passive_vars, var_sharing, strict=True),
-                start=1,
-            )
-            if not is_passive and not share_zone
-        ]
-
-        # Build global (dataset-length) value-location and type lists —
-        # passive / shared positions use placeholder values (they are not
-        # written but the arrays must be the right length for teczne142).
+        # Define global var type and value locations using active variable index
+        variable_types_global = [DataType.DOUBLE] * len(self._check_variables())
         value_locations_global = [ValueLocation.NODAL] * len(self._check_variables())
+
+        # Replace the active indices with the real types/locations
         for local_idx, var_idx in enumerate(active_var_idx):
+            variable_types_global[var_idx - 1] = variable_types[local_idx]
             value_locations_global[var_idx - 1] = value_locations[local_idx]
 
         # Write zone header
@@ -547,7 +734,26 @@ class Write:
             active_var_idx, arrays, variable_types, strict=True
         ):
             self.current_var = var_idx
-            write_data(arr, dtype)
+            _write_data(arr, dtype)
+
+        # Finally set zone metadata after successfully completing TecIO calls
+        self._meta.record_zone(
+            ZoneMeta(
+                index=self.current_zone,
+                title=title,
+                zone_type=ZoneType.ORDERED,
+                solution_time=solution_time,
+                strand_id=strand_id,
+                num_aux_items=len(aux) if aux else 0,
+                dimensions=(imax, jmax, kmax),
+                value_locations=tuple(value_locations_global),
+                passive_vars=tuple(bool(p) for p in passive_vars),
+                shared_vars=tuple(int(s) for s in var_sharing),
+                data_types=tuple(variable_types_global),
+            )
+        )
+
+    # -- Unstructured zone writer ------------------------------------------------------
 
     def write_fe_zone(
         self,
@@ -560,7 +766,7 @@ class Write:
         value_locations: Sequence[ValueLocation] | None = None,
         passive_vars: Sequence[bool | int] | None = None,
         var_sharing: Sequence[int] | None = None,
-        con_sharing: int = 0,
+        con_sharing: int | None = None,
         face_neighbors: npt.ArrayLike | None = None,
         face_nbr_mode: FaceNeighborMode = FaceNeighborMode.LOCAL_ONE_TO_ONE,
         solution_time: float = 0.0,
@@ -570,13 +776,17 @@ class Write:
     ) -> None:
         """Write a complete finite-element zone.
 
+        Node and cell counts are inferred from *node_map*, or if *node_map* is omitted,
+        from the zone referenced by *con_sharing*.
+
         The full sequence required by the classic TecIO API is issued internally:
 
         1. :func:`~tecio.libtecio.teczne142` — zone header.
         2. :func:`~tecio.libtecio.teczauxstr142` — zone-level aux data (if any), before
            data.
         3. :func:`~tecio.libtecio.tecdat142` — one call per active variable.
-        4. :func:`~tecio.libtecio.tecnode142` — node map.
+        4. :func:`~tecio.libtecio.tecnode142` — node map (skipped when connectivity is
+           shared via ``con_sharing``).
         5. :func:`~tecio.libtecio.tecface142` — face-neighbour connections (if
            provided).
 
@@ -588,11 +798,15 @@ class Write:
             data:            Sequence of 1-D NumPy arrays, one per active variable.
                              NODAL arrays must have length ``num_nodes``; CELL_CENTERED
                              arrays must have length ``num_cells``.  Both counts are
-                             inferred from *node_map*.
+                             inferred from *node_map* (or from the ``con_sharing``
+                             source zone when *node_map* is omitted).
             zone_type:       FE zone type from the ZoneType enum.  Must be one of the
                              types in ``_FE_SIMPLE``.
             node_map:        Integer array of shape ``(num_cells, nodes_per_cell)`` with
-                             1-based node indices.
+                             1-based node indices.  Required unless ``con_sharing`` is
+                             set, in which case the connectivity -- and the node/cell
+                             counts derived from it -- are inherited from the source
+                             zone instead.
             title:           Zone title.  Defaults to ``"FE_Zone_{current_zone + 1}"``.
             variables:       Variable name list.  Required only when the file has not
                              been opened yet (lazy-open path).  Ignored on subsequent
@@ -602,10 +816,17 @@ class Write:
                              :attr:`~ValueLocation.NODAL`.
             passive_vars:    Per-variable passive flags (dataset-length).  Defaults to
                              all active.
-            var_sharing:     Per-variable sharing zone indices (dataset- length).
-                             Defaults to no sharing.
-            con_sharing:     Source-zone index for connectivity sharing.  Pass ``0`` for
-                             no sharing (mandatory for the first zone).
+            var_sharing:     Per-variable sharing zone indices (dataset-length).
+                             Defaults to no sharing.  Cross-checked against
+                             ``node_map`` / ``con_sharing`` for a consistent node/cell
+                             count.
+            con_sharing:     Optional zone index that the connectivity is shared from.
+                             ``None`` or ``0`` indicates no sharing (this zone owns its
+                             connectivity). The first zone in a dataset must own its
+                             connectivity. Connectivity cannot be shared when face
+                             neighbor mode is set to global. Connectivity cannot be
+                             shared between cell-based and face-based finite element
+                             zones.
             face_neighbors:  Optional face-neighbour connection array.  Its length sets
                              ``num_face_connections`` in the zone header automatically.
             face_nbr_mode:   Face-neighbour mode; used only when *face_neighbors* is
@@ -622,7 +843,11 @@ class Write:
             NotImplementedError: If *zone_type* is not in :data:`_FE_SIMPLE`, or if
                                  *datapacking* is
                                  :attr:`~tecio.libtecio.DataPacking.POINT`.
-            ValueError:          On variable count or array length mismatch
+            ValueError:          On variable count or array length mismatch, if
+                                 ``node_map`` is omitted without ``con_sharing``, or if
+                                 ``var_sharing``/``con_sharing`` reference a zone with
+                                 no recorded node/cell count, or one whose count
+                                 disagrees with this zone's.
             RuntimeError:        If attempting to write variable aux before variables
                                  are defined.
         """
@@ -644,7 +869,7 @@ class Write:
         if zone_type not in _FE_SIMPLE:
             raise NotImplementedError(
                 f"Zone type {zone_type.name!r} is not supported by "
-                "write_fe_zone.  FEPOLYGON and FEPOLYHEDRON zones require "
+                "write_fe_zone. FEPOLYGON and FEPOLYHEDRON zones require "
                 "the low-level libtecio API."
             )
 
@@ -664,10 +889,11 @@ class Write:
             self._open(variables)
             self.flush_aux()
 
-        # Per-active-variable data types
-        variable_types = [_infer_data_type(arr.dtype) for arr in arrays]
+        # Infer per-variable data types from array dtypes (currently overrided to
+        # precision)
+        variable_types = [self.precision] * len(arrays)
 
-        # Default value locations — all nodal
+        # Set default value locations
         if value_locations is None:
             value_locations = [ValueLocation.NODAL] * len(arrays)
 
@@ -676,6 +902,8 @@ class Write:
             passive_vars = [False] * len(self._check_variables())
         if var_sharing is None:
             var_sharing = [0] * len(self._check_variables())
+        if con_sharing is None:
+            con_sharing = 0
 
         # Validate active variable count
         if len(arrays) != len(self._check_variables()):
@@ -702,11 +930,59 @@ class Write:
                     f"got {len(arrays)}."
                 )
 
-        # Derive num_nodes and num_cells from node_map.
-        # node_map shape is (num_cells, nodes_per_cell); max value = num_nodes.
-        node_map_arr = np.asarray(node_map)
-        num_cells = node_map_arr.shape[0]
-        num_nodes = int(node_map_arr.max())
+        # Derive num_nodes and num_cells from node_map (read meta if shared)
+        if node_map is not None:
+            node_map_arr = np.asarray(node_map)
+            num_cells = node_map_arr.shape[0]
+            num_nodes = int(node_map_arr.max())
+        elif con_sharing:
+            src_zone = self._meta.zone(con_sharing)
+            if (
+                src_zone is None
+                or src_zone.num_nodes is None
+                or src_zone.num_elements is None
+            ):
+                raise ValueError(
+                    f"con_sharing={con_sharing} references a zone that has "
+                    "not been written yet, or is not a finite-element zone."
+                )
+            num_nodes = src_zone.num_nodes
+            num_cells = src_zone.num_elements
+        else:
+            raise ValueError(
+                "node_map must be provided unless connectivity is shared "
+                "from another zone via con_sharing."
+            )
+
+        # Shared variable data shape validation
+        for var_idx, src in enumerate(var_sharing, start=1):
+            if not src:
+                continue
+            src_zone = self._meta.zone(src)
+            if src_zone is None:
+                raise ValueError(
+                    f"Variable {var_idx} shares from zone {src}, which has "
+                    "not been written yet."
+                )
+            # Check shared variable value location to determine validation reference
+            src_loc = (
+                src_zone.value_locations[var_idx - 1]
+                if var_idx - 1 < len(src_zone.value_locations)
+                else ValueLocation.NODAL
+            )
+            if src_loc == ValueLocation.CELL_CENTERED:
+                if src_zone.num_elements != num_cells:
+                    raise ValueError(
+                        f"Variable {var_idx} shares from zone {src} with "
+                        f"{src_zone.num_elements} cells, which does not "
+                        f"match this zone's cell count of {num_cells}."
+                    )
+            elif src_zone.num_nodes != num_nodes:
+                raise ValueError(
+                    f"Variable {var_idx} shares from zone {src} with "
+                    f"{src_zone.num_nodes} nodes, which does not match "
+                    f"this zone's node count of {num_nodes}."
+                )
 
         # Validate per-variable array lengths
         for i, (arr, loc) in enumerate(zip(arrays, value_locations, strict=True)):
@@ -737,9 +1013,13 @@ class Write:
             if not is_passive and not share_zone
         ]
 
-        # Build global value-location list for teczne142
+        # Define global var type and value locations using active variable index
+        variable_types_global = [DataType.DOUBLE] * len(self._check_variables())
         value_locations_global = [ValueLocation.NODAL] * len(self._check_variables())
+
+        # Replace the active indices with the real types/locations
         for local_idx, var_idx in enumerate(active_var_idx):
+            variable_types_global[var_idx - 1] = variable_types[local_idx]
             value_locations_global[var_idx - 1] = value_locations[local_idx]
 
         # Write zone header.
@@ -774,74 +1054,27 @@ class Write:
             active_var_idx, arrays, variable_types, strict=True
         ):
             self.current_var = var_idx
-            write_data(arr, dtype)
+            _write_data(arr, dtype)
 
-        # Write connectivity (must come after all tecdat142 calls)
-        if (not con_sharing) or (self.current_zone == 1):
-            if node_map is None:
-                raise ValueError("node_map must be provided when writing connectivity.")
-            # If first zone, must supply connectivity
-            write_connectivity(node_map, face_neighbors_arr)
+        # Write connectivity (if not shared). Must come after all data arrays.
+        if not con_sharing:
+            assert node_map is not None
+            _write_connectivity(node_map, face_neighbors_arr)
 
-
-def write_data(data: npt.ArrayLike, dtype: np.dtype | DataType | None = None) -> None:
-    """Write a single variable's data using ``tecdat142``.
-
-    ``tecdat142`` only accepts ``float32`` or ``float64``; integer types are
-    upcast to ``float64``.  The array is ravelled in Fortran (column-major)
-    order before writing, which matches Tecplot's expected BLOCK layout.
-
-    Args:
-        data: Array-like of values to write.
-        dtype: Intended :class:`DataType` for the variable.
-
-    Output defaults:
-    1. Inferrs data_typeype for nummpy arrays
-    2. Defaults to double precision for array-like (list, tuple, etc)
-    3. Optionally casts to input DataType or numpy dtype.
-    4. Assumes data is in the correct shape and order (column major / Fortran order)
-    """
-    # Mappings between C-supported data types and numpy dtypes
-    dtype_to_datatype: dict[np.dtype, DataType] = {
-        np.dtype(np.float64): DataType.DOUBLE,
-        np.dtype(np.float32): DataType.FLOAT,
-        np.dtype(np.int32): DataType.INT32,
-        np.dtype(np.int16): DataType.INT16,
-        np.dtype(np.uint8): DataType.BYTE,
-    }
-
-    # Convert input array-like data to NumPy arrays
-    arr = np.asarray(data)
-
-    if dtype is not None:
-        data_type = _infer_data_type(dtype)
-    else:
-        data_type = dtype_to_datatype[arr.dtype]
-
-    # tecdat142 already returns a contiguous array so no need to cast before calling
-    if data_type in (DataType.FLOAT,):
-        libtecio.tecdat142(arr.ravel(order="F"), is_double=False)
-    else:
-        # DOUBLE, INT32, INT16, BYTE — all written as float64 in PLT format.
-        libtecio.tecdat142(arr.ravel(order="F"), is_double=True)
-
-
-def write_connectivity(
-    node_map: npt.ArrayLike,
-    face_neighbors: npt.ArrayLike | None = None,
-) -> None:
-    """Write FE connectivity: node map and optional face-neighbour data.
-
-    Args:
-        node_map:       Integer array of shape ``(num_cells, nodes_per_cell)``
-                        with 1-based node indices.
-        face_neighbors: Optional face-neighbour connection array.
-    """
-    nodes_flat = np.ascontiguousarray(node_map, dtype=np.int32).ravel(order="C")
-    libtecio.tecnode142(nodes_flat)
-
-    if face_neighbors is not None:
-        face_flat = np.ascontiguousarray(face_neighbors, dtype=np.int32).ravel(
-            order="C"
+        # Finally set zone metadata after successfully completing TecIO calls
+        self._meta.record_zone(
+            ZoneMeta(
+                index=self.current_zone,
+                title=title,
+                zone_type=zone_type,
+                solution_time=solution_time,
+                strand_id=strand_id,
+                num_aux_items=len(aux) if aux else 0,
+                num_nodes=num_nodes,
+                num_elements=num_cells,
+                value_locations=tuple(value_locations_global),
+                passive_vars=tuple(bool(p) for p in passive_vars),
+                shared_vars=tuple(int(s) for s in var_sharing),
+                data_types=tuple(variable_types_global),
+            )
         )
-        libtecio.tecface142(face_flat)

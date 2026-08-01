@@ -2,25 +2,23 @@ r"""Tecplot ASCII DAT file reader API.
 
 Supported ``DATAPACKING`` modes:
     * ``BLOCK`` — one contiguous value block per variable (Tecplot default).
-    * ``POINT`` — one row of all variable values per node, followed by a
-      separate row-per-cell section for any cell-centred variables.  This is
-      the format most commonly produced by third-party exporters and tools
-      that treat the file like a CSV with a header.
+    * ``POINT`` — one row of all variable values per node, followed by a separate
+      row-per-cell section for any cell-centred variables.  This is the format most
+      commonly produced by third-party exporters and tools that treat the file like a
+      CSV with a header.
 """
 
 from __future__ import annotations
 
 import contextlib
-
-# Standard library
 import re
 from collections.abc import ItemsView, Iterator, KeysView, ValuesView
-from typing import Any
+from typing import Any, overload
 
-# Third-party
 import numpy as np
 import numpy.typing as npt
 
+from .._containers import VariableList, ZoneList, select_variable_arrays
 from ..libtecio import (
     DataPacking,
     DataType,
@@ -29,11 +27,11 @@ from ..libtecio import (
     ZoneType,
 )
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Shared module-level constants
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
-#: FE zone types fully supported for reading and writing.
+# FE zone types fully supported for reading and writing
 _FE_SIMPLE: frozenset[ZoneType] = frozenset({
     ZoneType.FELINESEG,
     ZoneType.FETRIANGLE,
@@ -42,13 +40,13 @@ _FE_SIMPLE: frozenset[ZoneType] = frozenset({
     ZoneType.FEBRICK,
 })
 
-#: Zone types whose connectivity is face-based (not yet supported).
+# Zone types whose connectivity is face-based
 _FE_POLY: frozenset[ZoneType] = frozenset({
     ZoneType.FEPOLYGON,
     ZoneType.FEPOLYHEDRON,
 })
 
-#: Nodes per element for each supported simple FE type.
+# Nodes per element for each supported simple FE type
 _NODES_PER_ELEM: dict[ZoneType, int] = {
     ZoneType.FELINESEG: 2,
     ZoneType.FETRIANGLE: 3,
@@ -57,7 +55,7 @@ _NODES_PER_ELEM: dict[ZoneType, int] = {
     ZoneType.FEBRICK: 8,
 }
 
-#: ASCII keyword → ZoneType (lower-cased at parse time).
+# ASCII keyword to ZoneType
 _STR_TO_ZONETYPE: dict[str, ZoneType] = {
     "ordered": ZoneType.ORDERED,
     "felineseg": ZoneType.FELINESEG,
@@ -69,20 +67,37 @@ _STR_TO_ZONETYPE: dict[str, ZoneType] = {
     "fepolyhedron": ZoneType.FEPOLYHEDRON,
 }
 
-#: ASCII keyword → FileType.
+# ASCII keyword to FileType
 _STR_TO_FILETYPE: dict[str, FileType] = {
     "full": FileType.FULL,
     "grid": FileType.GRID,
     "solution": FileType.SOLUTION,
 }
 
-#: ASCII keyword → DataPacking (lower-cased at parse time).
+# ASCII keyword to DataPacking
 _STR_TO_DATAPACKING: dict[str, DataPacking] = {
     "point": DataPacking.POINT,
     "block": DataPacking.BLOCK,
 }
 
-#: ZoneType → ASCII keyword (for writing).
+# Legacy F= (format) keyword to (is_fe, DataPacking)
+_STR_TO_LEGACY_FORMAT: dict[str, tuple[bool, DataPacking]] = {
+    "POINT": (False, DataPacking.POINT),
+    "BLOCK": (False, DataPacking.BLOCK),
+    "FEPOINT": (True, DataPacking.POINT),
+    "FEBLOCK": (True, DataPacking.BLOCK),
+}
+
+# Legacy ``ET=`` (element type) keyword to ZoneType
+_STR_TO_ELEMENT_TYPE: dict[str, ZoneType] = {
+    "LINESEG": ZoneType.FELINESEG,
+    "TRIANGLE": ZoneType.FETRIANGLE,
+    "QUADRILATERAL": ZoneType.FEQUADRILATERAL,
+    "TETRAHEDRON": ZoneType.FETETRAHEDRON,
+    "BRICK": ZoneType.FEBRICK,
+}
+
+# ZoneType to ASCII keyword
 _ZONETYPE_STR: dict[ZoneType, str] = {
     ZoneType.ORDERED: "Ordered",
     ZoneType.FELINESEG: "FELineSeg",
@@ -94,13 +109,13 @@ _ZONETYPE_STR: dict[ZoneType, str] = {
     ZoneType.FEPOLYHEDRON: "FEPolyhedron",
 }
 
-#: FileType → ASCII keyword (FULL omitted from output).
+# FileType to ASCII keyword
 _FILETYPE_STR: dict[FileType, str] = {
     FileType.GRID: "GRID",
     FileType.SOLUTION: "SOLUTION",
 }
 
-#: DataType → NumPy dtype string (used by Write for casting).
+# DataType to NumPy dtype string
 _DT_TO_DTYPE: dict[DataType, str] = {
     DataType.FLOAT: "f4",
     DataType.DOUBLE: "f8",
@@ -109,13 +124,23 @@ _DT_TO_DTYPE: dict[DataType, str] = {
     DataType.BYTE: "u1",
 }
 
+# ASCII DT= keyword (and common aliases) to DataType
+_STR_TO_DATATYPE: dict[str, DataType] = {
+    "single": DataType.FLOAT,
+    "float": DataType.FLOAT,
+    "double": DataType.DOUBLE,
+    "longint": DataType.INT32,
+    "shortint": DataType.INT16,
+    "byte": DataType.BYTE,
+}
+
 #: Values per line for Write data blocks.
 _VALUES_PER_LINE: int = 5
 
 
-# ===========================================================================
+# ======================================================================================
 # Shared internal helpers
-# ===========================================================================
+# ======================================================================================
 
 
 def _quote(s: str) -> str:
@@ -167,9 +192,9 @@ def _infer_data_type(arr: npt.NDArray) -> DataType:
     return DataType.FLOAT
 
 
-# ===========================================================================
+# ======================================================================================
 # Parsing helpers (used only by Read)
-# ===========================================================================
+# ======================================================================================
 
 
 def _extract_quoted_strings(text: str) -> list[str]:
@@ -184,14 +209,46 @@ def _extract_quoted_strings(text: str) -> list[str]:
     ]
 
 
+def _next_token_is_value(text: str, i: int) -> bool:
+    """Return ``True`` if the token at *i* is a value, not the next key.
+
+    Supports the legacy whitespace-separated ``KEY VALUE`` form in zone headers
+    (e.g. ``STRANDID 2``).  A token is treated as the *next key* — and therefore not a
+    value for the preceding key — when it is immediately followed (after optional
+    whitespace) by ``=``.  A quoted token is always a value.
+
+    Example:
+        >>> _next_token_is_value("STRANDID 2", 9)
+        True
+
+    Args:
+        text: The full header string being parsed.
+        i: Index of the first character of the candidate token.
+
+    Returns:
+        ``True`` if the token should be consumed as the current key's value.
+    """
+    n = len(text)
+    if i < n and text[i] == '"':
+        return True
+    j = i
+    while j < n and text[j] not in " \t,=":
+        j += 1
+    # Skip trailing whitespace and see whether the token is followed by '='.
+    while j < n and text[j] in " \t":
+        j += 1
+    return not (j < n and text[j] == "=")
+
+
 def _kv_split(text: str) -> dict[str, str]:
     """Parse a loose ``KEY=VALUE`` string into an upper-cased-key dict.
 
-    Handles quoted values, parenthesised blocks (VARLOCATION, VARSHARELIST),
-    and bracketed lists (PASSIVEVARLIST).
+    Handles quoted values, parenthesised blocks (VARLOCATION, VARSHARELIST), and
+    bracketed lists (PASSIVEVARLIST).
 
     Example:
         >>> d = _kv_split("I=3, J=4, K=1")
+
     """
     result: dict[str, str] = {}
     text = text.replace("\n", " ").strip().rstrip(",")
@@ -213,15 +270,22 @@ def _kv_split(text: str) -> dict[str, str]:
             i += 1
             continue
 
-        # Skip whitespace and '='
+        # Determine the separator between key and value.  The modern form is
+        # ``KEY = VALUE``; some legacy files (and ``preplot``) also accept a bare
+        # whitespace separator, e.g. ``STRANDID 2``.
         while i < n and text[i] in " \t":
             i += 1
-        if i >= n or text[i] != "=":
+        if i < n and text[i] == "=":
+            # Standard ``KEY=VALUE``.
+            i += 1
+            while i < n and text[i] in " \t":
+                i += 1
+        elif i >= n or not _next_token_is_value(text, i):
+            # Bare flag keyword with no value (e.g. at end of header or directly
+            # before another ``KEY=`` pair).
             result[key] = ""
             continue
-        i += 1
-        while i < n and text[i] in " \t":
-            i += 1
+        # else: legacy ``KEY VALUE`` form — ``i`` already points at the value.
 
         # Value
         if i >= n:
@@ -261,6 +325,75 @@ def _kv_split(text: str) -> dict[str, str]:
         result[key] = value.strip()
 
     return result
+
+
+def _parse_legacy_format(text: str) -> tuple[bool, DataPacking]:
+    """Parse a legacy ``F=`` value into ``(is_fe, DataPacking)``.
+
+    The ``F`` keyword predates the modern ``ZONETYPE`` / ``DATAPACKING`` pair and
+    encodes both pieces of information at once (``POINT``/``BLOCK`` for ordered zones,
+    ``FEPOINT``/``FEBLOCK`` for finite-element zones).
+
+    Example:
+        >>> is_fe, packing = _parse_legacy_format("FEPOINT")
+
+    Args:
+        text: Raw ``F`` value string, e.g. ``"FEPOINT"`` (case-insensitive, any
+            trailing comma is ignored).
+
+    Returns:
+        Tuple of ``(is_fe, packing)`` where *is_fe* is ``True`` for ``FEPOINT`` /
+        ``FEBLOCK`` and *packing* is the corresponding :class:`DataPacking`.
+
+    Raises:
+        ValueError: If *text* is not one of the four recognised legacy formats.
+    """
+    raw = text.rstrip(",").strip().upper()
+    try:
+        return _STR_TO_LEGACY_FORMAT[raw]
+    except KeyError:
+        raise ValueError(
+            f"Unrecognised legacy zone format F={text!r}; expected one of "
+            "POINT, BLOCK, FEPOINT, FEBLOCK."
+        ) from None
+
+
+def _parse_legacy_element_type(text: str) -> ZoneType:
+    """Parse a legacy ``ET=`` (element type) value into a :class:`ZoneType`.
+
+    Recognises the canonical Tecplot element names (``TRIANGLE``,
+    ``QUADRILATERAL``, ``TETRAHEDRON``, ``BRICK``, ``LINESEG``).  A prefix-based
+    fallback provides a little tolerance for the minor spelling variants some
+    third-party exporters emit, keeping the reader as permissive as ``preplot``.
+
+    Example:
+        >>> zt = _parse_legacy_element_type("QUADRILATERAL")
+
+    Args:
+        text: Raw ``ET`` value string (case-insensitive, any trailing comma is
+            ignored).
+
+    Returns:
+        The matching finite-element :class:`ZoneType`.
+
+    Raises:
+        ValueError: If *text* does not resemble any known element type.
+    """
+    raw = text.rstrip(",").strip().upper()
+    if raw in _STR_TO_ELEMENT_TYPE:
+        return _STR_TO_ELEMENT_TYPE[raw]
+    # Prefix-based fallback for minor spelling variants.
+    if raw.startswith("TRI"):
+        return ZoneType.FETRIANGLE
+    if raw.startswith("QUAD"):
+        return ZoneType.FEQUADRILATERAL
+    if raw.startswith("TET"):
+        return ZoneType.FETETRAHEDRON
+    if raw.startswith("BRICK"):
+        return ZoneType.FEBRICK
+    if raw.startswith("LINE"):
+        return ZoneType.FELINESEG
+    raise ValueError(f"Unrecognised legacy element type ET={text!r} in ZONE header.")
 
 
 def _parse_index_list(text: str) -> list[int]:
@@ -340,8 +473,8 @@ def _parse_varsharelist(text: str) -> dict[int, int]:
         "([1-3,5]=2)"     → {0: 2, 1: 2, 2: 2, 4: 2}
 
     Note that the bracketed group may contain either a single integer or a
-    hyphen-separated range.  Mixed forms such as ``[1-3,5]`` are also
-    produced by some writers.
+    hyphen-separated range.  Mixed forms such as ``[1-3,5]`` are also produced by some
+    writers.
 
     Args:
         text: Raw VARSHARELIST value string including its outer parentheses,
@@ -349,7 +482,6 @@ def _parse_varsharelist(text: str) -> dict[int, int]:
 
     Returns:
         Dict mapping 0-based variable index to 1-based source zone number.
-
     """
     result: dict[int, int] = {}
     # Each match captures one bracketed group and the zone it maps to.
@@ -361,6 +493,42 @@ def _parse_varsharelist(text: str) -> dict[int, int]:
         # Reuse _parse_index_list to handle ranges and comma lists uniformly.
         for idx_0based in _parse_index_list(f"[{indices_str}]"):
             result[idx_0based] = zone_1based
+    return result
+
+
+def _parse_dt(text: str) -> list[DataType]:
+    """Parse ``DT=(SINGLE SINGLE ...)`` -> one :class:`DataType` per variable.
+
+    Note:
+        Tokens may be separated by whitespace, commas, or both.
+
+    Args:
+        text: Raw DT value string including its outer parentheses, e.g. ``"(SINGLE,
+              SINGLE, DOUBLE)"``.
+
+    Returns:
+        One :class:`DataType` per variable, in dataset variable order.
+
+    Raises:
+        ValueError: If a token isn't a recognized Tecplot data type keyword.
+
+    Example:
+        >>> _parse_dt("(SINGLE SINGLE DOUBLE)")
+        [DataType.FLOAT, DataType.FLOAT, DataType.DOUBLE]
+    """
+    inner = text.strip()
+    if inner.startswith("(") and inner.endswith(")"):
+        inner = inner[1:-1]
+    tokens = [tok for tok in re.split(r"[,\s]+", inner) if tok]
+    result: list[DataType] = []
+    for tok in tokens:
+        dt = _STR_TO_DATATYPE.get(tok.strip().lower())
+        if dt is None:
+            raise ValueError(
+                f"DT={text!r} contains unrecognized data type {tok!r}; expected one "
+                "of SINGLE, DOUBLE, LONGINT, SHORTINT, BYTE."
+            )
+        result.append(dt)
     return result
 
 
@@ -435,9 +603,9 @@ class _LineBuffer:
         return ""
 
 
-# ===========================================================================
+# ======================================================================================
 # ReadAuxData
-# ===========================================================================
+# ======================================================================================
 
 
 class ReadAuxData:
@@ -530,9 +698,9 @@ class ReadAuxData:
         return default
 
 
-# ===========================================================================
+# ======================================================================================
 # ReadVariable
-# ===========================================================================
+# ======================================================================================
 
 
 class ReadVariable:
@@ -558,6 +726,21 @@ class ReadVariable:
         self._is_passive: bool = is_passive
         self._shared_zone: int | None = shared_zone
 
+    def __repr__(self) -> str:
+        """Set repr string with only relevant metadata."""
+        parts = [repr(self.name)]
+        if self.is_passive():
+            parts.append("passive")
+        elif self.shared_zone is not None:
+            parts.append(f"shared(zone={self.shared_zone})")
+        else:
+            parts.append(f"dtype={self.data_type.name}")
+            if self.values is not None:
+                parts.append(f"shape={self.values.shape}")
+            if self.value_location == ValueLocation.CELL_CENTERED:
+                parts.append("CELL_CENTERED")
+        return f"ReadVariable({', '.join(parts)})"
+
     @property
     def name(self) -> str:
         """Return variable name string."""
@@ -567,8 +750,10 @@ class ReadVariable:
     def data_type(self) -> DataType:
         """Return :class:`DataType` inferred from the stored NumPy dtype.
 
-        Passive and shared variables return :attr:`DataType.FLOAT` as a
-        placeholder since no data array is stored.
+        A shared variable reports the source zone's actual dtype, since its data array
+        is resolved from that zone (see :attr:`shared_zone`).  Only a passive variable
+        (which has no data array anywhere in the file) returns :attr:`DataType.FLOAT` as
+        a placeholder.
         """
         if self._data is None:
             return DataType.FLOAT
@@ -610,7 +795,13 @@ class ReadVariable:
 
     @property
     def values(self) -> npt.NDArray | None:
-        """Return the data array, or ``None`` for passive/shared variables."""
+        """Return the data array.
+
+        Returns the source zone's array for a shared variable (see
+        :attr:`shared_zone`) exactly as if this zone owned the data itself.
+        ``None`` only for a passive variable, which has no data anywhere in
+        the file.
+        """
         return self._data
 
     def get_values(
@@ -627,7 +818,9 @@ class ReadVariable:
                 1-based start (inclusive) and end (exclusive).
 
         Returns:
-            arr (numpy.ndarray | None)
+            The array (or a slice of it), or ``None`` for a passive variable.
+            A shared variable resolves to the source zone's array, per
+            :attr:`values`.
 
         Raises:
             ValueError: If only one of start/end is given.
@@ -641,29 +834,23 @@ class ReadVariable:
             raise ValueError("Both start and end indices must be specified.")
         return self._data[start - 1 : end - 1]
 
-    def __repr__(self) -> str:
-        return (
-            f"ReadVariable(name={self._name!r}, "
-            f"data_type={self.data_type.name}, "
-            f"num_values={self.num_values})"
-        )
 
-
-# ===========================================================================
+# ======================================================================================
 # ReadZone
-# ===========================================================================
+# ======================================================================================
 
 
 class ReadZone:
     """Zone data parsed from a Tecplot ASCII DAT file.
 
-    Interface matches :class:`szl.ReadZone`.
-
     Attributes:
         datapacking: :class:`~tecio.libtecio.DataPacking` member reflecting the
             ``DATAPACKING`` keyword found in the zone header (``BLOCK`` or
-            ``POINT``).  The data arrays are identical either way; this
-            attribute records how the values were laid out on disk.
+            ``POINT``).  The data arrays are identical either way; this attribute
+            records how the values were laid out on disk.
+        shared_connectivity: 1-based source zone index if this zone's connectivity is
+            shared via ``CONNECTIVITYSHAREZONE``, else ``None``.  :attr:`node_map`
+            automatically resolves to the source zone's array.
 
     Example:
         >>> zone = ReadZone(title, zone_type, I, J, K, ...)
@@ -682,6 +869,7 @@ class ReadZone:
         auxdata: ReadAuxData,
         node_map: npt.NDArray | None = None,
         datapacking: DataPacking = DataPacking.BLOCK,
+        shared_connectivity: int | None = None,
     ) -> None:
         self.title: str = title
         self.zone_type: ZoneType = zone_type
@@ -690,10 +878,25 @@ class ReadZone:
         self.K: int = K
         self.solution_time: float = solution_time
         self.strand_id: int = strand_id
-        self.variable: list[ReadVariable] = variables
+        self._variable: VariableList[ReadVariable] = VariableList(variables)
         self.auxdata: ReadAuxData = auxdata
         self.node_map: npt.NDArray | None = node_map
         self.datapacking: DataPacking = datapacking
+        self.shared_connectivity: int | None = shared_connectivity
+
+    def __repr__(self) -> str:
+        """Set a more descriptive repr string for reading zones."""
+        title = self.title
+        if len(title) > 30:
+            title = title[:29] + "\u2026"
+        if self.zone_type == ZoneType.ORDERED:
+            size = f"I={self.I}, J={self.J}, K={self.K}"
+        else:
+            size = f"N={self.num_nodes}, E={self.num_elements}"
+        extra = f", aux={len(self.auxdata)}" if len(self.auxdata) else ""
+        return f"ReadZone({title!r}, {self.zone_type.name}, {size}{extra})"
+
+    # -- Properties --------------------------------------------------------------------
 
     @property
     def dimensions(self) -> tuple[int, int, int]:
@@ -718,9 +921,9 @@ class ReadZone:
     def nodes_per_cell(self) -> int:
         """Nodes per cell based on zone type.
 
-        Uses the module-level ``_NODES_PER_ELEM`` table for simple FE types.
-        For ORDERED zones the count is inferred from the number of active
-        dimensions (1-D → 2, 2-D → 4, 3-D → 8).
+        Uses the module-level ``_NODES_PER_ELEM`` table for simple FE types.  For
+        ORDERED zones the count is inferred from the number of active dimensions (1-D →
+        2, 2-D → 4, 3-D → 8).
 
         Raises:
             ValueError: For zone types without a fixed nodes-per-cell count.
@@ -734,29 +937,57 @@ class ReadZone:
             return 2**dims
         raise ValueError(f"ZoneType {zt} does not have a fixed nodes-per-cell count.")
 
+    @property
+    def variable(self) -> VariableList[ReadVariable]:
+        """Variables in this zone, by 0-based index or exact name."""
+        return self._variable
+
+    # -- Methods -----------------------------------------------------------------------
+
+    @overload
+    def get_array(self, key: int | str) -> npt.NDArray | None: ...
+    @overload
+    def get_array(self, key: list[str]) -> tuple[npt.NDArray | None, ...]: ...
+
+    def get_array(
+        self, key: int | str | list[str]
+    ) -> npt.NDArray | None | tuple[npt.NDArray | None, ...]:
+        """Return variable data array(s) for this zone.
+
+        A single key (0-based index or exact name) returns one array.  A list of exact
+        names returns a tuple of arrays in the order given, suitable for unpacking::
+
+            p = zone.get_array("p")
+            x, y, z = zone.get_array(["x", "y", "z"])
+
+        Returns:
+            Array correcsponding to scalar key (or ``None`` only if the variable is
+            passive); a tuple of such arrays for a list of names. A single-element list
+            yields a 1-tuple, not a bare array. A shared variable resolves to its
+            source zone's array, per :attr:`ReadVariable.values`.
+
+        Raises:
+            KeyError:   If a name does not exist.
+            IndexError: If an index is out of range.
+
+        """
+        return select_variable_arrays(self.variable, key)
+
     def is_enabled(self) -> bool:
         """Always ``True`` for zones successfully parsed from a file."""
         return True
 
-    def __repr__(self) -> str:
-        return (
-            f"ReadZone(title={self.title!r}, "
-            f"zone_type={self.zone_type.name}, "
-            f"datapacking={self.datapacking.name}, "
-            f"I={self.I}, J={self.J}, K={self.K})"
-        )
 
-
-# ===========================================================================
-# Read — top-level file reader
-# ===========================================================================
+# ======================================================================================
+# Public Read API
+# ======================================================================================
 
 
 class Read:
     """Read a Tecplot ASCII DAT file into memory.
 
-    The entire file is parsed on construction.  All data is then available
-    through the same attributes and methods as :class:`szl.Read`.
+    The entire file is parsed on construction.  All data is then available through the
+    same attributes and methods as :class:`szl.Read`.
 
     Example:
         >>> dat = Read("Onera.dat")
@@ -769,20 +1000,46 @@ class Read:
     Raises:
         FileNotFoundError: If *path* does not exist.
         ValueError: On unsupported format features.
+
     """
 
     def __init__(self, path: str) -> None:
         self._path: str = str(path)
-
         self._title: str = ""
         self._file_type: FileType = FileType.FULL
         self._variable_names: list[str] = []
         self._zones: list[ReadZone] = []
+        self._zone_list: ZoneList[ReadZone] | None = None
         self._auxdata: ReadAuxData = ReadAuxData()
-        # Index 0 is a None placeholder so that 1-based indexing works directly.
+        # Index 0 is a None placeholder so that 1-based indexing works directly
         self._var_auxdata: list[ReadAuxData | None] = [None]
-
+        # Raw VARAUXDATA lines seen before the first zone, buffered by
+        # _parse_file_header() and applied once _var_auxdata is allocated with the
+        # correct length (num_vars isn't known until the header finishes parsing)
+        self._deferred_var_aux_lines: list[str] = []
         self._parse()
+
+    def __repr__(self) -> str:
+        """Set a nice repr string for the read object."""
+        cls = type(self).__name__
+        name = self._path.replace("\\", "/").rsplit("/", 1)[-1]
+        try:
+            parts = [f"path={name!r}"]
+            title = self.title
+            if title:
+                if len(title) > 40:
+                    title = title[:25] + "\u2026"
+                parts.append(f"title={title!r}")
+            parts += [
+                f"file_type={self.file_type.name}",
+                f"zones={self.num_zones}",
+                f"variables={self.num_vars}",
+            ]
+            if self.num_auxdata_items:
+                parts.append(f"aux={self.num_auxdata_items}")
+            return f"{cls}({', '.join(parts)})"
+        except Exception:
+            return f"{cls}(path={name!r}, <unavailable>)"
 
     def __enter__(self) -> Read:
         """Context manager for Read class."""
@@ -797,7 +1054,7 @@ class Read:
         """
         pass
 
-    # -- public API (mirrors szl.Read) ----------------------------------------
+    # -- Properties --------------------------------------------------------------------
 
     @property
     def file_type(self) -> FileType:
@@ -825,9 +1082,11 @@ class Read:
         return len(self._zones)
 
     @property
-    def zone(self) -> list[ReadZone]:
-        """Return the list of :class:`ReadZone` objects (0-based)."""
-        return self._zones
+    def zone(self) -> ZoneList[ReadZone]:
+        """Zones in this file, by index or slice."""
+        if self._zone_list is None:
+            self._zone_list = ZoneList(self._zones)
+        return self._zone_list
 
     @property
     def num_auxdata_items(self) -> int:
@@ -892,6 +1151,12 @@ class Read:
 
         # Build per-variable aux data slots now that num_vars is known.
         self._var_auxdata = [None] + [ReadAuxData() for _ in range(self.num_vars)]
+
+        # Now that _var_auxdata exists, apply any VARAUXDATA lines that appeared before
+        # the first zone
+        for raw in self._deferred_var_aux_lines:
+            _apply_varauxdata(raw, self._var_auxdata)
+        self._deferred_var_aux_lines.clear()
 
         while tokens.has_more():
             line = tokens.peek_stripped()
@@ -974,9 +1239,11 @@ class Read:
                 if name:
                     self._auxdata._data[name] = value
 
-            # VARAUXDATA lines before the first ZONE are deferred — they need
-            # the variable list, which may not yet be complete.  They are
-            # processed in the main _parse() loop after the header finishes.
+            elif upper_key.startswith("VARAUXDATA"):
+                # Can't process this without num_vars, and therefore _var_auxdata, isn't
+                # known until this header finishes parsing. Buffer the raw line;
+                # _parse() applies these once _var_auxdata is allocated.
+                self._deferred_var_aux_lines.append(line)
 
     def _parse_zone(self, tokens: _LineBuffer) -> None:
         """Parse one ZONE block (header + data blocks + connectivity).
@@ -984,9 +1251,8 @@ class Read:
         Example:
             >>> self._parse_zone(tokens)
         """
-        # ------------------------------------------------------------------
-        # 1. Collect header lines
-        # ------------------------------------------------------------------
+        # -- Collect header lines ------------------------------------------------------
+
         header_lines: list[str] = [tokens.next_stripped()]  # ZONE T=...
 
         while tokens.has_more():
@@ -1003,7 +1269,9 @@ class Read:
             ):
                 break
             first_ch = nxt.lstrip()[0] if nxt.lstrip() else ""
-            if first_ch in "0123456789+-":
+            # A data line begins with a numeric token (covers leading-dot values
+            # such as ``.5`` and signed values such as ``-1.2e3``).
+            if first_ch in "0123456789+-.":
                 break
             header_lines.append(tokens.next_stripped())
 
@@ -1014,17 +1282,48 @@ class Read:
         if m_zone:
             header_text = header_text[m_zone.end() :]
 
-        # ------------------------------------------------------------------
-        # 2. Parse header key=value pairs
-        # ------------------------------------------------------------------
+        # -- Parse header key=value pairs ----------------------------------------------
+
         kv = _kv_split(header_text)
 
         zone_title = _unquote(kv.get("T", ""))
         strand_id = int(kv.get("STRANDID", "0") or "0")
         solution_time = float(kv.get("SOLUTIONTIME", "0.0") or "0.0")
 
-        zt_raw = kv.get("ZONETYPE", "ordered").rstrip(",").strip().lower()
-        zone_type = _STR_TO_ZONETYPE.get(zt_raw, ZoneType.ORDERED)
+        # -- Determine zone type and data packing --------------------------------------
+        #
+        # Two header dialects are supported:
+        #   * Modern:  ZONETYPE=FEQuadrilateral, DATAPACKING=POINT
+        #   * Legacy:  F=FEPOINT, ET=QUADRILATERAL
+        #
+        # The FE-vs-ordered distinction comes from ``ZONETYPE`` (modern) or ``F``
+        # (legacy).  ``ET`` (element type) only ever appears on finite-element zones —
+        # ordered/structured data has no elements — so it merely names the element
+        # *shape* once a zone is already known to be FE, and is ignored on ordered
+        # zones.  Modern keywords win when present.
+        legacy_is_fe: bool | None = None
+        legacy_packing: DataPacking | None = None
+        if "F" in kv:
+            legacy_is_fe, legacy_packing = _parse_legacy_format(kv["F"])
+
+        if "ZONETYPE" in kv:
+            zt_raw = kv["ZONETYPE"].rstrip(",").strip().lower()
+            zone_type = _STR_TO_ZONETYPE.get(zt_raw, ZoneType.ORDERED)
+        elif legacy_is_fe is False:
+            # F=POINT/BLOCK: ordered zone.  A stray ET (if any) does not apply.
+            zone_type = ZoneType.ORDERED
+        elif legacy_is_fe or "ET" in kv:
+            # Finite-element zone: F=FEPOINT/FEBLOCK, or an ET keyword with no F
+            # (some exporters omit F).  The element shape comes from ET, which is
+            # then required.
+            if "ET" not in kv:
+                raise ValueError(
+                    "Legacy FE zone header specifies F=FEPOINT/FEBLOCK but is "
+                    "missing the required ET (element type) keyword."
+                )
+            zone_type = _parse_legacy_element_type(kv["ET"])
+        else:
+            zone_type = ZoneType.ORDERED
 
         if zone_type in _FE_POLY:
             raise ValueError(
@@ -1039,22 +1338,42 @@ class Read:
             num_nodes = I * J * K
             num_cells = max(I - 1, 1) * max(J - 1, 1) * max(K - 1, 1)
         else:
+            # FE zones accept both the modern (NODES/ELEMENTS) and legacy (N/E)
+            # spellings for the node and element counts.
             num_nodes = int(kv.get("NODES", kv.get("N", "0")) or "0")
             num_cells = int(kv.get("ELEMENTS", kv.get("E", "0")) or "0")
             I, J, K = num_nodes, num_cells, 0  # noqa: E741
 
-        packing_raw = kv.get("DATAPACKING", "BLOCK").strip().lower()
-        packing = _STR_TO_DATAPACKING.get(packing_raw)
-        if packing is None:
-            raise ValueError(
-                f"DATAPACKING={packing_raw!r} is not supported; "
-                "only BLOCK and POINT are implemented in the ASCII reader."
-            )
+        # Packing: DATAPACKING wins, then legacy F, else BLOCK (Tecplot default).
+        if "DATAPACKING" in kv:
+            packing_raw = kv["DATAPACKING"].strip().lower()
+            packing = _STR_TO_DATAPACKING.get(packing_raw)
+            if packing is None:
+                raise ValueError(
+                    f"DATAPACKING={packing_raw!r} is not supported; "
+                    "only BLOCK and POINT are implemented in the ASCII reader."
+                )
+        elif legacy_packing is not None:
+            packing = legacy_packing
+        else:
+            packing = DataPacking.BLOCK
 
         # Variable locations (0-based index → ValueLocation)
         var_locs: dict[int, ValueLocation] = {}
         if "VARLOCATION" in kv:
             var_locs = _parse_varlocation(kv["VARLOCATION"])
+
+        # Per-variable data types. Tecplot default when DT= is omitted is SINGLE for
+        # every variable.
+        if "DT" in kv:
+            var_types = _parse_dt(kv["DT"])
+            if len(var_types) != len(self._variable_names):
+                raise ValueError(
+                    f"DT={kv['DT']!r} declares {len(var_types)} data types, but "
+                    f"the dataset has {len(self._variable_names)} variables."
+                )
+        else:
+            var_types = [DataType.FLOAT] * len(self._variable_names)
 
         # Passive variables (0-based)
         passive_set: set[int] = set()
@@ -1076,9 +1395,8 @@ class Read:
         ):
             zone_aux[m.group(1)] = _unquote(m.group(2))
 
-        # ------------------------------------------------------------------
-        # 3. Read variable data blocks
-        # ------------------------------------------------------------------
+        # -- Read variable data blocks -------------------------------------------------
+
         if packing == DataPacking.POINT:
             var_arrays = self._read_point_var_data(
                 tokens,
@@ -1088,6 +1406,7 @@ class Read:
                 var_locs,
                 passive_set,
                 share_map,
+                var_types,
             )
         else:
             var_arrays = self._read_block_var_data(
@@ -1098,11 +1417,11 @@ class Read:
                 var_locs,
                 passive_set,
                 share_map,
+                var_types,
             )
 
-        # ------------------------------------------------------------------
-        # 4. Read connectivity (FE zones only)
-        # ------------------------------------------------------------------
+        # -- Read connectivity (FE zones only) -----------------------------------------
+
         node_map: npt.NDArray | None = None
 
         if zone_type != ZoneType.ORDERED:
@@ -1113,12 +1432,11 @@ class Read:
                 flat = self._read_int_block(tokens, num_cells * nodes_per_cell)
                 node_map = flat.reshape(num_cells, nodes_per_cell)
 
-        # ------------------------------------------------------------------
-        # 5. Build ReadVariable and ReadZone objects
-        # ------------------------------------------------------------------
-        # For ordered zones, reshape each variable array from flat 1-D to
-        # (I, J, K) for nodal variables or (I-1, J-1, K-1) for cell-centered
-        # so that zone dimensions can be inferred from array shape downstream.
+        # -- Build ReadVariable and ReadZone objects -----------------------------------
+
+        # For ordered zones, reshape each variable array from flat 1-D to (I, J, K) for
+        # nodal variables or (I-1, J-1, K-1) for cell-centered so that zone dimensions
+        # can be inferred from array shape downstream.
         def _shaped(arr, loc):
             if arr is None or zone_type != ZoneType.ORDERED:
                 return arr
@@ -1129,6 +1447,17 @@ class Read:
             if arr.size == shape[0] * shape[1] * shape[2]:
                 return arr.reshape(shape, order="F")
             return arr
+
+        # Resolve variable data shared from an earlier zone (VARSHARELIST). Sharing is
+        # only valid against a zone that has already been parsed (DAT files reference
+        # zones by position, forward-only); an out-of-range reference is left as
+        # ``None`` rather than raising, since malformed input shouldn't crash a read
+        # that's otherwise recoverable.
+        for var_idx, src_zone_1based in share_map.items():
+            if 1 <= src_zone_1based <= len(self._zones):
+                var_arrays[var_idx] = (
+                    self._zones[src_zone_1based - 1].variable[var_idx].values
+                )
 
         read_vars = [
             ReadVariable(
@@ -1157,14 +1486,22 @@ class Read:
                 auxdata=ReadAuxData(zone_aux),
                 node_map=node_map,
                 datapacking=packing,
+                shared_connectivity=con_share_zone if con_share_zone else None,
             )
         )
 
-    # -- low-level block readers ----------------------------------------------
+    # -- Block readers -------------------------------------------------------
 
     @staticmethod
     def _read_float_block(tokens: _LineBuffer, n_values: int) -> npt.NDArray:
-        """Read exactly *n_values* floats from *tokens* into a float64 array.
+        """Read *n_values* floats from *tokens* into an intermediate float64 array.
+
+        This is a pure text-parsing primitive. Callers cast the result to each
+        variable's real dtype  afterward, once individual per-variable arrays have been
+        split out.
+
+        See Also:
+            :meth:`_read_block_var_data`/:meth:`_read_point_var_data`.
 
         Examples:
             >>> arr = Read._read_float_block(tokens, 100)
@@ -1200,15 +1537,27 @@ class Read:
         var_locs: dict[int, ValueLocation],
         passive_set: set[int],
         share_map: dict[int, int],
+        var_types: list[DataType],
     ) -> list[npt.NDArray | None]:
         """Read ``DATAPACKING=BLOCK`` variable data for one zone.
 
-        One contiguous block of values is read per active variable, in
-        dataset variable order.  Passive and shared variables contribute a
-        ``None`` placeholder to the returned list.
+        One contiguous block of values is read per active variable, in dataset variable
+        order. Each block is parsed as text into an intermediate ``float64`` array
+        (``_read_float_block`` doesn't know or care about per-variable types), then cast
+        to that variable's actual declared dtype (from ``DT=``, or the spec's documented
+        SINGLE default) right here, where each variable's array is finalized.
+
+        Note:
+            Passive and shared variables contribute a ``None`` placeholder to the
+            returned list. The caller resolves shared variables against the zones parsed
+            so far afterward, since this function only reads bytes off disk and has no
+            zone list to resolve against.
 
         Example:
-            >>> arrays = Read._read_block_var_data(tokens, 3, 100, 80, {}, set(), {})
+            >>> arrays = Read._read_block_var_data(
+            ...     tokens, 3, 100, 80, {}, set(), {}, [DataType.FLOAT] * 3
+            ... )
+
         """
         var_arrays: list[npt.NDArray | None] = [None] * num_vars
         for var_idx in range(num_vars):
@@ -1216,7 +1565,8 @@ class Read:
                 continue  # no data block for passive/shared variables
             loc = var_locs.get(var_idx, ValueLocation.NODAL)
             n_vals = num_cells if loc == ValueLocation.CELL_CENTERED else num_nodes
-            var_arrays[var_idx] = Read._read_float_block(tokens, n_vals)
+            raw = Read._read_float_block(tokens, n_vals)
+            var_arrays[var_idx] = raw.astype(_DT_TO_DTYPE[var_types[var_idx]])
         return var_arrays
 
     @staticmethod
@@ -1228,24 +1578,31 @@ class Read:
         var_locs: dict[int, ValueLocation],
         passive_set: set[int],
         share_map: dict[int, int],
+        var_types: list[DataType],
     ) -> list[npt.NDArray | None]:
         """Read ``DATAPACKING=POINT`` variable data for one zone.
 
         The spec writes two interleaved sections:
 
-        * **Nodal section** — ``num_nodes`` rows, one per node.  Each row
-          contains the values of all active nodal variables in dataset order.
-        * **Cell-centred section** — ``num_cells`` rows, one per element.
-          Each row contains the values of all active CC variables in dataset
-          order.
+            * **Nodal section** — ``num_nodes`` rows, one per node.  Each row contains
+              the values of all active nodal variables in dataset order.
+            * **Cell-centered section** — ``num_cells`` rows, one per element.  Each row
+              contains the values of all active CC variables in dataset order.
 
-        When all variables are nodal (the common case from CFD exporters) the
-        CC section is empty and is skipped automatically.  Passive and shared
-        variables are excluded from both sections and contribute a ``None``
-        placeholder to the returned list.
+        When all variables are nodal the cell-centered section is empty and is skipped
+        automatically. Passive and shared variables are excluded from both sections and
+        contribute a ``None`` placeholder to the returned list. Each column is cast to
+        its variable's actual declared dtype (from ``DT=``, or the spec's documented
+        SINGLE default) right where it's extracted from the interleaved rows.
+
+        See Also:
+            :meth:`_read_block_var_data`
 
         Example:
-            >>> arrays = Read._read_point_var_data(tokens, 3, 100, 80, {}, set(), {})
+            >>> arrays = Read._read_point_var_data(
+            ...     tokens, 3, 100, 80, {}, set(), {}, [DataType.FLOAT] * 3
+            ... )
+
         """
         # Active variable indices, preserving dataset order.
         nodal_active: list[int] = [
@@ -1272,7 +1629,9 @@ class Read:
             # Row-major: flat[node * n_nodal + col] = value for that variable.
             matrix = flat.reshape(num_nodes, n_nodal)
             for col, var_idx in enumerate(nodal_active):
-                var_arrays[var_idx] = np.ascontiguousarray(matrix[:, col])
+                var_arrays[var_idx] = np.ascontiguousarray(
+                    matrix[:, col], dtype=_DT_TO_DTYPE[var_types[var_idx]]
+                )
 
         # Cell-centred section: num_cells rows × len(cc_active) columns.
         n_cc = len(cc_active)
@@ -1280,7 +1639,9 @@ class Read:
             flat = Read._read_float_block(tokens, num_cells * n_cc)
             matrix = flat.reshape(num_cells, n_cc)
             for col, var_idx in enumerate(cc_active):
-                var_arrays[var_idx] = np.ascontiguousarray(matrix[:, col])
+                var_arrays[var_idx] = np.ascontiguousarray(
+                    matrix[:, col], dtype=_DT_TO_DTYPE[var_types[var_idx]]
+                )
 
         return var_arrays
 

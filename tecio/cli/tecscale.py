@@ -98,16 +98,17 @@ import numpy as np
 from .. import open as tecio_open
 from ..libtecio import ZoneType
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Argument parsing
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="tecscale",
         description=(
-            "Scale and/or offset one or more variables in a Tecplot file.  "
+            # -|-------------------|---------------------------------------------|
+            "Scale and/or offset one or more variables in a Tecplot file.\n"
             "Transformation: new = old * scale + offset."
         ),
         epilog=(
@@ -182,9 +183,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def _resolve_variable(spec: str, var_names: list[str]) -> int | None:
@@ -230,9 +231,9 @@ def _resolve_variable(spec: str, var_names: list[str]) -> int | None:
     return None
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Main
-# --------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -386,10 +387,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if zt == ZoneType.ORDERED:
                         writer.write_ijk_zone(data=writer_data, **common_kw)
                     else:
+                        con_sharing = zone.shared_connectivity
                         writer.write_fe_zone(
                             zone_type=zt,
                             data=writer_data,
-                            node_map=zone.node_map,
+                            node_map=None if con_sharing else zone.node_map,
+                            con_sharing=con_sharing,
                             **common_kw,
                         )
 

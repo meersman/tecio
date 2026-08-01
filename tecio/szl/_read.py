@@ -13,12 +13,13 @@ import ctypes
 from collections.abc import ItemsView, Iterator, KeysView, ValuesView
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, overload
 
 import numpy as np
 import numpy.typing as npt
 
 from .. import libtecio
+from .._containers import VariableList, ZoneList, select_variable_arrays
 from ..libtecio import DataPacking, DataType, FileType, ValueLocation, ZoneType
 
 
@@ -37,12 +38,37 @@ class Read:
         if not Path(file_name).exists():
             raise FileNotFoundError(f"No such file or directory: '{file_name}'")
         self.handle = libtecio.tec_file_reader_open(file_name)
-        self.zone = [
+        self._closed = False
+        self.zone: ZoneList[ReadZone] = ZoneList([
             ReadZone(self.handle, i + 1, self.num_vars) for i in range(self.num_zones)
-        ]
+        ])
         self._path = file_name
         self._auxdata: ReadAuxData | None = None
         self._var_auxdata: list[ReadAuxData | None] | None = None
+
+    def __repr__(self) -> str:
+        """Set a nice repr string for the read object."""
+        cls = type(self).__name__
+        name = self._path.replace("\\", "/").rsplit("/", 1)[-1]
+        if self._closed:
+            return f"{cls}(path={name!r}, <closed>)"
+        try:
+            parts = [f"path={name!r}"]
+            title = self.title
+            if title:
+                if len(title) > 40:
+                    title = title[:25] + "\u2026"
+                parts.append(f"title={title!r}")
+            parts += [
+                f"file_type={self.file_type.name}",
+                f"zones={self.num_zones}",
+                f"variables={self.num_vars}",
+            ]
+            if self.num_auxdata_items:
+                parts.append(f"aux={self.num_auxdata_items}")
+            return f"{cls}({', '.join(parts)})"
+        except Exception:
+            return f"{cls}(path={name!r}, <unavailable>)"
 
     def __enter__(self) -> Read:
         """Context manager for Read class."""
@@ -155,6 +181,7 @@ class Read:
         if self.handle is not None:
             libtecio.tec_file_reader_close(self.handle)
             self.handle = None
+            self._closed = True
 
 
 @dataclass
@@ -177,7 +204,19 @@ class ReadZone:
     zone_index: int
     num_vars: int
     _auxdata: ReadAuxData | None = None
-    _variable: list[ReadVariable] | None = None
+    _variable: VariableList[ReadVariable] | None = None
+
+    def __repr__(self) -> str:
+        """Set a more descriptive repr string for reading zones."""
+        title = self.title
+        if len(title) > 30:
+            title = title[:29] + "\u2026"
+        if self.zone_type == ZoneType.ORDERED:
+            size = f"I={self.I}, J={self.J}, K={self.K}"
+        else:
+            size = f"N={self.num_nodes}, E={self.num_elements}"
+        extra = f", aux={len(self.auxdata)}" if len(self.auxdata) else ""
+        return f"ReadZone({title!r}, {self.zone_type.name}, {size}{extra})"
 
     def __post_init__(self) -> None:
         """Set data dimensions as attributes."""
@@ -185,33 +224,19 @@ class ReadZone:
             self._handle, self.zone_index
         )
 
+    # -- Properties --------------------------------------------------------------------
+
     @property
-    def variable(self) -> list[ReadVariable]:
-        """List of :class:`ReadVariable` objects (0-indexed)."""
+    def variable(self) -> VariableList[ReadVariable]:
+        """Variables in this zone, by 0-based index or exact name."""
         # Check cached private variables -> don't run C functions each time this is
         # called if already defined
         if self._variable is None:
-            self._variable = [
+            self._variable = VariableList([
                 ReadVariable(self._handle, self.zone_index, i + 1)
                 for i in range(self.num_vars)
-            ]
+            ])
         return self._variable
-
-    def __getattr__(self, name: str) -> Any:
-        """Access variable data by name (case-insensitive).
-
-        Example:
-            zone.pressure -> returns the NumPy array for variable "Pressure"
-
-        """
-        # Only called if normal attributes do not exist
-        for var in self.variables:
-            if var.name.lower() == name.lower():  # case-insensitive match
-                return var.values
-            # If no match, raise normal AttributeError
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{name}'"
-        )
 
     @property
     def title(self) -> str:
@@ -295,26 +320,58 @@ class ReadZone:
         return libtecio.tec_zone_get_strand_id(self._handle, self.zone_index)
 
     @property
+    def shared_connectivity(self) -> int | None:
+        """Source zone index if this zone's connectivity is shared, else None.
+
+        Mirrors :attr:`ReadVariable.shared_zone`, but for the FE node map
+        rather than a single variable: FE zones can share their entire
+        connectivity (node map, and face neighbors if present) from an
+        earlier zone via ``ShareConnectivityFromZone`` instead of storing
+        their own copy.
+
+        Returns:
+            1-based zone index the connectivity is shared from, or ``None``
+            if this zone owns its connectivity (including all ORDERED
+            zones, which have no explicit connectivity to share).
+        """
+        if self.zone_type == ZoneType.ORDERED:
+            return None
+        return libtecio.tec_zone_connectivity_get_shared_zone(
+            self._handle,
+            self.zone_index,
+        )
+
+    def _connectivity_zone(self) -> int:
+        """Return the zone index that actually holds this variable's connectivity.
+
+        Resolve zone index containing the nade map arraysto be used in :mod:`libtecio`
+        function calls.
+        """
+        shared = self.shared_connectivity
+        return shared if shared is not None else self.zone_index
+
+    @property
     def node_map(self) -> npt.NDArray[np.int64] | None:
         """Node connectivity array ``(num_elements, nodes_per_cell)``.
 
         Returns:
             (n x m) node map array for n-cells and m-nodes per cell.
         """
-        is64bit = libtecio.is_64bit(self._handle, self.zone_index)
         if self.zone_type == ZoneType.ORDERED:
             return None
-        elif is64bit:
+        is64bit = libtecio.is_64bit(self._handle, self.zone_index)
+        connectivity_zone = self._connectivity_zone()
+        if is64bit:
             return libtecio.tec_zone_node_map_get_64(
                 self._handle,
-                self.zone_index,
+                connectivity_zone,
                 self.num_elements,
                 self.nodes_per_cell,
             )
         else:
             return libtecio.tec_zone_node_map_get(
                 self._handle,
-                self.zone_index,
+                connectivity_zone,
                 self.num_elements,
                 self.nodes_per_cell,
             ).astype(np.int64)
@@ -325,6 +382,37 @@ class ReadZone:
         if self._auxdata is None:
             self._auxdata = ReadAuxData(self._handle, "zone", self.zone_index)
         return self._auxdata
+
+    # -- Methods -----------------------------------------------------------------------
+
+    @overload
+    def get_array(self, key: int | str) -> npt.NDArray | None: ...
+    @overload
+    def get_array(self, key: list[str]) -> tuple[npt.NDArray | None, ...]: ...
+
+    def get_array(
+        self, key: int | str | list[str]
+    ) -> npt.NDArray | None | tuple[npt.NDArray | None, ...]:
+        """Return variable data array(s) for this zone.
+
+        A single key (0-based index or exact name) returns one array.  A list of exact
+        names returns a tuple of arrays in the order given, suitable for unpacking::
+
+            p = zone.get_array("p")
+            x, y, z = zone.get_array(["x", "y", "z"])
+
+        Returns:
+            One array (or ``None`` only if the variable is passive) for a scalar
+            key; a tuple of such arrays for a list of names.  A single-element list
+            yields a 1-tuple, not a bare array.  A shared variable resolves to its
+            source zone's array, per :attr:`ReadVariable.values`.
+
+        Raises:
+            KeyError:   If a name does not exist.
+            IndexError: If an index is out of range.
+
+        """
+        return select_variable_arrays(self.variable, key)
 
 
 @dataclass
@@ -344,6 +432,21 @@ class ReadVariable:
     zone_index: int
     var_index: int
 
+    def __repr__(self) -> str:
+        """Set repr string with only relevant metadata."""
+        parts = [repr(self.name)]
+        if self.is_passive():
+            parts.append("passive")
+        elif self.shared_zone is not None:
+            parts.append(f"shared(zone={self.shared_zone})")
+        else:
+            parts.append(f"dtype={self.data_type.name}")
+            if self.values is not None:
+                parts.append(f"shape={self.values.shape}")
+            if self.value_location == ValueLocation.CELL_CENTERED:
+                parts.append("CELL_CENTERED")
+        return f"ReadVariable({', '.join(parts)})"
+
     @property
     def name(self) -> str:
         """Variable name string."""
@@ -354,17 +457,33 @@ class ReadVariable:
         return libtecio.tec_var_is_enabled(self._handle, self.var_index)
 
     @property
-    def data_type(self) -> DataType:
-        """Data type enum for this variable in this zone."""
-        return libtecio.tec_zone_var_get_type(
+    def shared_zone(self) -> int | None:
+        """Source zone index if shared, or None."""
+        return libtecio.tec_zone_var_get_shared_zone(
             self._handle, self.zone_index, self.var_index
+        )
+
+    def _data_zone(self) -> int:
+        """Return the zone index that actually holds this variable's data.
+
+        Resolve zone index containing data arrays to be used in :mod:`libtecio` function
+        calls.
+        """
+        shared = self.shared_zone
+        return shared if shared is not None else self.zone_index
+
+    @property
+    def data_type(self) -> DataType:
+        """Data type enum for this variable."""
+        return libtecio.tec_zone_var_get_type(
+            self._handle, self._data_zone(), self.var_index
         )
 
     @property
     def value_location(self) -> ValueLocation:
         """Value location (NODAL or CELL_CENTERED)."""
         return libtecio.tec_zone_var_get_value_location(
-            self._handle, self.zone_index, self.var_index
+            self._handle, self._data_zone(), self.var_index
         )
 
     def is_passive(self) -> bool:
@@ -374,17 +493,10 @@ class ReadVariable:
         )
 
     @property
-    def shared_zone(self) -> int | None:
-        """Source zone index if shared, or None."""
-        return libtecio.tec_zone_var_get_shared_zone(
-            self._handle, self.zone_index, self.var_index
-        )
-
-    @property
     def num_values(self) -> int:
         """Number of values in the data array."""
         return libtecio.tec_zone_var_get_num_values(
-            self._handle, self.zone_index, self.var_index
+            self._handle, self._data_zone(), self.var_index
         )
 
     @property
@@ -398,7 +510,12 @@ class ReadVariable:
         | npt.NDArray[np.uint8]
         | None
     ):
-        """All values as a NumPy array, or None if passive/shared."""
+        """All values as a NumPy array, or None if passive.
+
+        Note:
+            Resolves to the source zone's actual data for a shared variable as if it
+            were local to this zone.
+        """
         return self.get_values()
 
     def get_values(
@@ -425,15 +542,17 @@ class ReadVariable:
         Returns:
             NumPy array of values with appropriate dtype. Ordered zones return arrays
             reshaped to (I, J, K) or (I-1, J-1, K-1) for full reads. FE unstructured
-            zones return flat 1-D arrays. Returns None if variable is passive or shared.
+            zones return flat 1-D arrays. A shared variable resolves to the source
+            zone's array. Returns None only if the variable is passive.
 
         Raises:
             ValueError: If only one of start/end is specified.
         """
-        # First check if variable is passive or shared (no data to return)
-        if self.is_passive() or (self.shared_zone is not None):
+        # First check if variable is passive (no data to return)
+        if self.is_passive():
             return None
 
+        data_zone = self._data_zone()
         data_type = self.data_type
         full_read = value_range == (None, None)
 
@@ -458,23 +577,23 @@ class ReadVariable:
 
         if data_type == DataType.FLOAT:
             arr = libtecio.tec_zone_var_get_float_values(
-                self._handle, self.zone_index, self.var_index, start_index, num_values
+                self._handle, data_zone, self.var_index, start_index, num_values
             )
         elif data_type == DataType.DOUBLE:
             arr = libtecio.tec_zone_var_get_double_values(
-                self._handle, self.zone_index, self.var_index, start_index, num_values
+                self._handle, data_zone, self.var_index, start_index, num_values
             )
         elif data_type == DataType.INT32:
             arr = libtecio.tec_zone_var_get_int32_values(
-                self._handle, self.zone_index, self.var_index, start_index, num_values
+                self._handle, data_zone, self.var_index, start_index, num_values
             )
         elif data_type == DataType.INT16:
             arr = libtecio.tec_zone_var_get_int16_values(
-                self._handle, self.zone_index, self.var_index, start_index, num_values
+                self._handle, data_zone, self.var_index, start_index, num_values
             )
         elif data_type == DataType.BYTE:
             arr = libtecio.tec_zone_var_get_uint8_values(
-                self._handle, self.zone_index, self.var_index, start_index, num_values
+                self._handle, data_zone, self.var_index, start_index, num_values
             )
         else:
             raise ValueError(f"Unknown data type: {data_type}")

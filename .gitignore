@@ -143,6 +143,7 @@ dmypy.json
 tp?*
 *.mp4
 *.csv
+*.mat
 
 # Project-specific
 test_output/

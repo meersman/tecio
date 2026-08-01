@@ -88,9 +88,9 @@ import numpy as np
 from .. import open as tecio_open
 from ..libtecio import ZoneType
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Constants
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 #: Canonical extension for each format flag (flag name -> extension).
 _FLAG_TO_EXT: dict[str, str] = {
@@ -109,9 +109,9 @@ _FE_SIMPLE: frozenset[ZoneType] = frozenset({
 })
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Argument parsing
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -119,15 +119,20 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         prog="teconvert",
         description="Convert a Tecplot file to a different format.",
         epilog=(
-            "Output format flags (exactly one required)\n"
+            # -|--------------------|---------------------------------------------|
+            "Output format flags (exactly one required):\n"
             "  -szplt  ->  Tecplot SZL binary (.szplt)\n"
             "  -plt    ->  Tecplot PLT binary (.plt)\n"
             "  -dat    ->  Tecplot ASCII DAT (.dat)\n\n"
-            "Examples\n"
-            "  teconvert -dat flow.szplt                  # SZL -> ASCII DAT\n"
-            "  teconvert -szplt flow.plt                  # PLT -> SZL\n"
-            "  teconvert -plt -o /tmp/out.plt flow.dat    # explicit output path\n"
-            "  teconvert --force -dat flow.szplt          # overwrite existing\n"
+            "Example usage:\n"
+            "  Convert SZL -> DAT\n"
+            "    $ teconvert -dat flow.szplt\n"
+            "  Convert PLT -> SZL\n"
+            "    $ teconvert -szplt flow.plt\n"
+            "  Explicit output path\n"
+            "    $ teconvert -plt -o /tmp/out.plt flow.dat\n"
+            "  Overwrite existing\n"
+            "  teconvert --force -dat flow.szplt\n"
         ),
         formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
             prog, width=70, max_help_position=24
@@ -184,9 +189,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Zone copying helper
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def _copy_zones(reader: Any, writer: Any) -> None:
@@ -222,7 +227,7 @@ def _copy_zones(reader: Any, writer: Any) -> None:
 
         for var in zone.variable:
             passive_vars.append(var.is_passive())
-            sv = var.shared_zone  # None or 0-based zone index
+            sv = var.shared_zone
             # Write API expects 0 = no sharing, positive = 1-based zone source.
             var_sharing.append(sv if sv is not None else 0)
             value_locations.append(var.value_location)
@@ -264,17 +269,19 @@ def _copy_zones(reader: Any, writer: Any) -> None:
         if zt == ZoneType.ORDERED:
             writer.write_ijk_zone(data=active_data, **common_kw)
         else:
+            con_sharing = zone.shared_connectivity
             writer.write_fe_zone(
                 zone_type=zt,
                 data=active_data,
-                node_map=zone.node_map,
+                node_map=None if con_sharing else zone.node_map,
+                con_sharing=con_sharing,
                 **common_kw,
             )
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Main entry point
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def main(argv: Sequence[str] | None = None) -> int:

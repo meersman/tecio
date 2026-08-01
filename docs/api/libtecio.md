@@ -102,6 +102,7 @@ See {doc}`libtecio_szl_write` for full documentation.
 
    tec_file_writer_open
    tec_file_writer_close
+   tec_file_writer_flush
    tec_zone_create_ijk
    tec_zone_create_fe
    tec_zone_set_unsteady_options

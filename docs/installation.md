@@ -114,5 +114,6 @@ To verify which library `tecio` has resolved at runtime:
 
 ```python
 from tecio import utils
+
 print(utils.get_tecio_lib())
 ```

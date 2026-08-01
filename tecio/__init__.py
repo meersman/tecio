@@ -12,7 +12,8 @@ try:
 except metadata.PackageNotFoundError:
     __version__ = "0.0.0"
 
-from . import cli, dat, libtecio, plt, szl, utils
+from . import cli, dat, libtecio, plt, szl
+from ._containers import VariableList, ZoneList
 from ._io import AppendReadWrite, AppendWrite, open
 from ._dataset import Dataset
 from ._variable import Variable
@@ -26,6 +27,8 @@ Dataset.__module__ = "tecio"
 Zone.__module__ = "tecio"
 Variable.__module__ = "tecio"
 AuxData.__module__ = "tecio"
+ZoneList.__module__ = "tecio"
+VariableList.__module__ = "tecio"
 
 __all__ = [
     "libtecio",
@@ -33,7 +36,6 @@ __all__ = [
     "dat",
     "plt",
     "szl",
-    "utils",
     "cli",
     "AppendWrite",
     "AppendReadWrite",
@@ -41,5 +43,7 @@ __all__ = [
     "Zone",
     "Variable",
     "AuxData",
+    "ZoneList",
+    "VariableList",
     "__version__",
 ]

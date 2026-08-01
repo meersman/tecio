@@ -93,9 +93,9 @@ import numpy as np
 from .. import open as tecio_open
 from ..libtecio import ZoneType
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def _parse_index_list(value: str) -> list[int]:
@@ -119,19 +119,21 @@ def _parse_index_list(value: str) -> list[int]:
         ) from exc
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Argument parsing
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="tecextract",
         description=(
-            "Extract a subset of zones and/or variables from a Tecplot file. "
+            # -|--------------------|---------------------------------------------|
+            "Extract a subset of zones and/or variables from a Tecplot file.\n"
             "Output format is determined by the -o extension."
         ),
         epilog=(
+            # -|--------------------|---------------------------------------------|
             "Example usage:\n"
             "  Extract zones 1 and 3\n"
             "    $ tecextract -zones 1,3 <file>\n"
@@ -284,6 +286,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if auxvar:
                     writer.add_auxvar_dict(auxvar)
 
+                # Maps a source zone's 1-based index to its 1-based index in the output
+                # file, populated as zones are actually written:
+                # - A variable/connectivity shared from a zone that's also in this map
+                #   can have its sharing preserved (just pointing at the new, compacted
+                #   index) instead of being materialized as independent data
+                # - Only a share whose source zone was excluded from the extraction
+                #   genuinely has nowhere to point and must fall back to real data.
+                zone_index_map: dict[int, int] = {}
+
                 for i, zone in enumerate(reader.zone):
                     zone_num = i + 1
                     if zone_num not in zone_set:
@@ -306,18 +317,26 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                     for orig_idx in out_var_indices:
                         var = zone.variable[orig_idx - 1]
-                        passive_vars.append(var.is_passive())
-                        sv = var.shared_zone
-                        # Sharing refers to zones by their index in the
-                        # *output* file, which may differ from the source.
-                        # We cannot safely remap shares to a reduced zone
-                        # set, so drop sharing — write as independent data.
-                        var_sharing.append(0)
+                        is_passive = var.is_passive()
+                        passive_vars.append(is_passive)
                         active_locs.append(var.value_location)
 
-                        if var.is_passive() or sv is not None:
+                        sv = var.shared_zone
+                        remapped = zone_index_map.get(sv) if sv is not None else None
+
+                        if is_passive:
+                            var_sharing.append(0)
+                            active_data.append(np.array([], dtype=np.float32))
+                        elif remapped is not None:
+                            # Source zone was also extracted -> preserve the data
+                            # sharing relationship
+                            var_sharing.append(remapped)
                             active_data.append(np.array([], dtype=np.float32))
                         else:
+                            # Variables not shared at all, or shared from a zone that is
+                            # not output, in which case branch sharing -> write the
+                            # actual values as independent data
+                            var_sharing.append(0)
                             arr = var.values
                             if arr is None or arr.size == 0:
                                 passive_vars[-1] = True
@@ -327,13 +346,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                     writer_data = [
                         arr
-                        for arr, is_p in zip(active_data, passive_vars, strict=False)
-                        if not is_p
+                        for arr, is_p, sv in zip(
+                            active_data, passive_vars, var_sharing, strict=False
+                        )
+                        if not is_p and sv == 0
                     ]
                     writer_locs = [
                         loc
-                        for loc, is_p in zip(active_locs, passive_vars, strict=False)
-                        if not is_p
+                        for loc, is_p, sv in zip(
+                            active_locs, passive_vars, var_sharing, strict=False
+                        )
+                        if not is_p and sv == 0
                     ]
 
                     zone_aux: dict[str, str] | None = None
@@ -353,12 +376,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if zt == ZoneType.ORDERED:
                         writer.write_ijk_zone(data=writer_data, **common_kw)
                     else:
+                        con_src = zone.shared_connectivity
+                        con_remapped = (
+                            zone_index_map.get(con_src) if con_src is not None else None
+                        )
                         writer.write_fe_zone(
                             zone_type=zt,
                             data=writer_data,
-                            node_map=zone.node_map,
+                            node_map=None if con_remapped else zone.node_map,
+                            con_sharing=con_remapped,
                             **common_kw,
                         )
+
+                    # Record where this source zone landed in the output, so a later
+                    # zone sharing from it can point at the real (compacted) index
+                    # instead of falling back to independent data.
+                    zone_index_map[zone_num] = writer.current_zone
 
     except Exception as exc:  # noqa: BLE001
         print(f"Error: {exc}", file=sys.stderr)

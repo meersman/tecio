@@ -173,8 +173,8 @@ wavenumbers, giving unconditional stability for the diffusive modes.
 In code (with forcing absent for the KHI case):
 
 ```python
-u_hat = (u_hat*(1/dt + nu*lap) - conv_u + fx)/(1/dt - nu*lap)
-v_hat = (v_hat*(1/dt + nu*lap) - conv_v + fy)/(1/dt - nu*lap)
+u_hat = (u_hat * (1 / dt + nu * lap) - conv_u + fx) / (1 / dt - nu * lap)
+v_hat = (v_hat * (1 / dt + nu * lap) - conv_v + fy) / (1 / dt - nu * lap)
 ```
 
 ### Adaptive CFL time step
@@ -270,8 +270,9 @@ backward one step along the velocity field and $\phi$ is interpolated there:
 ix = (X - u * dt_out) / dx % nx
 iy = (Y - v * dt_out) / dy % ny
 
-phi = map_coordinates(phi, [ix.ravel(), iy.ravel()],
-                      order=1, mode='wrap').reshape(nx, ny)
+phi = map_coordinates(phi, [ix.ravel(), iy.ravel()], order=1, mode="wrap").reshape(
+    nx, ny
+)
 ```
 
 The key motivation for this smooth profile is that a sharp (discontinuous)

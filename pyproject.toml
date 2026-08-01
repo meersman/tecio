@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tecio-python"
-version = "0.1.0"
+version = "0.2.1"
 description = "Python interface for reading and writing Tecplot data files"
 
 readme = "README.md"
@@ -37,6 +37,8 @@ Issues = "https://github.com/meersman/tecio/issues"
 Changelog = "https://github.com/meersman/tecio/blob/main/docs/changelog.md"
 
 [project.scripts]
+tec2mat = "tecio.cli.tec2mat:main"
+tecaux = "tecio.cli.tecaux:main"
 teconvert = "tecio.cli.teconvert:main"
 tecdump = "tecio.cli.tecdump:main"
 tecextract = "tecio.cli.tecextract:main"
@@ -62,6 +64,7 @@ docs = [
     "sphinx-autodoc-typehints>=2.0",
     "myst-parser>=3.0",
 ]
+mat = ["scipy"]
 
 [tool.setuptools.packages.find]
 include = ["tecio*"]

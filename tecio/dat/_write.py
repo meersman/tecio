@@ -22,6 +22,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
+from .._meta import WriterMeta, ZoneMeta
 from ..libtecio import (
     DataPacking,
     DataType,
@@ -35,7 +36,7 @@ from ..libtecio import (
 # Module-level constants
 # -------------------------------------------------------------------------------------
 
-#: FE zone types fully supported for reading and writing.
+# FE zone types fully supported for reading and writing
 _FE_SIMPLE: frozenset[ZoneType] = frozenset({
     ZoneType.FELINESEG,
     ZoneType.FETRIANGLE,
@@ -44,13 +45,13 @@ _FE_SIMPLE: frozenset[ZoneType] = frozenset({
     ZoneType.FEBRICK,
 })
 
-#: Zone types whose connectivity is face-based (not yet supported).
+# Zone types whose connectivity is face-based
 _FE_POLY: frozenset[ZoneType] = frozenset({
     ZoneType.FEPOLYGON,
     ZoneType.FEPOLYHEDRON,
 })
 
-#: Nodes per element for each supported simple FE type.
+# Nodes per element for each supported simple FE type
 _NODES_PER_ELEM: dict[ZoneType, int] = {
     ZoneType.FELINESEG: 2,
     ZoneType.FETRIANGLE: 3,
@@ -59,7 +60,7 @@ _NODES_PER_ELEM: dict[ZoneType, int] = {
     ZoneType.FEBRICK: 8,
 }
 
-#: ASCII keyword → ZoneType (lower-cased at parse time).
+# ASCII keyword to ZoneType
 _STR_TO_ZONETYPE: dict[str, ZoneType] = {
     "ordered": ZoneType.ORDERED,
     "felineseg": ZoneType.FELINESEG,
@@ -71,14 +72,14 @@ _STR_TO_ZONETYPE: dict[str, ZoneType] = {
     "fepolyhedron": ZoneType.FEPOLYHEDRON,
 }
 
-#: ASCII keyword → FileType.
+# ASCII keyword to FileType
 _STR_TO_FILETYPE: dict[str, FileType] = {
     "full": FileType.FULL,
     "grid": FileType.GRID,
     "solution": FileType.SOLUTION,
 }
 
-#: ZoneType → ASCII keyword (for writing).
+# ZoneType  ASCII keyword
 _ZONETYPE_STR: dict[ZoneType, str] = {
     ZoneType.ORDERED: "Ordered",
     ZoneType.FELINESEG: "FELineSeg",
@@ -90,13 +91,13 @@ _ZONETYPE_STR: dict[ZoneType, str] = {
     ZoneType.FEPOLYHEDRON: "FEPolyhedron",
 }
 
-#: FileType → ASCII keyword (FULL omitted from output).
+# FileType to ASCII keyword
 _FILETYPE_STR: dict[FileType, str] = {
     FileType.GRID: "GRID",
     FileType.SOLUTION: "SOLUTION",
 }
 
-#: DataType → NumPy dtype string (used by Write for casting).
+# DataType to NumPy dtype string
 _DT_TO_DTYPE: dict[DataType, str] = {
     DataType.FLOAT: "f4",
     DataType.DOUBLE: "f8",
@@ -105,8 +106,43 @@ _DT_TO_DTYPE: dict[DataType, str] = {
     DataType.BYTE: "u1",
 }
 
-#: Values per line for Write data blocks.
+# DataType to ASCII DT= keyword
+_DATATYPE_STR: dict[DataType, str] = {
+    DataType.FLOAT: "SINGLE",
+    DataType.DOUBLE: "DOUBLE",
+    DataType.INT32: "LONGINT",
+    DataType.INT16: "SHORTINT",
+    DataType.BYTE: "BYTE",
+}
+
+# ASCII DT= keyword (and common aliases) to DataType, case-insensitive lookup
+_STR_TO_DATATYPE: dict[str, DataType] = {
+    "single": DataType.FLOAT,
+    "float": DataType.FLOAT,
+    "double": DataType.DOUBLE,
+    "longint": DataType.INT32,
+    "shortint": DataType.INT16,
+    "byte": DataType.BYTE,
+}
+
+# Significant digits that guarantee a lossless round-trip for each floating precision
+# (matches the IEEE 754 theoretical bounds)
+_SIG_DIGITS_FOR_PRECISION: dict[DataType, int] = {
+    DataType.FLOAT: 9,
+    DataType.DOUBLE: 17,
+}
+
+# Values per line for Write data blocks
 _VALUES_PER_LINE: int = 5
+
+#: Indentation applied to every zone-header line after the first
+_INDENT: str = "  "
+
+# Indentation applied to data and connectivity lines
+_DATA_INDENT: str = _INDENT + "  "
+
+#: Separator written between adjacent values on a data line
+_VALUE_SEP: str = "  "
 
 
 # =====================================================================================
@@ -147,18 +183,64 @@ def _infer_data_type(arr: npt.NDArray) -> DataType:
     return DataType.FLOAT
 
 
+def _normalize_precision(precision: DataType | str) -> DataType:
+    """Return the :class:`DataType` for *precision*, accepting a string alias.
+
+    Accepts the :class:`DataType` enum directly, or a case-insensitive string.
+
+    Raises:
+        ValueError: If *precision* isn't FLOAT/DOUBLE (or a recognized
+                    string alias for one of them).
+    """
+    if isinstance(precision, str):
+        try:
+            precision = _STR_TO_DATATYPE[precision.strip().lower()]
+        except KeyError:
+            raise ValueError(
+                f"precision={precision!r} is not recognized; use 'single' or "
+                "'double' (or DataType.FLOAT / DataType.DOUBLE)."
+            ) from None
+    if precision not in (DataType.FLOAT, DataType.DOUBLE):
+        raise ValueError(
+            f"precision={precision!r} is not supported; precision only "
+            "applies to floating-point variables -- use DataType.FLOAT or "
+            "DataType.DOUBLE."
+        )
+    return precision
+
+
+def _resolve_written_type(inferred: DataType, precision: DataType) -> DataType:
+    """Return the :class:`DataType` actually written for one variable.
+
+    *precision* overrides *inferred* only when *inferred* is itself a floating-point
+    type (FLOAT or DOUBLE). Integer-inferred variables (INT32/INT16/BYTE) always keep
+    their own inferred type, unaffected by *precision*. A variable holding a meaningful
+    integer (a CPU number, an index, a count) should never be silently coerced by a
+    setting that's conceptually about floating-point precision.
+    """
+    if inferred in (DataType.FLOAT, DataType.DOUBLE):
+        return precision
+    return inferred
+
+
 def _make_float_fmt(sig_digits: int) -> str:
     """Return a ``format()``-compatible scientific-notation format string."""
-    return f".{max(sig_digits - 1, 0)}e"
+    return f" .{max(sig_digits - 1, 0)}e"
 
 
 def _stage_float_array(buf: io.StringIO, arr: npt.NDArray, fmt: str) -> None:
-    """Write a 1-D float array to *buf* in scientific notation."""
+    """Write a 1-D float array to *buf* in scientific notation.
+
+    Values are written ``_VALUES_PER_LINE`` per line, each line indented by
+    ``_DATA_INDENT`` and the values separated by ``_VALUE_SEP`` so that columns align.
+    """
     flat = np.asarray(arr).ravel()
     vpl = _VALUES_PER_LINE
     for start in range(0, flat.size, vpl):
         chunk = flat[start : start + vpl]
-        buf.write("\t".join(format(float(v), fmt) for v in chunk) + "\n")
+        buf.write(
+            _DATA_INDENT + _VALUE_SEP.join(format(float(v), fmt) for v in chunk) + "\n"
+        )
 
 
 def _stage_point_rows(
@@ -168,10 +250,10 @@ def _stage_point_rows(
 ) -> None:
     """Write *cols* as ``DATAPACKING=POINT`` rows into *buf*.
 
-    Each element of *cols* is the flat value array for one variable.  One
-    tab-separated row is written per point (node or cell): all variable values
-    for that point appear on the same line.  All column arrays must have the
-    same length.  Does nothing when *cols* is empty.
+    Each element of *cols* is the flat value array for one variable.  One tab-separated
+    row is written per point (node or cell): all variable values for that point appear
+    on the same line.  All column arrays must have the same length.  Does nothing when
+    *cols* is empty.
 
     Example:
         >>> _stage_point_rows(buf, [x_flat, y_flat, p_flat], ".8e")
@@ -181,12 +263,14 @@ def _stage_point_rows(
     # Stack into a (n_points, n_vars) matrix then write row by row.
     matrix = np.column_stack(cols) if len(cols) > 1 else cols[0].reshape(-1, 1)
     for row in matrix:
-        buf.write("\t".join(format(float(v), fmt) for v in row) + "\n")
+        buf.write(
+            _DATA_INDENT + _VALUE_SEP.join(format(float(v), fmt) for v in row) + "\n"
+        )
 
 
 def _stage_connectivity_row(buf: io.StringIO, row: npt.NDArray) -> None:
     """Write one element's node indices to *buf* as space-separated ints."""
-    buf.write(" ".join(str(int(n)) for n in row) + "\n")
+    buf.write(_DATA_INDENT + " ".join(str(int(n)) for n in row) + "\n")
 
 
 # =====================================================================================
@@ -210,9 +294,16 @@ class Write:
             zone-writing call (lazy open).
         file_type:
             :class:`FileType` enum.  Defaults to :attr:`FileType.FULL`.
-        sig_digits:
-            Significant digits for scientific-notation float output.  Default
-            is ``9``; use ``17`` for full ``float64`` round-trip fidelity.
+        precision:
+            Uniform floating point precision for the whole file.  :attr:`DataType.FLOAT`
+            (default; ``"single"``) or :attr:`DataType.DOUBLE` (``"double"``). Also
+            accepts those strings directly (``"single"``/``"double"``, or ``"float"``
+            for the enum's own name). Applies only to floating-point variables: a
+            ``float64`` array is downcast to ``SINGLE`` under the default, but integer
+            variables (LONGINT/ SHORTINT/BYTE) always keep their own inferred type in
+            the zone's ``DT=`` declaration regardless of *precision*. Also sets the
+            significant digit count used for every variable uniformly (9 for FLOAT, 17
+            for DOUBLE).
 
     Attributes:
         auxdataset : dict[str, str]
@@ -235,10 +326,11 @@ class Write:
     file_type: FileType
     """File type (FULL, GRID, or SOLUTION)."""
 
+    precision: DataType
+    """Uniform floating-point precision for the file."""
+
     current_zone: int
     """Count of successfully written zones."""
-
-    SIG_DIGITS: int = 9
 
     def __init__(
         self,
@@ -246,23 +338,40 @@ class Write:
         title: str = "untitled",
         variables: list[str] | None = None,
         file_type: FileType = FileType.FULL,
-        sig_digits: int | None = None,
+        *,
+        precision: DataType | str = DataType.FLOAT,
     ) -> None:
-        """Store configuration; open the file immediately if *variables* given."""
+        """Store configuration; open the file immediately if *variables* given.
+
+        Raises:
+            ValueError: If *precision* is not :attr:`DataType.FLOAT` /
+                        :attr:`DataType.DOUBLE` (or a recognized string alias for one of
+                        them).
+        """
         self.path: str = str(path)
         self.title: str = title
         self.variables: list[str] | None = variables
         self.file_type: FileType = file_type
+        self.precision: DataType = _normalize_precision(precision)
         self.current_zone: int = 0
         self.auxdataset: dict[str, str] = {}
         self.auxvar: dict[int, dict[str, str]] = {}
 
         self._fp: io.TextIOWrapper | None = None
         self._opened: bool = False
-        self._sig_digits: int = (
-            sig_digits if sig_digits is not None else self.SIG_DIGITS
+        self._float_fmt: str = _make_float_fmt(
+            _SIG_DIGITS_FOR_PRECISION[self.precision]
         )
-        self._float_fmt: str = _make_float_fmt(self._sig_digits)
+
+        # Running record of everything committed to the file so far (header, aux counts,
+        # per-zone dimensions/sharing). Used to validate var_sharing / con_sharing on
+        # subsequent zones against an earlier zone.
+        self._meta = WriterMeta(
+            path=self.path,
+            title=self.title,
+            file_type=self.file_type,
+            file_format="dat",
+        )
 
         if self.variables is not None:
             self._open(self.variables)
@@ -298,6 +407,11 @@ class Write:
             )
         return self.variables
 
+    @property
+    def meta(self) -> WriterMeta:
+        """Read-only record of everything written to this file so far."""
+        return self._meta
+
     # -- File lifecycle ---------------------------------------------------------------
 
     def _open(self, var_names: list[str]) -> None:
@@ -312,6 +426,7 @@ class Write:
         self._fp = open(self.path, "w", encoding="utf-8", newline="\n")  # noqa: SIM115
         self._write_file_header()
         self._opened = True
+        self._meta.set_variables(self.variables)
 
     def close(self) -> None:
         """Flush and close the output file (safe to call more than once)."""
@@ -360,6 +475,8 @@ class Write:
                     f"VARAUXDATA {one_based} {name}={_quote(value)}\n"
                 )
 
+        self._meta.note_dataset_aux(len(self.auxdataset))
+        self._meta.note_var_aux(sum(len(subdict) for subdict in self.auxvar.values()))
         self.auxdataset.clear()
         self.auxvar.clear()
 
@@ -371,7 +488,7 @@ class Write:
         """Buffer variable-level auxiliary data from input dictionary."""
         self.auxvar.update(auxdict)
 
-    # -- Zone writers -----------------------------------------------------------------
+    # -- Structured zone writer --------------------------------------------------------
 
     def write_ijk_zone(
         self,
@@ -444,7 +561,10 @@ class Write:
             self._open(variables)
             self.flush_aux()
 
-        variable_types = [_infer_data_type(np.asarray(arr)) for arr in data]
+        variable_types = [
+            _resolve_written_type(_infer_data_type(np.asarray(arr)), self.precision)
+            for arr in data
+        ]
 
         if value_locations is None:
             value_locations = [ValueLocation.NODAL] * len(data)
@@ -467,45 +587,101 @@ class Write:
                     f"got {len(data)}."
                 )
 
-        # Infer dimensions
-        nodal = [
-            i for i, loc in enumerate(value_locations) if loc == ValueLocation.NODAL
+        # Determine which dataset variables are supplied locally (not passive or shared)
+        # and translate to 0-based local index
+        active_var_idx = [
+            vi
+            for vi, (p, s) in enumerate(
+                zip(passive_vars, var_sharing, strict=True), start=1
+            )
+            if not p and not s
         ]
-        cell = [
-            i
-            for i, loc in enumerate(value_locations)
-            if loc == ValueLocation.CELL_CENTERED
-        ]
+        active_local_idx = {vi: i for i, vi in enumerate(active_var_idx)}
 
-        if nodal:
-            ref = np.asarray(data[nodal[0]])
-            ndims = ref.ndim
-            if ndims not in (1, 2, 3):
-                self._handle_zone_error()
-                raise ValueError(f"Arrays must be 1D, 2D, or 3D; got {ndims}D.")
-            nodal_shape = ref.shape + (1,) * (3 - ndims)
-            cell_shape = tuple(max(d - 1, 1) for d in nodal_shape)
-            imax, jmax, kmax = nodal_shape
-        elif cell:
-            ref = np.asarray(data[cell[0]])
-            ndims = ref.ndim
-            if ndims not in (1, 2, 3):
-                self._handle_zone_error()
-                raise ValueError(f"Arrays must be 1D, 2D, or 3D; got {ndims}D.")
-            cell_shape = ref.shape + (1,) * (3 - ndims)
-            nodal_shape = tuple(max(d + 1, 1) for d in cell_shape)
-            imax, jmax, kmax = nodal_shape
-        else:
-            self._handle_zone_error()
-            raise ValueError("Could not determine zone dimensions.")
+        # Determine validation reference data array shape. NODAL local or shared
+        # variable arrays gives shape dimensions directly. CELL_CENTERED arrays can be
+        # ambiguous if there is a degenerate axis (2D cells vs 3D with only 1 cell along
+        # an axis appear the same). Therefore CELL_CENTERED is only used as fallback
+        # method if no NODAL variables are available.
+        nodal_shape: tuple[int, ...] | None = None
+        ndims: int | None = None  # set only when nodal_shape came from a local array
+        cell_fallback: tuple[int, ...] | None = None
+        cell_fallback_ndims: int | None = None
 
-        # Validate shapes
-        for i, (arr, loc) in enumerate(zip(data, value_locations, strict=True)):
-            arr_np = np.asarray(arr)
-            if arr_np.ndim != ndims:
+        for var_idx in range(1, len(self._check_variables()) + 1):
+            if passive_vars[var_idx - 1]:
+                continue
+            src = var_sharing[var_idx - 1]
+            if src:
+                if nodal_shape is None:
+                    src_zone = self._meta.zone(src)
+                    if src_zone is None or src_zone.dimensions is None:
+                        self._handle_zone_error()
+                        raise ValueError(
+                            f"Variable {var_idx} shares from zone {src}, "
+                            "which has not been written yet, or is not an "
+                            "ORDERED zone."
+                        )
+                    nodal_shape = src_zone.dimensions
+                continue
+
+            local_arr = np.asarray(data[active_local_idx[var_idx]])
+            loc = value_locations[active_local_idx[var_idx]]
+            arr_ndims = local_arr.ndim
+            if arr_ndims not in (1, 2, 3):
                 self._handle_zone_error()
-                raise ValueError(f"Array {i} is {arr_np.ndim}D, expected {ndims}D.")
-            shape = arr_np.shape + (1,) * (3 - arr_np.ndim)
+                raise ValueError(
+                    f"Arrays must be 1D, 2D, or 3D; got {arr_ndims}-D array.  "
+                    "For time-dependent data, write each time step as a separate zone."
+                )
+            shape = local_arr.shape + (1,) * (3 - arr_ndims)
+            if loc == ValueLocation.NODAL:
+                if nodal_shape is None:
+                    nodal_shape, ndims = shape, arr_ndims
+            elif cell_fallback is None:
+                cell_fallback, cell_fallback_ndims = shape, arr_ndims
+
+        if nodal_shape is None:
+            if cell_fallback is not None:
+                nodal_shape = tuple(n + 1 for n in cell_fallback)
+                ndims = cell_fallback_ndims
+            else:
+                self._handle_zone_error()
+                raise ValueError("Could not determine zone dimensions.")
+
+        cell_shape = tuple(max(n - 1, 1) for n in nodal_shape)
+        imax, jmax, kmax = nodal_shape
+
+        # Validate every non-passive dataset variable array (including shared vars)
+        # against reference
+        for var_idx in range(1, len(self._check_variables()) + 1):
+            if passive_vars[var_idx - 1]:
+                continue
+            src = var_sharing[var_idx - 1]
+            if src:
+                src_zone = self._meta.zone(src)
+                if src_zone is None or src_zone.dimensions is None:
+                    self._handle_zone_error()
+                    raise ValueError(
+                        f"Variable {var_idx} shares from zone {src}, which "
+                        "has not been written yet, or is not an ORDERED "
+                        "zone."
+                    )
+                if src_zone.dimensions != nodal_shape:
+                    self._handle_zone_error()
+                    raise ValueError(
+                        f"Variable {var_idx} shares from zone {src} with "
+                        f"dimensions {src_zone.dimensions}, which does not "
+                        f"match this zone's dimensions {nodal_shape}."
+                    )
+                continue
+
+            i = active_local_idx[var_idx]
+            local_arr, loc = np.asarray(data[i]), value_locations[i]
+            if ndims is not None and local_arr.ndim != ndims:
+                self._handle_zone_error()
+                raise ValueError(f"Array {i} is {local_arr.ndim}D, expected {ndims}D.")
+            shape = local_arr.shape + (1,) * (3 - local_arr.ndim)
             if loc == ValueLocation.NODAL and shape != nodal_shape:
                 self._handle_zone_error()
                 raise ValueError(
@@ -518,16 +694,14 @@ class Write:
                     f"expected {cell_shape}."
                 )
 
-        active_var_idx = [
-            vi
-            for vi, (p, s) in enumerate(
-                zip(passive_vars, var_sharing, strict=True), start=1
-            )
-            if not p and not s
-        ]
-        vl_global = [ValueLocation.NODAL] * len(self._check_variables())
-        for li, vi in enumerate(active_var_idx):
-            vl_global[vi - 1] = value_locations[li]
+        # Define global var type and value locations using active variable index
+        variable_types_global = [DataType.DOUBLE] * len(self._check_variables())
+        value_locations_global = [ValueLocation.NODAL] * len(self._check_variables())
+
+        # Replace the active indices with the real types/locations
+        for local_idx, var_idx in enumerate(active_var_idx):
+            variable_types_global[var_idx - 1] = variable_types[local_idx]
+            value_locations_global[var_idx - 1] = value_locations[local_idx]
 
         buf = io.StringIO()
         self._stage_zone_header(
@@ -541,7 +715,8 @@ class Write:
             strand_id=strand_id,
             passive_vars=passive_vars,
             var_sharing=var_sharing,
-            value_locations_global=vl_global,
+            value_locations_global=value_locations_global,
+            variable_types_global=variable_types_global,
             aux=aux,
             datapacking=datapacking,
         )
@@ -573,6 +748,25 @@ class Write:
         self._check_handle().write(buf.getvalue())
         self.current_zone += 1
 
+        # Finally set zone metadata after successfully completing TecIO calls
+        self._meta.record_zone(
+            ZoneMeta(
+                index=self.current_zone,
+                title=title,
+                zone_type=ZoneType.ORDERED,
+                solution_time=solution_time,
+                strand_id=strand_id,
+                num_aux_items=len(aux) if aux else 0,
+                dimensions=(imax, jmax, kmax),
+                value_locations=tuple(value_locations_global),
+                passive_vars=tuple(bool(p) for p in passive_vars),
+                shared_vars=tuple(int(s) for s in var_sharing),
+                data_types=tuple(variable_types_global),
+            )
+        )
+
+    # -- Unstructured zone writer ------------------------------------------------------
+
     def write_fe_zone(
         self,
         data: Sequence[npt.ArrayLike],
@@ -584,7 +778,7 @@ class Write:
         value_locations: Sequence[ValueLocation] | None = None,
         passive_vars: Sequence[bool | int] | None = None,
         var_sharing: Sequence[int] | None = None,
-        con_sharing: int = 0,
+        con_sharing: int | None = None,
         face_neighbors: npt.ArrayLike | None = None,
         face_nbr_mode: FaceNeighborMode = FaceNeighborMode.LOCAL_ONE_TO_ONE,
         solution_time: float = 0.0,
@@ -594,6 +788,9 @@ class Write:
     ) -> None:
         """Write a complete finite-element zone.
 
+        Node and cell counts are inferred from *node_map*, or if *node_map* is omitted
+        from the zone referenced by *con_sharing*.
+
         Warning:
             ``FEPOLYGON`` and ``FEPOLYHEDRON`` raise :exc:`NotImplementedError`.
 
@@ -601,12 +798,16 @@ class Write:
             data:            Sequence of 1-D arrays, one per dataset variable.  NODAL
                              arrays must have length ``num_nodes``; CELL_CENTERED arrays
                              must have length ``num_cells``.  ``num_nodes`` and
-                             ``num_cells`` are inferred from ``node_map``.
+                             ``num_cells`` are inferred from ``node_map`` (or from the
+                             ``con_sharing`` source zone when ``node_map`` is omitted).
             zone_type:       FE zone type from the ZoneType enum.  Must be one of the
                              types in ``_FE_SIMPLE``.
             node_map:        Integer array of shape ``(num_cells, nodes_per_cell)``
                              containing 1-based node indices.  32- or 64-bit write is
                              chosen automatically based on the maximum index value.
+                             Required unless ``con_sharing`` is set, in which case the
+                             connectivity -- and the node/cell counts derived from it --
+                             are inherited from the source zone instead.
             title:           Zone title string.  Defaults to ``"FE_Zone_{current_zone +
                              1}"`` if not provided.
             variables:       Variable name list.  Required only when the file has not
@@ -617,11 +818,13 @@ class Write:
             passive_vars:    Per-variable passive flags.  Defaults to all active
                              (False).
             var_sharing:     Per-variable share from zone index.  Defaults to no
-                             sharing.
-            con_sharing:     Optional zone index that the connectivity is shared from
-                             Pass 0 to indicate no connectivity. You must pass 0 for the
-                             first zone in a dataset. Connectivity cannot be shared when
-                             face neighbor mode is set to global. Connectivity cannot be
+                             sharing.  Cross-checked against ``node_map`` /
+                             ``con_sharing`` for a consistent node/cell count.
+            con_sharing:     Optional zone index that the connectivity is shared from.
+                             ``None`` or ``0`` indicates no sharing (this zone owns its
+                             connectivity). The first zone in a dataset must own its
+                             connectivity. Connectivity cannot be shared when face
+                             neighbor mode is set to global. Connectivity cannot be
                              shared between cell-based and face-based finite element
                              zones.
             face_neighbors:  Optional face-neighbor connectivity array.
@@ -641,11 +844,16 @@ class Write:
         Raises:
             NotImplementedError: For FEPOLYGON, FEPOLYHEDRON, or if *datapacking*
                                  is :attr:`~tecio.libtecio.DataPacking.POINT`.
-            ValueError:          On variable count or array length mismatch.
+            ValueError:          On variable count or array length mismatch; if
+                                 ``node_map`` is omitted without ``con_sharing``; or if
+                                 ``var_sharing``/``con_sharing`` reference a zone with
+                                 no recorded node/cell count, or one whose count
+                                 disagrees with this zone's.
             ValueError:          If I/O operation attempted on closed or None file
                                  handle.
             RuntimeError:        If attempting to write variable aux before variables
                                  are defined.
+
         """
         if isinstance(datapacking, str):
             try:
@@ -674,14 +882,20 @@ class Write:
             self._open(variables)
             self.flush_aux()
 
-        variable_types = [_infer_data_type(np.asarray(arr)) for arr in data]
+        variable_types = [
+            _resolve_written_type(_infer_data_type(np.asarray(arr)), self.precision)
+            for arr in data
+        ]
 
+        # Default passive / sharing arrays
         if value_locations is None:
             value_locations = [ValueLocation.NODAL] * len(data)
         if passive_vars is None:
             passive_vars = [False] * len(self._check_variables())
         if var_sharing is None:
             var_sharing = [0] * len(self._check_variables())
+        if con_sharing is None:
+            con_sharing = 0
 
         # Validate count
         if len(data) != len(self._check_variables()):
@@ -700,10 +914,66 @@ class Write:
                     f"got {len(data)}."
                 )
 
-        node_map_arr = np.asarray(node_map)
-        num_cells = int(node_map_arr.shape[0])
-        num_nodes = int(node_map_arr.max())
+        # Derive num_nodes and num_cells from node_map (read meta if shared)
+        if node_map is not None:
+            node_map_arr = np.asarray(node_map)
+            num_cells = int(node_map_arr.shape[0])
+            num_nodes = int(node_map_arr.max())
+        elif con_sharing:
+            src_zone = self._meta.zone(con_sharing)
+            if (
+                src_zone is None
+                or src_zone.num_nodes is None
+                or src_zone.num_elements is None
+            ):
+                self._handle_zone_error()
+                raise ValueError(
+                    f"con_sharing={con_sharing} references a zone that has "
+                    "not been written yet, or is not a finite-element zone."
+                )
+            num_nodes = src_zone.num_nodes
+            num_cells = src_zone.num_elements
+        else:
+            self._handle_zone_error()
+            raise ValueError(
+                "node_map must be provided unless connectivity is shared "
+                "from another zone via con_sharing."
+            )
 
+        # Shared variable data shape validation
+        for var_idx, src in enumerate(var_sharing, start=1):
+            if not src:
+                continue
+            src_zone = self._meta.zone(src)
+            if src_zone is None:
+                self._handle_zone_error()
+                raise ValueError(
+                    f"Variable {var_idx} shares from zone {src}, which has "
+                    "not been written yet."
+                )
+            # Check shared variable value location to determine validation reference
+            src_loc = (
+                src_zone.value_locations[var_idx - 1]
+                if var_idx - 1 < len(src_zone.value_locations)
+                else ValueLocation.NODAL
+            )
+            if src_loc == ValueLocation.CELL_CENTERED:
+                if src_zone.num_elements != num_cells:
+                    self._handle_zone_error()
+                    raise ValueError(
+                        f"Variable {var_idx} shares from zone {src} with "
+                        f"{src_zone.num_elements} cells, which does not "
+                        f"match this zone's cell count of {num_cells}."
+                    )
+            elif src_zone.num_nodes != num_nodes:
+                self._handle_zone_error()
+                raise ValueError(
+                    f"Variable {var_idx} shares from zone {src} with "
+                    f"{src_zone.num_nodes} nodes, which does not match "
+                    f"this zone's node count of {num_nodes}."
+                )
+
+        # Local variable data shape validation
         for i, (arr, loc) in enumerate(zip(data, value_locations, strict=True)):
             arr_np = np.asarray(arr)
             if loc == ValueLocation.NODAL and arr_np.size != num_nodes:
@@ -719,6 +989,7 @@ class Write:
                     f"expected {num_cells}."
                 )
 
+        # Determine 1-based index of dataset variables to write (not passive or shared)
         active_var_idx = [
             vi
             for vi, (p, s) in enumerate(
@@ -726,9 +997,15 @@ class Write:
             )
             if not p and not s
         ]
-        vl_global = [ValueLocation.NODAL] * len(self._check_variables())
-        for li, vi in enumerate(active_var_idx):
-            vl_global[vi - 1] = value_locations[li]
+
+        # Define global var type and value locations using active variable index
+        variable_types_global = [DataType.DOUBLE] * len(self._check_variables())
+        value_locations_global = [ValueLocation.NODAL] * len(self._check_variables())
+
+        # Replace the active indices with the real types/locations
+        for local_idx, var_idx in enumerate(active_var_idx):
+            variable_types_global[var_idx - 1] = variable_types[local_idx]
+            value_locations_global[var_idx - 1] = value_locations[local_idx]
 
         buf = io.StringIO()
         self._stage_zone_header(
@@ -741,7 +1018,8 @@ class Write:
             strand_id=strand_id,
             passive_vars=passive_vars,
             var_sharing=var_sharing,
-            value_locations_global=vl_global,
+            value_locations_global=value_locations_global,
+            variable_types_global=variable_types_global,
             con_sharing=con_sharing,
             aux=aux,
             datapacking=datapacking,
@@ -771,7 +1049,9 @@ class Write:
                 cast = np.asarray(arr, dtype=_DT_TO_DTYPE[dt]).ravel()
                 _stage_float_array(buf, cast, self._float_fmt)
 
+        # Write connectivity (if not shared)
         if not con_sharing:
+            assert node_map is not None
             conn = np.asarray(node_map, dtype=np.intp).reshape(
                 num_cells, _NODES_PER_ELEM[zone_type]
             )
@@ -780,6 +1060,24 @@ class Write:
 
         self._check_handle().write(buf.getvalue())
         self.current_zone += 1
+
+        # Finally set zone metadata after successfully completing TecIO calls
+        self._meta.record_zone(
+            ZoneMeta(
+                index=self.current_zone,
+                title=title,
+                zone_type=zone_type,
+                solution_time=solution_time,
+                strand_id=strand_id,
+                num_aux_items=len(aux) if aux else 0,
+                num_nodes=num_nodes,
+                num_elements=num_cells,
+                value_locations=tuple(value_locations_global),
+                passive_vars=tuple(bool(p) for p in passive_vars),
+                shared_vars=tuple(int(s) for s in var_sharing),
+                data_types=tuple(variable_types_global),
+            )
+        )
 
     # -- Private helpers --------------------------------------------------------------
 
@@ -817,6 +1115,7 @@ class Write:
         passive_vars: Sequence[bool | int] | None = None,
         var_sharing: Sequence[int] | None = None,
         value_locations_global: list[ValueLocation] | None = None,
+        variable_types_global: list[DataType] | None = None,
         con_sharing: int = 0,
         aux: dict[str, Any] | None = None,
         datapacking: DataPacking = DataPacking.BLOCK,
@@ -824,17 +1123,25 @@ class Write:
         """Write a ``ZONE`` header block into the staging buffer *buf*."""
         zt_str = _ZONETYPE_STR[zone_type]
 
+        # First line is never indented; every subsequent header line is indented.
         buf.write(f"ZONE T={_quote(title)}\n")
-        buf.write(f" STRANDID={strand_id}, SOLUTIONTIME={float(solution_time)}\n")
+        buf.write(
+            f"{_INDENT}STRANDID={strand_id}, SOLUTIONTIME={float(solution_time)}\n"
+        )
 
         if zone_type == ZoneType.ORDERED:
-            buf.write(f" I={imax}, J={jmax}, K={kmax}, ZONETYPE={zt_str}\n")
+            buf.write(f"{_INDENT}I={imax}, J={jmax}, K={kmax}, ZONETYPE={zt_str}\n")
         else:
             buf.write(
-                f" Nodes={num_nodes}, Elements={num_elements}, ZONETYPE={zt_str}\n"
+                f"{_INDENT}Nodes={num_nodes}, Elements={num_elements}, "
+                f"ZONETYPE={zt_str}\n"
             )
 
-        buf.write(f" DATAPACKING={datapacking.name}\n")
+        buf.write(f"{_INDENT}DATAPACKING={datapacking.name}\n")
+
+        if variable_types_global:
+            dt_str = " ".join(_DATATYPE_STR[dt] for dt in variable_types_global)
+            buf.write(f"{_INDENT}DT=({dt_str})\n")
 
         if value_locations_global:
             cc = [
@@ -844,22 +1151,23 @@ class Write:
             ]
             if cc:
                 buf.write(
-                    f" VARLOCATION=([{','.join(str(i) for i in cc)}]=CELLCENTERED)\n"
+                    f"{_INDENT}VARLOCATION=([{','.join(str(i) for i in cc)}]"
+                    "=CELLCENTERED)\n"
                 )
 
         if passive_vars:
             pidx = [str(i + 1) for i, f in enumerate(passive_vars) if f]
             if pidx:
-                buf.write(f" PASSIVEVARLIST=[{','.join(pidx)}]\n")
+                buf.write(f"{_INDENT}PASSIVEVARLIST=[{','.join(pidx)}]\n")
 
         if var_sharing and any(var_sharing):
             entries = [f"[{i + 1}]={z}" for i, z in enumerate(var_sharing) if z]
             if entries:
-                buf.write(f" VARSHARELIST=({','.join(entries)})\n")
+                buf.write(f"{_INDENT}VARSHARELIST=({','.join(entries)})\n")
 
         if con_sharing:
-            buf.write(f" CONNECTIVITYSHAREZONE={con_sharing}\n")
+            buf.write(f"{_INDENT}CONNECTIVITYSHAREZONE={con_sharing}\n")
 
         if aux:
             for name, value in aux.items():
-                buf.write(f" AUXDATA {name}={_quote(value)}\n")
+                buf.write(f"{_INDENT}AUXDATA {name}={_quote(value)}\n")

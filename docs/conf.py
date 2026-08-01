@@ -102,3 +102,5 @@ html_theme_options = {
     "pygments_light_style": "github-light",
     "pygments_dark_style": "paraiso-dark",
 }
+
+html_extra_path = ["_static/googlec97c014dabffcdf6.html"]

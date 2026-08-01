@@ -109,10 +109,12 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="tecmerge",
         description=(
-            "Merge zones from multiple Tecplot files into a single output file.  "
+            # -|--------------------|---------------------------------------------|
+            "Merge zones from multiple Tecplot files into a single output file.\n"
             "Variables not present in a source file are written as passive."
         ),
         epilog=(
+            # -|--------------------|---------------------------------------------|
             "Example usage:\n"
             "  Merge explicit files\n"
             "    $ tecmerge -o combined.szplt part1.szplt part2.szplt\n"
@@ -221,9 +223,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def _expand_inputs(patterns: list[str]) -> list[Path]:
@@ -304,6 +306,7 @@ def _write_zone(
     local_index_map: list[int | None],
     solution_time: float | None,
     strand_id: int | None,
+    zone_index_map: dict[int, int],
 ) -> None:
     """Write one zone to *writer* using the reconciled variable list.
 
@@ -318,7 +321,8 @@ def _write_zone(
                           (``None`` = not present in this file).
         solution_time:    Override solution time, or ``None`` to keep original.
         strand_id:        Override strand ID, or ``None`` to keep original.
-
+        zone_index_map:   Map 1-based source zone to 1-based output zone index for
+                          variable and connectivity sharing.
     """
     zt = zone.zone_type
 
@@ -337,22 +341,29 @@ def _write_zone(
             continue
 
         var = zone.variable[local_idx]
-        passive_vars.append(var.is_passive())
-        sv = var.shared_zone
-        # Drop cross-file sharing -- zones from different files cannot share.
-        var_sharing.append(0)
+        is_passive = var.is_passive()
+        passive_vars.append(is_passive)
         active_locs.append(var.value_location)
 
-        if var.is_passive() or sv is not None:
-            active_data.append(np.array([], dtype=np.float32))
-            continue
+        sv = var.shared_zone
+        remapped = zone_index_map.get(sv) if sv is not None else None
 
-        arr = var.values
-        if arr is None or arr.size == 0:
-            passive_vars[-1] = True
+        if is_passive:
+            var_sharing.append(0)
+            active_data.append(np.array([], dtype=np.float32))
+        elif remapped is not None:
+            # Source zone was already written earlier in this file -> preserve sharing
+            # relationship
+            var_sharing.append(remapped)
             active_data.append(np.array([], dtype=np.float32))
         else:
-            active_data.append(arr)
+            var_sharing.append(0)
+            arr = var.values
+            if arr is None or arr.size == 0:
+                passive_vars[-1] = True
+                active_data.append(np.array([], dtype=np.float32))
+            else:
+                active_data.append(arr)
 
     # Filter to active, non-shared variables for the writer.
     writer_data = [
@@ -388,17 +399,20 @@ def _write_zone(
     if zt == ZoneType.ORDERED:
         writer.write_ijk_zone(data=writer_data, **common_kw)
     else:
+        con_src = zone.shared_connectivity
+        con_remapped = zone_index_map.get(con_src) if con_src is not None else None
         writer.write_fe_zone(
             zone_type=zt,
             data=writer_data,
-            node_map=zone.node_map,
+            node_map=None if con_remapped else zone.node_map,
+            con_sharing=con_remapped,
             **common_kw,
         )
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -510,7 +524,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 sol_time = times[fi] if times is not None else None
                 s_id = args.strand if times is not None else None
 
-                for zone in reader.zone:
+                # Sharing is always file-local (a zone can only share from another zone
+                # in the same physical source file), so this map is reset fresh for
+                # every input file rather than accumulated across the whole merge
+                zone_index_map: dict[int, int] = {}
+
+                for zi, zone in enumerate(reader.zone):
+                    zone_num = zi + 1
                     zt = zone.zone_type
                     if zt in (ZoneType.FEPOLYGON, ZoneType.FEPOLYHEDRON):
                         print(
@@ -528,7 +548,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                         local_index_map=imap,
                         solution_time=sol_time,
                         strand_id=s_id,
+                        zone_index_map=zone_index_map,
                     )
+                    zone_index_map[zone_num] = writer.current_zone
                     total_zones += 1
 
         # Close all readers
