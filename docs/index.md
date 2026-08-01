@@ -65,7 +65,6 @@ PLT format, particularly for large unstructured meshes.
        - [SZL Read Functions](api/libtecio_szl_read.md)
        - [SZL Write Functions](api/libtecio_szl_write.md)
        - [Classic API Functions](api/libtecio_classic.md)
-     - [`tecio.utils`](api/utils.md) — locate Tecplot installations and the TecIO library
 
 4. **[Console Scripts](api/cli.md)** — command-line tools
 

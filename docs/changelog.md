@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- `tecaux` - command line tool to add aux data to Tecplot files.
+
+---
+
 ```{include} changelog/v0.2.0.md
 ```
 
@@ -22,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[Unreleased]: https://github.com/meersman/tecio/compare/v0.2.0...HEAD
+	
 ```{toctree}
 :hidden:
 :maxdepth: 1

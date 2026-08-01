@@ -19,4 +19,5 @@
    tecscale
    tecslice
    tecstats
+   tecaux
 ```

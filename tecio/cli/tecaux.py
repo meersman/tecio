@@ -1,0 +1,700 @@
+r"""Add dataset-, zone-, or variable-level auxiliary data to a Tecplot data file.
+
+Tecplot's auxiliary data mechanism attaches arbitrary ``name=value`` string metadata to
+a dataset, a zone, or a variable -- solver name, run date, units, a description, or any
+other annotation that doesn't belong in the numerical data itself.  Adding this after
+the fact ordinarily means writing a one-off script against the TecIO API.  ``tecaux``
+does this from the command line: it copies the input file verbatim (every zone,
+variable, and existing sharing relationship preserved exactly) and merges in whatever
+new auxiliary entries were requested at each level, in a single read/write pass.  An
+existing key with the same name is overwritten; everything else about the source file is
+unchanged.
+
+:Usage:
+
+.. code:: bash
+
+    tecaux [-h] [-d KEY=VALUE] ... [-z INDEX KEY=VALUE] ...
+           [-v INDEX_OR_NAME KEY=VALUE] ... [-j PATH] [-o PATH] [-f] PATH
+
+:Positional Arguments:
+    ``PATH``
+        Path to the input Tecplot file (``.plt``, ``.szplt``, or ``.dat``).
+
+:Options:
+    ``-d KEY=VALUE``, ``--data KEY=VALUE``
+        A ``name=value`` pair to set as dataset-level auxiliary data.  Repeat the flag
+        for multiple pairs.
+
+    ``-z INDEX KEY=VALUE``, ``--zone INDEX KEY=VALUE``
+        A ``name=value`` pair to set as zone-level auxiliary data on the one-based zone
+        ``INDEX`` -- or on every zone if ``INDEX`` is the literal word ``all``.  Repeat
+        the flag for multiple pairs and/or multiple zones; each occurrence takes exactly
+        one zone and one pair, so ``-z 1 A=1 -z 1 B=2`` sets both ``A`` and ``B`` on
+        zone 1.
+
+    ``-v INDEX_OR_NAME KEY=VALUE``, ``--var INDEX_OR_NAME KEY=VALUE``
+        A ``name=value`` pair to set as variable-level auxiliary data on the variable
+        given by a one-based index or a name (case-insensitive) -- or on every variable
+        if the target is the literal word ``all``.  Repeatable, same as ``-z``.
+
+    ``-j PATH``, ``--json PATH``
+        Load bulk auxiliary data from a JSON file (see format below).  Applied before
+        any ``-d``/``-z``/``-v`` flags, which take precedence on a key collision.
+
+    ``-o PATH``, ``--output PATH``
+        Output file path.  The extension controls the output format: ``.szplt``,
+        ``.plt``, or ``.dat``.  Defaults to ``<stem>_aux<ext>`` in the same directory as
+        the input file.
+
+    ``-f``, ``--force``
+        Overwrite the output file if it already exists.  Without this flag the command
+        exits with an error rather than silently clobbering an existing file.
+
+:JSON Format:
+    .. code:: json
+
+        {
+          "AUXDATASET": {"Solver": "MyCFD", "Version": "2.1"},
+          "AUXZONE": {
+            "1": {"Description": "Wing"},
+            "all": {"Batch": "2024"}
+          },
+          "AUXVAR": {
+            "Pressure": {"Units": "Pa"},
+            "1": {"Source": "Experiment"}
+          }
+        }
+
+    All three top-level keys are optional, and match this library's own attribute/method
+    names for the same three levels exactly
+    (``Write.auxdataset``/``add_auxdataset_dict``, ``Write.auxvar``/``add_auxvar_dict``;
+    ``AUXZONE`` is the natural third member of that family even though zone-level aux
+    has no "zone"-prefixed name internally.
+
+    In ``"AUXZONE"``/``"AUXVAR"``, a key is either a one-based index, a variable name
+    (``"AUXVAR"`` only), or the literal string ``"all"`` meaning every zone/variable
+    (the same three forms ``-z``/``-v`` accept on the command line). Every JSON key must
+    be a quoted string, including numeric indices (``"1"``, not ``1``).
+
+:Returns:
+    A new Tecplot file written to the output path with the requested auxiliary data
+    merged in.  Exit code is ``0`` on success and non-zero if the input file cannot be
+    read, a ``-z``/``-v``/JSON target cannot be resolved, or the output file already
+    exists and ``--force`` is not set.
+
+Examples:
+    Tag a dataset with solver metadata (repeat the flag for multiple pairs)::
+
+        $ tecaux -d Solver=MyCFD -d Version=2.1 flow.szplt
+
+    Two pairs on zone 1, one pair on zone 2::
+
+        $ tecaux -z 1 Description=Wing -z 1 Area=120sqm -z 2 Description=Fuselage \
+              flow.szplt
+
+    Annotate a single variable by name::
+
+        $ tecaux -v Pressure Units=Pa flow.szplt
+
+    Every zone at once, via the "all" target::
+
+        $ tecaux -z all RunDate=2024-01-15 flow.plt
+
+    Everything in one pass, written as a bash script would naturally lay it out::
+
+        $ tecaux --data Solver=MyCFD \
+              --data Version=2.1 \
+              --zone 1 Case=A \
+              --zone 1 Description=Wing \
+              --zone 2 Case=B \
+              --var Pressure Units=Pa \
+              -o tagged.szplt flow.szplt
+
+    Bulk metadata from a file, with one CLI override on top::
+
+        $ tecaux -j metadata.json -d Version=2.2 flow.szplt
+
+    Call directly from a Python session::
+
+        import tecio.cli.tecaux.main as tecaux
+
+        tecaux(["-d", "Solver=MyCFD", "flow.szplt"])
+
+See Also:
+    * :mod:`tecio.cli.tecfix` - Rewrite a file with invalid variable arrays set to
+      passive, using the same verbatim zone-copy approach.
+    * :mod:`tecio.cli.teconvert` - Convert between formats without modifying auxiliary
+      data.
+
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+from .. import open as tecio_open
+from ..libtecio import ZoneType
+
+# --------------------------------------------------------------------------------------
+# Constants
+# --------------------------------------------------------------------------------------
+
+#: FE zone types that the Write API cannot copy.
+_FE_POLY: frozenset[ZoneType] = frozenset({ZoneType.FEPOLYGON, ZoneType.FEPOLYHEDRON})
+
+
+class _ArgError(Exception):
+    """Raised for a malformed KEY=VALUE pair or unresolvable target."""
+
+
+# --------------------------------------------------------------------------------------
+# Argument parsing
+# --------------------------------------------------------------------------------------
+
+
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="tecaux",
+        description=(
+            # -|-------------------|---------------------------------------------|
+            "Add dataset-, zone-, or variable-level auxiliary data to a Tecplot\n"
+            "file in a single read/write pass. Everything else (zones, variables,\n"
+            "and sharing) is copied verbatim."
+        ),
+        epilog=(
+            # -|-------------------|---------------------------------------------|
+            "Example usage:\n"
+            "  Dataset-level metadata (repeat the flag for multiple pairs)\n"
+            "    $ tecaux -d Solver=MyCFD -d Version=2.1 <file>\n"
+            "  Two pairs on zone 1, one pair on zone 2\n"
+            "    $ tecaux -z 1 Description=Wing -z 1 Area=120sqm -z 2 Case=B <file>\n"
+            "  A single variable by name\n"
+            "    $ tecaux -v Pressure Units=Pa <file>\n"
+            "  Every zone at once\n"
+            "    $ tecaux -z all RunDate=2024-01-15 <file>\n"
+            "  Bulk metadata from a file\n"
+            "    $ tecaux -j metadata.json <file>\n"
+        ),
+        formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
+            prog, width=70, max_help_position=24
+        ),
+    )
+    parser.add_argument(
+        "filename",
+        type=str,
+        help="Input Tecplot file to add auxiliary data to.",
+    )
+    parser.add_argument(
+        "-d",
+        "--data",
+        action="append",
+        default=None,
+        metavar="KEY=VALUE",
+        help="A name=value pair to set as dataset-level auxiliary data. Repeatable.",
+    )
+    parser.add_argument(
+        "-z",
+        "--zone",
+        action="append",
+        nargs=2,
+        default=None,
+        metavar=("INDEX", "KEY=VALUE"),
+        help=(
+            "A name=value pair to set as zone-level auxiliary data on the "
+            "given one-based zone index, or on every zone if INDEX is "
+            "'all'. Repeatable, one pair per occurrence."
+        ),
+    )
+    parser.add_argument(
+        "-v",
+        "--var",
+        action="append",
+        nargs=2,
+        default=None,
+        metavar=("INDEX_OR_NAME", "KEY=VALUE"),
+        help=(
+            "A name=value pair to set as variable-level auxiliary data on "
+            "the given variable (1-based index or name), or on every "
+            "variable if the target is 'all'. Repeatable, one pair per "
+            "occurrence."
+        ),
+    )
+    parser.add_argument(
+        "-j",
+        "--json",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Load bulk auxiliary data from a JSON file, applied before "
+            "-d/-z/-v (which override it on a key collision). Top-level "
+            "keys: AUXDATASET, AUXZONE, AUXVAR (matching Write.auxdataset/"
+            "Write.auxvar). Full format in the module docstring."
+        ),
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Output file path. The extension controls the output format. "
+            "Defaults to <stem>_aux<ext> in the same directory as the input."
+        ),
+    )
+    parser.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        default=False,
+        help="Overwrite the output file if it already exists.",
+    )
+    return parser.parse_args(argv)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_kv(token: str) -> tuple[str, str]:
+    """Parse one ``KEY=VALUE`` token.
+
+    Args:
+        token: A single string like ``"Solver=MyCFD"``.  Only the first ``"="`` is
+               significant, so a value may itself contain ``"="``
+               (e.g. ``"Formula=a=b+c"``).  A value containing spaces must be quoted as
+               a whole on the command line, the same as any other shell argument
+               (e.g. ``-z 1 "Description=Wing surface"``) -- this function only ever
+               sees whatever single token the shell already produced, so it can't
+               recover a value that arrived pre-split into several tokens.
+
+    Returns:
+        ``(key, value)``, with the key stripped of surrounding whitespace.
+
+    Raises:
+        _ArgError: If *token* has no ``"="``, or the key is empty.
+
+    """
+    if "=" not in token:
+        raise _ArgError(f"Expected KEY=VALUE, got: {token!r}")
+    key, _, value = token.partition("=")
+    key = key.strip()
+    if not key:
+        raise _ArgError(f"Empty key in: {token!r}")
+    return key, value
+
+
+def _resolve_variable(spec: str, var_names: list[str]) -> int | None:
+    """Return a 0-based variable index from a name or 1-based integer string.
+
+    Args:
+        spec:      User-supplied string (e.g. ``"3"`` or ``"Pressure"``).
+        var_names: Ordered list of variable names from the reader.
+
+    Returns:
+        0-based variable index, or ``None`` if *spec* cannot be resolved.  Callers are
+        responsible for reporting the failure.
+
+    """
+    try:
+        idx = int(spec)
+    except ValueError:
+        pass
+    else:
+        if idx < 1 or idx > len(var_names):
+            return None
+        return idx - 1
+
+    spec_lower = spec.lower()
+    for i, name in enumerate(var_names):
+        if name.lower() == spec_lower:
+            return i
+
+    return None
+
+
+def _to_groups(
+    raw_pairs: list[list[str]] | None,
+) -> list[tuple[str | None, dict[str, str]]]:
+    """Convert argparse's ``[[target, "KEY=VALUE"], ...]`` into consolidation input.
+
+    Each occurrence becomes its own single-pair group; ``_consolidate_groups`` merges
+    repeats of the same target on its own, so nothing needs to be pre-grouped here.
+
+    Args:
+        raw_pairs: ``args.zone``/``args.var`` as argparse produced them, or ``None`` if
+                   the flag was never given.
+
+    Returns:
+        ``[(target, {key: value}), ...]``, target ``None`` for ``"all"``.
+
+    Raises:
+        _ArgError: If a KEY=VALUE token is malformed.
+
+    """
+    groups: list[tuple[str | None, dict[str, str]]] = []
+    for target_raw, kv_raw in raw_pairs or []:
+        target = None if target_raw.lower() == "all" else target_raw
+        key, value = _parse_kv(kv_raw)
+        groups.append((target, {key: value}))
+    return groups
+
+
+def _consolidate_groups(
+    groups: list[tuple[str | None, dict[str, str]]],
+    resolve: Any,
+) -> tuple[dict[str, str], dict[int, dict[str, str]]]:
+    """Merge repeated groups into one broadcast dict and one per-target dict.
+
+    Args:
+        groups:  ``[(target, {key: value}), ...]`` -- target is ``None`` ("every
+                 zone"/"every variable") or a raw string to resolve.
+        resolve: Callable taking the raw target string and returning a 1-based index for
+                 a specific target, or raising ``_ArgError`` if it can't be resolved.
+
+    Returns:
+        ``(broadcast, by_target)`` where ``by_target`` is keyed by whatever index
+        ``resolve`` returns.
+
+    """
+    broadcast: dict[str, str] = {}
+    by_target: dict[int, dict[str, str]] = {}
+    for target, pairs in groups:
+        if target is None:
+            broadcast.update(pairs)
+        else:
+            idx = resolve(target)
+            by_target.setdefault(idx, {}).update(pairs)
+    return broadcast, by_target
+
+
+# --------------------------------------------------------------------------------------
+# JSON loading
+# --------------------------------------------------------------------------------------
+
+
+def _load_json_aux(
+    path: str,
+) -> tuple[
+    dict[str, str],
+    list[tuple[str | None, dict[str, str]]],
+    list[tuple[str | None, dict[str, str]]],
+]:
+    """Load bulk auxiliary data from a JSON file.
+
+    Top-level keys are ``AUXDATASET``, ``AUXZONE``, ``AUXVAR``.
+
+    Returns:
+        ``(dataset_aux, zone_groups, var_groups)`` in the same shape ``_to_groups``
+        produces, so both sources merge identically.
+
+    Raises:
+        _ArgError: If the file can't be read or parsed, contains an unrecognized
+                   top-level key, or a value isn't a string -> string mapping.
+
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise _ArgError(f"Could not read JSON file {path!r}: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise _ArgError(f"JSON file {path!r} must contain an object at the top level.")
+
+    _KNOWN_KEYS = {"AUXDATASET", "AUXZONE", "AUXVAR"}
+    unknown: set[str] = {str(k) for k in data} - _KNOWN_KEYS
+    if unknown:
+        raise _ArgError(
+            f"Unrecognized top-level key(s) in {path!r}: {sorted(unknown)}.  "
+            f"Expected one of: {sorted(_KNOWN_KEYS)}."
+        )
+
+    def _as_str_dict(obj: Any, where: str) -> dict[str, str]:
+        if not isinstance(obj, dict):
+            raise _ArgError(f"{where} must be an object of name: value strings.")
+        return {str(k): str(v) for k, v in obj.items()}
+
+    dataset_aux = _as_str_dict(data.get("AUXDATASET", {}), "'AUXDATASET'")
+
+    zone_groups: list[tuple[str | None, dict[str, str]]] = []
+    for key, val in data.get("AUXZONE", {}).items():
+        target = None if str(key).lower() == "all" else str(key)
+        zone_groups.append((target, _as_str_dict(val, f"'AUXZONE.{key}'")))
+
+    var_groups: list[tuple[str | None, dict[str, str]]] = []
+    for key, val in data.get("AUXVAR", {}).items():
+        target = None if str(key).lower() == "all" else str(key)
+        var_groups.append((target, _as_str_dict(val, f"'AUXVAR.{key}'")))
+
+    return dataset_aux, zone_groups, var_groups
+
+
+# --------------------------------------------------------------------------------------
+# Per-zone processing
+# --------------------------------------------------------------------------------------
+
+
+def _process_zone(
+    zone: Any,
+) -> tuple[list[np.ndarray], list[Any], list[bool], list[int], dict[str, str]]:
+    """Copy one zone's variable data/metadata verbatim.
+
+    Sharing references are passed through unchanged: this tool writes every zone in the
+    same order as the source, so source zone N is always output zone N.
+
+    Returns:
+        A 5-tuple: ``(writer_data, writer_locs, passive_vars, var_sharing,
+        existing_aux)``, where the first two are filtered to active, non-shared
+        variables only.
+    """
+    active_data: list[np.ndarray] = []
+    active_locs: list[Any] = []
+    passive_vars: list[bool] = []
+    var_sharing: list[int] = []
+
+    for var in zone.variable:
+        is_passive = var.is_passive()
+        sv = var.shared_zone  # 1-based source zone index, or None
+        share_int = sv if sv is not None else 0
+
+        passive_vars.append(is_passive)
+        var_sharing.append(share_int)
+        active_locs.append(var.value_location)
+
+        if is_passive or share_int != 0:
+            active_data.append(np.array([], dtype=np.float32))
+            continue
+
+        arr = var.values
+        if arr is None or arr.size == 0:
+            passive_vars[-1] = True
+            active_data.append(np.array([], dtype=np.float32))
+        else:
+            active_data.append(arr)
+
+    writer_data = [
+        arr
+        for arr, is_p, sv in zip(active_data, passive_vars, var_sharing, strict=False)
+        if not is_p and sv == 0
+    ]
+    writer_locs = [
+        loc
+        for loc, is_p, sv in zip(active_locs, passive_vars, var_sharing, strict=False)
+        if not is_p and sv == 0
+    ]
+
+    existing_aux: dict[str, str] = {}
+    if len(zone.auxdata) > 0:
+        existing_aux = dict(zone.auxdata.items())
+
+    return writer_data, writer_locs, passive_vars, var_sharing, existing_aux
+
+
+# --------------------------------------------------------------------------------------
+# Main entry point
+# --------------------------------------------------------------------------------------
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Add auxiliary data to a Tecplot file.
+
+    Returns:
+        Exit code -- ``0`` on success, ``1`` on error.
+
+    """
+    args = _parse_args(argv)
+
+    src = Path(args.filename)
+    if not src.exists():
+        print(f"Error: input file not found: {src}", file=sys.stderr)
+        return 1
+
+    dst = (
+        Path(args.output)
+        if args.output is not None
+        else src.with_stem(src.stem + "_aux")
+    )
+
+    if dst.exists() and not args.force:
+        print(
+            f"Error: output file already exists: {dst}\nUse --force to overwrite.",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        # JSON is the baseline; -d/-z/-v groups are appended after it, so they naturally
+        # win on a key collision.
+        dataset_aux: dict[str, str] = {}
+        zone_groups: list[tuple[str | None, dict[str, str]]] = []
+        var_groups: list[tuple[str | None, dict[str, str]]] = []
+
+        if args.json is not None:
+            j_dataset, j_zones, j_vars = _load_json_aux(args.json)
+            dataset_aux.update(j_dataset)
+            zone_groups.extend(j_zones)
+            var_groups.extend(j_vars)
+
+        for kv in args.data or []:
+            k, v = _parse_kv(kv)
+            dataset_aux[k] = v
+        zone_groups.extend(_to_groups(args.zone))
+        var_groups.extend(_to_groups(args.var))
+    except _ArgError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    if not (dataset_aux or zone_groups or var_groups):
+        print(
+            "Warning: no -d, -z, -v, or -j given -- output will be a verbatim copy.",
+            file=sys.stderr,
+        )
+
+    try:
+        with tecio_open(str(src), "r") as reader:
+            var_names: list[str] = reader.variables
+            num_vars: int = reader.num_vars
+            num_zones: int = reader.num_zones
+
+            def _resolve_zone_target(raw: str) -> int:
+                try:
+                    idx = int(raw)
+                except ValueError as exc:
+                    raise _ArgError(
+                        f"Zone target must be an index or 'all', got: {raw!r}"
+                    ) from exc
+                if idx < 1 or idx > num_zones:
+                    raise _ArgError(f"Zone index {idx} out of range [1, {num_zones}].")
+                return idx
+
+            def _resolve_var_target(raw: str) -> int:
+                idx0 = _resolve_variable(raw, var_names)
+                if idx0 is None:
+                    raise _ArgError(
+                        f"Could not resolve variable target {raw!r}.  "
+                        f"Available: {var_names}"
+                    )
+                return idx0 + 1  # keyed 1-based, matching zone targets
+
+            try:
+                zone_broadcast, zone_by_target = _consolidate_groups(
+                    zone_groups, _resolve_zone_target
+                )
+                var_broadcast, var_by_target = _consolidate_groups(
+                    var_groups, _resolve_var_target
+                )
+            except _ArgError as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                return 1
+
+            print(f"Adding auxiliary data: {src}  ->  {dst}")
+            if dataset_aux:
+                print(f"  Dataset : {dataset_aux}")
+            for target, pairs in zone_groups:
+                where = f"zone {target}" if target is not None else "every zone"
+                print(f"  Zone    : {pairs}  ({where})")
+            for target, pairs in var_groups:
+                where = f"variable {target}" if target is not None else "every variable"
+                print(f"  Variable: {pairs}  ({where})")
+
+            with tecio_open(
+                str(dst),
+                "w",
+                title=reader.title,
+                variables=var_names,
+                file_type=reader.file_type,
+            ) as writer:
+                merged_dataset_aux = {**dict(reader.auxdata.items()), **dataset_aux}
+                if merged_dataset_aux:
+                    writer.add_auxdataset_dict(merged_dataset_aux)
+
+                auxvar: dict[int, dict[str, str]] = {}
+                for i in range(num_vars):
+                    one_based = i + 1
+                    existing = dict(reader.get_var_auxdata(one_based).items())
+                    merged = {
+                        **existing,
+                        **var_broadcast,
+                        **var_by_target.get(one_based, {}),
+                    }
+                    if merged:
+                        auxvar[one_based] = merged
+                if auxvar:
+                    writer.add_auxvar_dict(auxvar)
+
+                # add_auxdataset_dict()/add_auxvar_dict() only buffer; the write happens
+                # in flush_aux(), normally auto-triggered by the *lazy*-open path on the
+                # first zone write.  Passing variables= above means this writer is
+                # already open (eager), so that automatic trigger never fires.
+                writer.flush_aux()
+
+                for i, zone in enumerate(reader.zone):
+                    zone_num = i + 1
+                    zt = zone.zone_type
+
+                    if zt in _FE_POLY:
+                        print(
+                            f"Warning: zone {zone_num} ('{zone.title}') is "
+                            f"{zt.name} and cannot be copied -- skipping.",
+                            file=sys.stderr,
+                        )
+                        continue
+
+                    (
+                        writer_data,
+                        writer_locs,
+                        passive_vars,
+                        var_sharing,
+                        existing_zone_aux,
+                    ) = _process_zone(zone)
+
+                    merged_zone_aux = {
+                        **existing_zone_aux,
+                        **zone_broadcast,
+                        **zone_by_target.get(zone_num, {}),
+                    } or None
+
+                    common_kw: dict[str, Any] = dict(
+                        title=zone.title,
+                        value_locations=writer_locs,
+                        passive_vars=passive_vars,
+                        var_sharing=var_sharing,
+                        solution_time=zone.solution_time,
+                        strand_id=zone.strand_id,
+                        aux=merged_zone_aux,
+                    )
+
+                    if zt == ZoneType.ORDERED:
+                        writer.write_ijk_zone(data=writer_data, **common_kw)
+                    else:
+                        con_sharing = zone.shared_connectivity
+                        writer.write_fe_zone(
+                            zone_type=zt,
+                            data=writer_data,
+                            node_map=None if con_sharing else zone.node_map,
+                            con_sharing=con_sharing,
+                            **common_kw,
+                        )
+
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error: {exc}", file=sys.stderr)
+        dst.unlink(missing_ok=True)
+        return 1
+
+    print(f"Done. Output written to: {dst}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

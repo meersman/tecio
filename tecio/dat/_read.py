@@ -1011,8 +1011,12 @@ class Read:
         self._zones: list[ReadZone] = []
         self._zone_list: ZoneList[ReadZone] | None = None
         self._auxdata: ReadAuxData = ReadAuxData()
-        # Index 0 is a None placeholder so that 1-based indexing works directly.
+        # Index 0 is a None placeholder so that 1-based indexing works directly
         self._var_auxdata: list[ReadAuxData | None] = [None]
+        # Raw VARAUXDATA lines seen before the first zone, buffered by
+        # _parse_file_header() and applied once _var_auxdata is allocated with the
+        # correct length (num_vars isn't known until the header finishes parsing)
+        self._deferred_var_aux_lines: list[str] = []
         self._parse()
 
     def __repr__(self) -> str:
@@ -1148,6 +1152,12 @@ class Read:
         # Build per-variable aux data slots now that num_vars is known.
         self._var_auxdata = [None] + [ReadAuxData() for _ in range(self.num_vars)]
 
+        # Now that _var_auxdata exists, apply any VARAUXDATA lines that appeared before
+        # the first zone
+        for raw in self._deferred_var_aux_lines:
+            _apply_varauxdata(raw, self._var_auxdata)
+        self._deferred_var_aux_lines.clear()
+
         while tokens.has_more():
             line = tokens.peek_stripped()
             upper = line.upper()
@@ -1229,9 +1239,11 @@ class Read:
                 if name:
                     self._auxdata._data[name] = value
 
-            # VARAUXDATA lines before the first ZONE are deferred — they need the
-            # variable list, which may not yet be complete.  They are processed in the
-            # main _parse() loop after the header finishes.
+            elif upper_key.startswith("VARAUXDATA"):
+                # Can't process this without num_vars, and therefore _var_auxdata, isn't
+                # known until this header finishes parsing. Buffer the raw line;
+                # _parse() applies these once _var_auxdata is allocated.
+                self._deferred_var_aux_lines.append(line)
 
     def _parse_zone(self, tokens: _LineBuffer) -> None:
         """Parse one ZONE block (header + data blocks + connectivity).

@@ -33,6 +33,7 @@ Test files required in ``tests/``:
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,7 @@ import pytest
 
 import tecio
 from tecio.cli.tec2mat import main as tec2mat
+from tecio.cli.tecaux import main as tecaux
 from tecio.cli.tecdump import main as tecdump
 from tecio.cli.tecextract import main as tecextract
 from tecio.cli.tecfix import main as tecfix
@@ -172,11 +174,8 @@ def _write_shared_dataset(path: Path) -> None:
 
     Zone 1 (t=0.0): owns x, y, z, connectivity, c, and w.
     Zone 2 (t=1.0): shares x, y, z, connectivity, and w from zone 1; c is its own.
-    Zone 3 (t=2.0): shares x, y, z, and connectivity from zone 1, and shares c
-                    from zone 2 -- so sharing sources aren't all "zone 1". w is
-                    its own, so the zone has at least one genuinely active
-                    variable (a zone with every variable shared has nothing
-                    left to write and the writer correctly rejects it).
+    Zone 3 (t=2.0): shares x, y, z, and connectivity from zone 1, and shares c from zone
+                    2.
     """
     x = np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float32)
     y = np.array([0.0, 0.0, 1.0, 0.0], dtype=np.float32)
@@ -253,7 +252,7 @@ def _other_format_flag(src: Path) -> str:
 
 
 class TestTecdump:
-    """Tests for tecdump — prints Tecplot file contents to stdout."""
+    """Tests for tecdump - prints Tecplot file contents to stdout."""
 
     def test_basic_output(self, onera_path: Path, capsys) -> None:
         """File header fields appear in stdout; return code is 0."""
@@ -304,7 +303,7 @@ class TestTecdump:
 
 
 class TestTeconvert:
-    """Tests for teconvert — converts between SZL, PLT, and DAT."""
+    """Tests for teconvert - converts between SZL, PLT, and DAT."""
 
     @pytest.mark.parametrize(
         "src_fmt,dst_flag,dst_ext",
@@ -372,7 +371,7 @@ class TestTeconvert:
 
 
 class TestTecextract:
-    """Tests for tecextract — extracts a subset of zones and/or variables."""
+    """Tests for tecextract - extracts a subset of zones and/or variables."""
 
     def test_extract_all(self, onera_path: Path, tmp_path: Path) -> None:
         """No filter produces a readable verbatim copy."""
@@ -569,7 +568,7 @@ class TestTecfix:
 
 
 class TestTecmerge:
-    """Tests for tecmerge — merges zones from multiple files into one.
+    """Tests for tecmerge - merges zones from multiple files into one.
 
     Design note on deduplication:
         tecmerge._expand_inputs deduplicates resolved paths, so passing the
@@ -731,7 +730,7 @@ class TestTecmerge:
 
 
 class TestTecscale:
-    """Tests for tecscale — scales and/or offsets a variable."""
+    """Tests for tecscale - scales and/or offsets a variable."""
 
     def test_scale_by_index(self, onera_path: Path, tmp_path: Path) -> None:
         """Scale variable 1 (x) by a constant factor; output is readable."""
@@ -913,7 +912,7 @@ class TestTecscale:
 
 
 class TestTecslice:
-    """Tests for tecslice — slices structured zones along IJK or time.
+    """Tests for tecslice - slices structured zones along IJK or time.
 
     Both Onera zones are FE (FEBRICK and FEQUADRILATERAL), so IJK slice flags
     produce verbatim copies with a warning to stderr.  Tests verify that
@@ -1033,7 +1032,7 @@ class TestTecslice:
 
 
 class TestTecstats:
-    """Tests for tecstats — prints and optionally exports variable statistics."""
+    """Tests for tecstats - prints and optionally exports variable statistics."""
 
     def test_basic_console_output(self, onera_path: Path, capsys) -> None:
         """Statistics table is printed with the expected headers; returns 0."""
@@ -1324,7 +1323,7 @@ class TestSharingPreservation:
 
 @pytest.mark.skipif(sio is None, reason="scipy is required by tec2mat itself")
 class TestTec2mat:
-    """Tests for tec2mat — converts a Tecplot file to a MATLAB .mat file."""
+    """Tests for tec2mat - converts a Tecplot file to a MATLAB .mat file."""
 
     # -- File naming and basic output --------------------------------------------------
 
@@ -1542,6 +1541,467 @@ class TestTec2mat:
         dst = tmp_path / "out.mat"
         dst.touch()
         ret = tec2mat(["-f", "-o", str(dst), str(_ONERA["szplt"])])
+        assert ret == 0
+        assert dst.stat().st_size > 0
+
+
+# ======================================================================================
+# tecaux
+# ======================================================================================
+
+
+class TestTecaux:
+    """Tests for tecaux - adds dataset-, zone-, or variable-level auxiliary data."""
+
+    # -- Dataset level aux -------------------------------------------------------------
+
+    def test_dataset_aux_added(self, shared_path: Path, tmp_path: Path) -> None:
+        """-d KEY=VALUE sets dataset-level auxiliary data."""
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-d",
+            "Solver=MyCFD",
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            assert dict(r.auxdata.items())["Solver"] == "MyCFD"
+
+    def test_repeated_dataset_aux_flags_all_applied(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """Repeating -d accumulates multiple pairs, not just the last one."""
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-d",
+            "Solver=MyCFD",
+            "-d",
+            "Version=2.1",
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            aux = dict(r.auxdata.items())
+            assert aux["Solver"] == "MyCFD"
+            assert aux["Version"] == "2.1"
+
+    def test_default_output_naming(self, shared_path: Path, tmp_path: Path) -> None:
+        """With no -o, output is <stem>_aux<ext> next to the input."""
+        src = tmp_path / f"flow{shared_path.suffix}"
+        shutil.copy(shared_path, src)
+        ret = tecaux(["-d", "Solver=MyCFD", str(src)])
+        assert ret == 0
+        assert (tmp_path / f"flow_aux{shared_path.suffix}").exists()
+
+    # -- Zone level aux ----------------------------------------------------------------
+
+    def test_zone_aux_specific_zone_only(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """-z INDEX KEY=VALUE applies only to that zone."""
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-z",
+            "1",
+            "Description=Wing",
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            assert dict(r.zone[0].auxdata.items())["Description"] == "Wing"
+            assert "Description" not in dict(r.zone[1].auxdata.items())
+
+    def test_zone_aux_repeated_same_zone_merges(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """Multiple -z occurrences on the same zone merge and not overwrite."""
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-z",
+            "1",
+            "Description=Wing",
+            "-z",
+            "1",
+            "Area=120sqm",
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            aux = dict(r.zone[0].auxdata.items())
+            assert aux["Description"] == "Wing"
+            assert aux["Area"] == "120sqm"
+
+    def test_zone_aux_all_broadcasts_to_every_zone(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """-z all KEY=VALUE applies to every zone."""
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-z",
+            "all",
+            "Batch=2024",
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            for i in range(r.num_zones):
+                assert dict(r.zone[i].auxdata.items())["Batch"] == "2024"
+
+    def test_zone_aux_broadcast_and_specific_combine(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """A broadcast (-z all) and a specific (-z N) target compose in one call."""
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-z",
+            "all",
+            "Batch=2024",
+            "-z",
+            "1",
+            "Special=true",
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            aux1 = dict(r.zone[0].auxdata.items())
+            aux2 = dict(r.zone[1].auxdata.items())
+            assert aux1["Batch"] == "2024"
+            assert aux1["Special"] == "true"
+            assert aux2["Batch"] == "2024"
+            assert "Special" not in aux2
+
+    def test_zone_aux_out_of_range_returns_1(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """A zone index beyond num_zones returns exit code 1."""
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-z",
+            "99",
+            "X=1",
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 1
+
+    # -- Variable level aux ------------------------------------------------------------
+
+    def test_var_aux_by_name(self, shared_path: Path, tmp_path: Path) -> None:
+        """-v NAME KEY=VALUE resolves the variable case-insensitively by name."""
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-v",
+            "c",
+            "Units=Pa",
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            # "c" is variable 4 (1-based) in the shared fixture.
+            assert dict(r.get_var_auxdata(4).items())["Units"] == "Pa"
+
+    def test_var_aux_by_index(self, shared_path: Path, tmp_path: Path) -> None:
+        """-v INDEX KEY=VALUE resolves the variable by 1-based index."""
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-v",
+            "1",
+            "Units=m",
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            assert dict(r.get_var_auxdata(1).items())["Units"] == "m"
+
+    def test_var_aux_all_broadcasts_to_every_variable(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """-v all KEY=VALUE applies to every variable."""
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-v",
+            "all",
+            "Source=Test",
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            for i in range(1, r.num_vars + 1):
+                assert dict(r.get_var_auxdata(i).items())["Source"] == "Test"
+
+    def test_var_aux_unresolvable_returns_1(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """An unresolvable variable target (bad name and non-valid index) returns 1."""
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-v",
+            "nonexistent",
+            "X=1",
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 1
+
+    # -- Test preserve sharing ---------------------------------------------------------
+
+    def test_everything_at_once_single_pass_preserves_sharing(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """Add all aux item types checking that sharing is preserved.
+
+        This is the central thing tecaux has to get right: it's built on the same
+        verbatim zone-copy approach as tecfix, so adding aux data must never require
+        materializing a shared variable's or zone's data independently.
+
+        """
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-d",
+            "Solver=MyCFD",
+            "-z",
+            "1",
+            "Case=A",
+            "-z",
+            "2",
+            "Case=B",
+            "-v",
+            "w",
+            "Units=K",
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            assert dict(r.auxdata.items())["Solver"] == "MyCFD"
+            assert dict(r.zone[0].auxdata.items())["Case"] == "A"
+            assert dict(r.zone[1].auxdata.items())["Case"] == "B"
+            assert dict(r.get_var_auxdata(5).items())["Units"] == "K"
+            # The whole point: sharing relationships from the source file
+            # are still exactly what they were.
+            assert r.zone[1].variable[0].shared_zone == 1
+            assert r.zone[2].shared_connectivity == 1
+            np.testing.assert_allclose(
+                r.zone[1].variable[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
+            )
+
+    def test_existing_aux_preserved_across_chained_runs(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """Running tecaux again on its own output keeps what an earlier run added."""
+        first = tmp_path / "first.dat"
+        second = tmp_path / "second.dat"
+        assert (
+            tecaux([
+                "-d",
+                "Solver=MyCFD",
+                "-o",
+                str(first),
+                "--force",
+                str(shared_path),
+            ])
+            == 0
+        )
+        assert (
+            tecaux(["-d", "Version=2.1", "-o", str(second), "--force", str(first)]) == 0
+        )
+        with tecio.open(str(second), "r") as r:
+            aux = dict(r.auxdata.items())
+            assert aux["Solver"] == "MyCFD"
+            assert aux["Version"] == "2.1"
+
+    def test_output_format_controlled_by_extension(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """Writing to a different extension than the input converts format too."""
+        dst = tmp_path / f"out{_other_format_flag(shared_path).replace('-', '.')}"
+        ret = tecaux([
+            "-d",
+            "Solver=MyCFD",
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 0
+        assert _is_readable(dst)
+
+    # -- JSON input --------------------------------------------------------------------
+
+    def test_json_all_three_levels_applied(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """A JSON file with AUXDATASET/AUXZONE/AUXVAR applies at all three levels."""
+        json_path = tmp_path / "meta.json"
+        json_path.write_text(
+            json.dumps({
+                "AUXDATASET": {"Solver": "FromJSON"},
+                "AUXZONE": {"1": {"Description": "Wing"}},
+                "AUXVAR": {"c": {"Units": "Pa"}},
+            })
+        )
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-j",
+            str(json_path),
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            assert dict(r.auxdata.items())["Solver"] == "FromJSON"
+            assert dict(r.zone[0].auxdata.items())["Description"] == "Wing"
+            assert dict(r.get_var_auxdata(4).items())["Units"] == "Pa"
+
+    def test_json_all_sentinel_broadcasts(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """The "all" key in AUXZONE/AUXVAR broadcasts, matching -z all/-v all."""
+        json_path = tmp_path / "meta.json"
+        json_path.write_text(json.dumps({"AUXZONE": {"all": {"Batch": "json-batch"}}}))
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-j",
+            str(json_path),
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            for i in range(r.num_zones):
+                assert dict(r.zone[i].auxdata.items())["Batch"] == "json-batch"
+
+    def test_json_cli_override_wins_on_collision(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """A CLI -d flag overrides a JSON AUXDATASET value with the same key."""
+        json_path = tmp_path / "meta.json"
+        json_path.write_text(
+            json.dumps({"AUXDATASET": {"Solver": "FromJSON", "Extra": "kept"}})
+        )
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-j",
+            str(json_path),
+            "-d",
+            "Solver=FromCLI",
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            aux = dict(r.auxdata.items())
+            assert aux["Solver"] == "FromCLI"
+            assert aux["Extra"] == "kept"
+
+    def test_json_unrecognized_top_level_key_returns_1(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """A JSON file using the old/wrong key names (e.g. "dataset") is rejected."""
+        json_path = tmp_path / "bad.json"
+        json_path.write_text(json.dumps({"dataset": {"Solver": "MyCFD"}}))
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-j",
+            str(json_path),
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 1
+
+    def test_json_malformed_returns_1(self, shared_path: Path, tmp_path: Path) -> None:
+        """Genuinely invalid JSON syntax fails cleanly, not with a raw traceback."""
+        json_path = tmp_path / "bad.json"
+        json_path.write_text("{not valid json")
+        dst = tmp_path / "out.dat"
+        ret = tecaux([
+            "-j",
+            str(json_path),
+            "-o",
+            str(dst),
+            "--force",
+            str(shared_path),
+        ])
+        assert ret == 1
+
+    # -- Error and overwrite paths -----------------------------------------------------
+
+    def test_malformed_kv_returns_1(self, shared_path: Path, tmp_path: Path) -> None:
+        """A -d value without '=' returns exit code 1."""
+        dst = tmp_path / "out.dat"
+        ret = tecaux(["-d", "NoEquals", "-o", str(dst), "--force", str(shared_path)])
+        assert ret == 1
+
+    def test_no_flags_verbatim_copy_with_warning(
+        self, shared_path: Path, tmp_path: Path, capsys
+    ) -> None:
+        """No -d/-z/-v/-j prints a warning to stderr and still writes a full copy."""
+        dst = tmp_path / "out.dat"
+        ret = tecaux(["-o", str(dst), "--force", str(shared_path)])
+        assert ret == 0
+        assert "no -d, -z, -v, or -j" in capsys.readouterr().err
+        with tecio.open(str(dst), "r") as r:
+            assert r.num_zones == 3
+
+    def test_missing_input_returns_1(self, tmp_path: Path) -> None:
+        """A non-existent source file returns exit code 1."""
+        assert tecaux(["-d", "X=1", str(tmp_path / "ghost.dat")]) == 1
+
+    def test_existing_output_no_force_returns_1(
+        self, shared_path: Path, tmp_path: Path
+    ) -> None:
+        """An existing output without --force returns exit code 1."""
+        dst = tmp_path / "out.dat"
+        dst.touch()
+        ret = tecaux(["-d", "X=1", "-o", str(dst), str(shared_path)])
+        assert ret == 1
+
+    def test_force_overwrites_existing(self, shared_path: Path, tmp_path: Path) -> None:
+        """--force overwrites an existing output file."""
+        dst = tmp_path / "out.dat"
+        dst.touch()
+        ret = tecaux(["-d", "X=1", "-f", "-o", str(dst), str(shared_path)])
         assert ret == 0
         assert dst.stat().st_size > 0
 

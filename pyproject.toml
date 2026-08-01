@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tecio-python"
-version = "0.2.0"
+version = "0.2.x"
 description = "Python interface for reading and writing Tecplot data files"
 
 readme = "README.md"
@@ -37,6 +37,8 @@ Issues = "https://github.com/meersman/tecio/issues"
 Changelog = "https://github.com/meersman/tecio/blob/main/docs/changelog.md"
 
 [project.scripts]
+tec2mat = "tecio.cli.tec2mat:main"
+tecaux = "tecio.cli.tecaux:main"
 teconvert = "tecio.cli.teconvert:main"
 tecdump = "tecio.cli.tecdump:main"
 tecextract = "tecio.cli.tecextract:main"
@@ -45,7 +47,6 @@ tecmerge = "tecio.cli.tecmerge:main"
 tecscale = "tecio.cli.tecscale:main"
 tecslice = "tecio.cli.tecslice:main"
 tecstats = "tecio.cli.tecstats:main"
-tec2mat = "tecio.cli.tec2mat:main"
 
 [project.optional-dependencies]
 dev = [
