@@ -587,19 +587,19 @@ class Write:
     # -- Structured zone writer --------------------------------------------------------
 
     def write_ijk_zone(
-            self,
-            data: Sequence[npt.ArrayLike],
-            *,
-            title: str | None = None,
-            variables: list[str] | None = None,
-            value_locations: Sequence[ValueLocation] | None = None,
-            passive_vars: Sequence[bool | int] | None = None,
-            var_sharing: Sequence[int] | None = None,
-            solution_time: float = 0.0,
-            strand_id: int = 0,
-            aux: dict[str, Any] | None = None,
-            datapacking: DataPacking | str = DataPacking.BLOCK,
-            flush: bool = False,
+        self,
+        data: Sequence[npt.ArrayLike],
+        *,
+        title: str | None = None,
+        variables: list[str] | None = None,
+        value_locations: Sequence[ValueLocation] | None = None,
+        passive_vars: Sequence[bool | int] | None = None,
+        var_sharing: Sequence[int] | None = None,
+        solution_time: float = 0.0,
+        strand_id: int = 0,
+        aux: dict[str, Any] | None = None,
+        datapacking: DataPacking | str = DataPacking.BLOCK,
+        flush: bool = False,
     ) -> None:
         """Write a complete IJK-ordered zone.
 
@@ -718,7 +718,7 @@ class Write:
             expected_vars = sum(
                 1
                 for is_passive, share_zone in zip(
-                        passive_vars, var_sharing, strict=True
+                    passive_vars, var_sharing, strict=True
                 )
                 if not is_passive and not share_zone
             )
@@ -742,8 +742,8 @@ class Write:
         active_var_idx = [
             var_idx
             for var_idx, (is_passive, sharing_zone_idx) in enumerate(
-                    zip(passive_vars, var_sharing, strict=True),
-                    start=1,
+                zip(passive_vars, var_sharing, strict=True),
+                start=1,
             )
             if (not is_passive) and (not sharing_zone_idx)
         ]
@@ -874,7 +874,7 @@ class Write:
 
         # Write active data only
         for var_idx, arr, dtype in zip(
-                active_var_idx, arrays, variable_types, strict=True
+            active_var_idx, arrays, variable_types, strict=True
         ):
             self.current_var = var_idx
             _write_data(
@@ -909,24 +909,24 @@ class Write:
     # -- Unstructured zone writer ------------------------------------------------------
 
     def write_fe_zone(
-            self,
-            data: Sequence[npt.ArrayLike],
-            zone_type: ZoneType,
-            *,
-            node_map: npt.ArrayLike | None = None,
-            title: str | None = None,
-            variables: list[str] | None = None,
-            value_locations: Sequence[ValueLocation] | None = None,
-            passive_vars: Sequence[bool | int] | None = None,
-            var_sharing: Sequence[int] | None = None,
-            con_sharing: int | None = None,
-            face_neighbors: npt.ArrayLike | None = None,
-            face_nbr_mode: FaceNeighborMode = FaceNeighborMode.LOCAL_ONE_TO_ONE,
-            solution_time: float = 0.0,
-            strand_id: int = 0,
-            aux: dict[str, Any] | None = None,
-            datapacking: DataPacking | str = DataPacking.BLOCK,
-            flush: bool = False,
+        self,
+        data: Sequence[npt.ArrayLike],
+        zone_type: ZoneType,
+        *,
+        node_map: npt.ArrayLike | None = None,
+        title: str | None = None,
+        variables: list[str] | None = None,
+        value_locations: Sequence[ValueLocation] | None = None,
+        passive_vars: Sequence[bool | int] | None = None,
+        var_sharing: Sequence[int] | None = None,
+        con_sharing: int | None = None,
+        face_neighbors: npt.ArrayLike | None = None,
+        face_nbr_mode: FaceNeighborMode = FaceNeighborMode.LOCAL_ONE_TO_ONE,
+        solution_time: float = 0.0,
+        strand_id: int = 0,
+        aux: dict[str, Any] | None = None,
+        datapacking: DataPacking | str = DataPacking.BLOCK,
+        flush: bool = False,
     ) -> None:
         """Write a complete finite-element zone.
 
@@ -1069,7 +1069,7 @@ class Write:
             expected_vars = sum(
                 1
                 for is_passive, sharing_zone_idx in zip(
-                        passive_vars, var_sharing, strict=True
+                    passive_vars, var_sharing, strict=True
                 )
                 if not is_passive and not sharing_zone_idx
             )
@@ -1097,9 +1097,9 @@ class Write:
         elif con_sharing:
             src_zone = self._meta.zone(con_sharing)
             if (
-                    src_zone is None
-                    or src_zone.num_nodes is None
-                    or src_zone.num_elements is None
+                src_zone is None
+                or src_zone.num_nodes is None
+                or src_zone.num_elements is None
             ):
                 raise ValueError(
                     f"con_sharing={con_sharing} references a zone that has "
@@ -1166,8 +1166,8 @@ class Write:
         active_var_idx = [
             var_idx
             for var_idx, (is_passive, share_zone) in enumerate(
-                    zip(passive_vars, var_sharing, strict=True),
-                    start=1,
+                zip(passive_vars, var_sharing, strict=True),
+                start=1,
             )
             if (not is_passive) and (not share_zone)
         ]
@@ -1212,7 +1212,7 @@ class Write:
 
         # Write active data only
         for var_idx, arr, dtype in zip(
-                active_var_idx, arrays, variable_types, strict=True
+            active_var_idx, arrays, variable_types, strict=True
         ):
             self.current_var = var_idx
             _write_data(

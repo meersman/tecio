@@ -689,15 +689,15 @@ lib.tecFileWriterOpen.argtypes = [
     ctypes.c_void_p,  # gridFileHandle (optional)
     ctypes.POINTER(ctypes.c_void_p),  # out fileHandle
 ]
+lib.tecFileWriterClose.restype = ctypes.c_int32
+lib.tecFileWriterClose.argtypes = [
+    ctypes.POINTER(ctypes.c_void_p),
+]
 lib.tecFileWriterFlush.restype = ctypes.c_int32
 lib.tecFileWriterFlush.argtypes = [
     ctypes.c_void_p,  # fileHandle
     ctypes.c_int32,  # numZonesToRetain
     ctypes.POINTER(ctypes.c_int32),  # zonesToRetain
-]
-lib.tecFileWriterClose.restype = ctypes.c_int32
-lib.tecFileWriterClose.argtypes = [
-    ctypes.POINTER(ctypes.c_void_p),
 ]
 
 # Write Zone Headers
@@ -1077,7 +1077,7 @@ lib.tecusr142.argtypes = [
 # --------------------------------------------------------------------------------------
 
 
-# Reading SZL files
+# -- Reading SZL files -----------------------------------------------------------------
 def tec_file_reader_open(file_name: str) -> ctypes.c_void_p:
     """Open an SZL file for reading.
 
@@ -1210,7 +1210,7 @@ def tec_data_set_get_num_zones(handle: ctypes.c_void_p) -> int:
     return num_zones.value
 
 
-# Reading SZL zones
+# -- Reading SZL zones -----------------------------------------------------------------
 def tec_zone_get_ijk(handle: ctypes.c_void_p, zone_index: int) -> tuple[int, int, int]:
     """Get zone dimensions (ORDERED) or node/element counts (FE).
 
@@ -1494,7 +1494,7 @@ def tec_zone_node_map_get(
     return np.ctypeslib.as_array(nodemap).reshape(num_elements, nodes_per_cell)
 
 
-# Reading SZL variable data
+# -- Reading SZL variable data ---------------------------------------------------------
 def tec_var_get_name(handle: ctypes.c_void_p, var_index: int) -> str:
     """Get a variable name by index.
 
@@ -1968,7 +1968,7 @@ def tec_zone_var_get_uint8_values(
     return np.ctypeslib.as_array(values)
 
 
-# Reading SZL aux data
+# -- Reading SZL aux data --------------------------------------------------------------
 def tec_data_set_aux_data_get_num_items(handle: ctypes.c_void_p) -> int:
     """Get the number of dataset-level auxiliary data items.
 
@@ -2163,7 +2163,7 @@ def tec_zone_aux_data_get_item(
 # --------------------------------------------------------------------------------------
 
 
-# Initialization and File Handling
+# -- Initialization and File Handling --------------------------------------------------
 def tec_file_writer_open(
     filename: str,
     variables: Sequence[str],
@@ -2213,6 +2213,22 @@ def tec_file_writer_open(
             f"variables={variables!r}, file_type={file_type!r}, return_code={ret}"
         )
     return handle
+
+
+def tec_file_writer_close(handle: ctypes.c_void_p) -> None:
+    """Close a writer handle and finalise the output file.
+
+    Args:
+        handle (ctypes.c_void_p): Writer handle.
+
+    Raises:
+        TecioError: On C library error.
+    """
+    ret = lib.tecFileWriterClose(ctypes.byref(handle))
+    if ret != 0:
+        raise TecioError(
+            f"tecFileWriterClose Error: handle={handle}, return_code={ret}"
+        )
 
 
 def tec_file_writer_flush(
@@ -2266,23 +2282,7 @@ def tec_file_writer_flush(
         )
 
 
-def tec_file_writer_close(handle: ctypes.c_void_p) -> None:
-    """Close a writer handle and finalise the output file.
-
-    Args:
-        handle (ctypes.c_void_p): Writer handle.
-
-    Raises:
-        TecioError: On C library error.
-    """
-    ret = lib.tecFileWriterClose(ctypes.byref(handle))
-    if ret != 0:
-        raise TecioError(
-            f"tecFileWriterClose Error: handle={handle}, return_code={ret}"
-        )
-
-
-# Write Zone Headers
+# -- Write Zone Headers ----------------------------------------------------------------
 def tec_zone_create_ijk(
     handle: ctypes.c_void_p,
     zone_title: str,
@@ -2474,7 +2474,7 @@ def tec_zone_create_fe(
     return zone_out.value
 
 
-# Optional fields
+# -- Optional fields -------------------------------------------------------------------
 def tec_zone_set_unsteady_options(
     handle: ctypes.c_void_p, zone: int, strand: int = 0, solution_time: float = 0.0
 ) -> None:
@@ -2589,7 +2589,7 @@ def tec_zone_add_aux_data(
         )
 
 
-# ---- Write variable value functions --------------------------------
+# -- Write variable value functions ----------------------------------------------------
 def tec_zone_var_write_double_values(
     handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
 ) -> None:
@@ -2747,7 +2747,7 @@ def tec_zone_var_write_uint8_values(
         )
 
 
-# Write Zone Connectivity (FE zones only)
+# -- Write Zone Connectivity (FE zones only) -------------------------------------------
 def tec_zone_node_map_write32(
     handle: ctypes.c_void_p,
     zone: int,
@@ -2946,7 +2946,7 @@ def tec_zone_face_nbr_write_connections64(
 # --------------------------------------------------------------------------------------
 
 
-# File initialization and finalization
+# -- File initialization and finalization ----------------------------------------------
 def tecini142(
     filename: str,
     variables: Sequence[str],
@@ -3096,7 +3096,7 @@ def tecforeign142(output_foreign_byte_order: int) -> None:
         raise TecioError(f"tecforeign142 Error: return_code={ret}")
 
 
-# Zone creation
+# -- Zone creation ---------------------------------------------------------------------
 def teczne142(
     zone_title: str,
     zone_type: int | ZoneType,
@@ -3386,7 +3386,7 @@ def tecznefemixed142(
         )
 
 
-# Data writing
+# -- Data writing ----------------------------------------------------------------------
 def tecdat142(
     field_data: npt.ArrayLike,
     is_double: bool = True,
@@ -3436,7 +3436,7 @@ def tecdat142(
         )
 
 
-# Connectivity writing
+# -- Connectivity writing --------------------------------------------------------------
 def tecnode142(nodes: npt.ArrayLike) -> None:
     """Write node connectivity for an FE zone (classic API).
 
@@ -3595,7 +3595,7 @@ def tecpolybconn142(
         )
 
 
-# Auxiliary data
+# -- Auxiliary data --------------------------------------------------------------------
 def tecauxstr142(name: str, value: str) -> None:
     """Add dataset-level auxiliary data (classic API).
 
@@ -3670,7 +3670,7 @@ def teczauxstr142(name: str, value: str) -> None:
         )
 
 
-# User-defined data (custom records)
+# -- User-defined data (custom records) ------------------------------------------------
 def tecusr142(user_rec: str) -> None:
     """Write a user-defined data record (classic API).
 

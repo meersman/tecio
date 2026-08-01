@@ -45,8 +45,9 @@ Not parametrized here (kept as dedicated tests further down):
 
 * ``DATAPACKING=POINT`` — real, working feature only in DAT; SZL/PLT reject it with
   ``NotImplementedError`` (verified once, parametrized over just those two).
-* ``precision`` override semantics themselves — SZL/DAT share one rule (floating-only
-  override), PLT has a fundamentally different one (applies to everything).
+* ``precision`` override semantics themselves — each writer has unique rules and
+  defaults
+* ``flush=`` incremental-flush kwarg on the SZL zone writers
 
 Run directly:
 
@@ -62,6 +63,7 @@ Keep output files for Tecplot 360 inspection:
 
 import sys
 from collections.abc import Callable
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -1074,6 +1076,83 @@ class TestPrecisionOverride:
             assert zone.variable[0].data_type == DataType.FLOAT
             assert zone.variable[1].data_type == DataType.DOUBLE
             assert zone.variable[2].data_type == DataType.INT32
+
+
+# ======================================================================================
+# SZL-only: incremental flush (tec_file_writer_flush)
+# ======================================================================================
+
+
+class TestSZLFlush:
+    """``flush=True`` on the SZL zone writers to incrementally release memory.
+
+    Checks for the six temporary intermediate files TecIO writes to disk the moment
+    ``tecFileWriterFlush`` is called -- ``<path>.szhdr``, ``.szdat``, ``.szaux``,
+    ``.sztxt``, ``.szgeo``, ``.szlab`` (per the Data Format Guide's ``szcombine``
+    section) while the writer is still open, then confirms the final joined file matches
+    one not using the ``flush=True`` flag.
+    """
+
+    # Suffixes szcombine expects to find and join
+    _INTERMEDIATE_SUFFIXES = (
+        ".szhdr",
+        ".szdat",
+        ".szaux",
+        ".sztxt",
+        ".szgeo",
+        ".szlab",
+    )
+
+    def test_flush_creates_and_joins_intermediate_files(
+        self, output_path: Callable
+    ) -> None:
+        """``flush=True`` produces ``.sz*`` intermediate files, then close()
+        joins and removes them.
+
+        Demonstrates:
+        - Calling ``write_ijk_zone(..., flush=True)`` leaves the six ``<path>.sz*``
+          intermediate files on disk *while the writer is still open* -- the same files
+          an external solver's ``TECFLUSH142``/``tecFileWriterFlush`` calls would leave
+          for ``szcombine`` to join later.
+        - ``close()`` performs the equivalent of ``szcombine <path> --cleanup``: the
+          final ``.szplt`` appears and the intermediate files are gone.
+        - The joined file still round-trips to the correct zone data.
+        """
+        path = output_path("szl_flush_intermediate_files.szplt")
+        temp_files = [Path(f"{path}{suffix}") for suffix in self._INTERMEDIATE_SUFFIXES]
+
+        i, j, k = 3, 4, 5
+        x, y, z = create_ordered((i, j, k))
+        x = x.astype(np.float64)
+        y = y.astype(np.float64)
+        z = z.astype(np.float64)
+        c = scalar_field(x, y, z).astype(np.float64)
+
+        w = tecio.open(str(path), "w", variables=["x", "y", "z", "c"])
+        try:
+            w.write_ijk_zone(data=[x, y, z, c], flush=True)
+
+            # With the writer is still open check these files exist on disk
+            for f in temp_files:
+                assert f.exists(), (
+                    f"expected intermediate file {f} after flush=True; "
+                    "flush may not have actually run"
+                )
+        finally:
+            w.close()
+
+        # Check that intermediate files are removed on join
+        assert path.exists()
+        for f in temp_files:
+            assert not f.exists(), f"intermediate file {f} should be gone after close()"
+
+        with tecio.open(str(path), "r") as r:
+            assert r.num_zones == 1
+            zone = r.zone[0]
+            assert zone.dimensions == (i, j, k)
+            np.testing.assert_allclose(
+                zone.variable[3].values.ravel(), c.ravel(), rtol=_RTOL_F64
+            )
 
 
 # ======================================================================================

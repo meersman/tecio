@@ -8,6 +8,7 @@
 
    tec_file_writer_open
    tec_file_writer_close
+   tec_file_writer_flush
    tec_zone_create_ijk
    tec_zone_create_fe
    tec_zone_set_unsteady_options
@@ -25,6 +26,7 @@
 ```{eval-rst}
 .. autofunction:: tecio.libtecio.tec_file_writer_open
 .. autofunction:: tecio.libtecio.tec_file_writer_close
+.. autofunction:: tecio.libtecio.tec_file_writer_flush
 .. autofunction:: tecio.libtecio.tec_zone_create_ijk
 .. autofunction:: tecio.libtecio.tec_zone_create_fe
 .. autofunction:: tecio.libtecio.tec_zone_set_unsteady_options
