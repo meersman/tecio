@@ -9,10 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- `tecaux` - command line tool to add aux data to Tecplot files.
-- `flush` option added to SZL zone writers to flush data to temporary files
-  and release memory.
+---
+
+```{include} changelog/v0.2.1.md
+```
 
 ---
 
@@ -31,8 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/meersman/tecio/compare/v0.2.0...HEAD
-	
+[Unreleased]: https://github.com/meersman/tecio/compare/v0.2.1...HEAD
+
 ```{toctree}
 :hidden:
 :maxdepth: 1
