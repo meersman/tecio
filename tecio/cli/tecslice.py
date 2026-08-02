@@ -1,7 +1,7 @@
 r"""Slice a Tecplot data file along IJK indices and/or solution time.
 
 Structured CFD datasets frequently contain more spatial resolution or time steps than
-are necessary for a given analysis.  Reducing the data to a relevant subset (like every
+are necessary for a given analysis. Reducing the data to a relevant subset (like every
 other grid point, a specific index range along one axis, or a window of solution times)
 would otherwise require loading the full file in Tecplot or writing a dedicated script.
 ``tecslice`` applies these reductions directly to the file using a compact
@@ -212,7 +212,7 @@ def _parse_ijk_slice(value: str) -> IjkSliceSpec:
         )
     except ValueError as exc:
         raise argparse.ArgumentTypeError(
-            f"Invalid IJK slice {value!r}: {exc}.  All components must be integers."
+            f"Invalid IJK slice {value!r}: {exc}. All components must be integers."
         ) from exc
 
 
@@ -313,7 +313,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         required=True,
         metavar="PATH",
         help=(
-            "Output file path.  The extension controls the output format "
+            "Output file path. The extension controls the output format "
             "(.szplt, .plt, .dat)."
         ),
     )
@@ -408,10 +408,10 @@ def _ijk_spec_to_slice(spec: IjkSliceSpec | None) -> slice:
     # 1-based inclusive end -> Python exclusive stop.
     #
     # Positive step: 1-based end N -> py_stop N.
-    #   arr[:N] (0-based) gives elements 0..N-1 = 1-based 1..N.  Correct.
+    #   arr[:N] (0-based) gives elements 0..N-1 = 1-based 1..N. Correct.
     #
     # Negative step: 1-based end N -> py_stop N-1.
-    #   arr[s:N-1:-1] includes 0-based index N-1 = 1-based N.  Correct.
+    #   arr[s:N-1:-1] includes 0-based index N-1 = 1-based N. Correct.
     #   Special case: 1-based end=1 -> 0-based index 0 -> py_stop=None
     #   (arr[s:0:-1] would miss index 0; arr[s:None:-1] includes it).
     if spec.end is not None:
@@ -445,7 +445,7 @@ def _build_time_filter(
 ) -> set[int]:
     """Return the set of 0-based zone indices to include in the output.
 
-    Zones with strand ID == 0 are always included.  For each eligible
+    Zones with strand ID == 0 are always included. For each eligible
     strand the zones are sorted by solution time, the ``[start, end]``
     window is applied (inclusive), then the ``skip`` stride is applied to
     the windowed list.
@@ -514,7 +514,7 @@ def _build_protected_set(
 
     A zone is "protected" if it is excluded by the time filter but is
     referenced as a variable-sharing source by at least one zone that will
-    be written.  Protected zones are written with all non-shared variables
+    be written. Protected zones are written with all non-shared variables
     set passive and their strand ID forced to 0 so they act as inert grid
     anchors without contributing to the time series.
 
@@ -554,7 +554,7 @@ def _collect_zone_arrays(
 
     Returns:
         ``(data, locs, passive_vars, var_sharing)`` where each list has
-        length ``num_vars``.  Passive and shared entries have empty arrays.
+        length ``num_vars``. Passive and shared entries have empty arrays.
 
     """
     data: list[np.ndarray] = []
@@ -653,9 +653,9 @@ def _write_zone_protected(
     """Write a zone as a protected grid anchor.
 
     All variables that are not already passive or shared are set passive so
-    that no solution data is carried into the output.  The strand ID is
+    that no solution data is carried into the output. The strand ID is
     forced to 0 so the zone is treated as stationary and does not appear in
-    any time-series animation.  Sharing references are preserved verbatim so
+    any time-series animation. Sharing references are preserved verbatim so
     that zones which share coordinates from this zone continue to work.
 
     Args:
@@ -754,7 +754,7 @@ def _slice_and_write_ordered(
 
         if var.value_location == ValueLocation.CELL_CENTERED:
             # Cell array has shape (I-1, J-1, K-1).
-            # Cell c sits between nodes c and c+1.  For a nodal selection
+            # Cell c sits between nodes c and c+1. For a nodal selection
             # with stride s, the fully-bounded cells are exactly the
             # lower-node indices of each consecutive selected-node pair:
             #   positive step -> selected_nodes[:-1]  (each is the lower node)
@@ -837,7 +837,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if not do_ijk and not do_time:
         print(
-            "Warning: no slice flags provided.  Output will be a verbatim copy.",
+            "Warning: no slice flags provided. Output will be a verbatim copy.",
             file=sys.stderr,
         )
 

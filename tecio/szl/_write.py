@@ -235,7 +235,7 @@ def _write_connectivity(
 
     Note:
         Both arrays are written using the minimum integer width capable of
-        representing the maximum index value present in each array.  No copy
+        representing the maximum index value present in each array. No copy
         is made for C-contiguous input arrays — ravel(order="C") returns a flat
         view of the node_map or face_neighbors without making a copy
 
@@ -392,8 +392,8 @@ class Write:
         file_type:    File type (FULL, GRID, or SOLUTION).
         precision:    Whole-file floating-point override, or ``None`` for automatic
                       per-variable inference.
-        current_zone: The index of the most recently written zone.  Before any zones
-                      have been written, ``current_zone`` is ``0``.  During a call to a
+        current_zone: The index of the most recently written zone. Before any zones
+                      have been written, ``current_zone`` is ``0``. During a call to a
                       zone writing method, ``current_zone`` still refers to the
                       previously written zone.  ``current_zone`` is incremented only
                       after a zone writing method successfully completes.
@@ -505,7 +505,7 @@ class Write:
     # -- File lifecycle ----------------------------------------------------------------
 
     def _open(self, var_names: list[str]) -> None:
-        """Open the file handle.  Called exactly once on the first zone."""
+        """Open the file handle. Called exactly once on the first zone."""
         self.variables = var_names
         self.handle = libtecio.tec_file_writer_open(
             filename=self.path,
@@ -534,7 +534,7 @@ class Write:
     def flush_aux(self) -> None:
         """Write buffered dataset and variable aux data to the file.
 
-        Called automatically before the first zone is created.  You only
+        Called automatically before the first zone is created. You only
         need to call this directly if you want to be explicit.
 
         The C library requires dataset and variable aux data to be written
@@ -550,7 +550,7 @@ class Write:
                 str(value),
             )
 
-        # Variable-level aux data.  Keys may be 1-based int indices or names.
+        # Variable-level aux data. Keys may be 1-based int indices or names.
         for key, subdict in self.auxvar.items():
             if isinstance(key, int):
                 var_idx = key - 1  # Convert to 0-based
@@ -607,24 +607,24 @@ class Write:
         3-D; missing trailing dimensions default to 1.
 
         Args:
-            data:            One NumPy array per dataset variable.  Array shape is used
+            data:            One NumPy array per dataset variable. Array shape is used
                              to infer ``imax``, ``jmax``, and ``kmax``; Fortran
-                             (column-major) order is assumed.  Pass ``None`` to write a
+                             (column-major) order is assumed. Pass ``None`` to write a
                              zone header only.
-            title:           Zone title.  Defaults to ``"IJK_Zone_{current_zone + 1}"``.
-            variables:       Variable name list.  Required on the first call when the
+            title:           Zone title. Defaults to ``"IJK_Zone_{current_zone + 1}"``.
+            variables:       Variable name list. Required on the first call when the
                              file has not been opened yet (lazy-open path); ignored once
                              the file is already initialised. Default to ``[V1, V2, V3,
                              ...]`` if not provided in open or zone call.
-            value_locations: Per-variable :class:`~libtecio.ValueLocation`.  Defaults to
+            value_locations: Per-variable :class:`~libtecio.ValueLocation`. Defaults to
                              all ``NODAL``.
-            passive_vars:    Per-variable passive flags.  Defaults to all active
+            passive_vars:    Per-variable passive flags. Defaults to all active
                              (``False``).
-            var_sharing:     Per-variable share-from zone index (1-based).  Defaults to
+            var_sharing:     Per-variable share-from zone index (1-based). Defaults to
                              no sharing (all zeros).
-            solution_time:   Solution time for transient data.  Use ``0.0`` for static
+            solution_time:   Solution time for transient data. Use ``0.0`` for static
                              zones. Default to ``0.0`` if not defined.
-            strand_id:       Strand ID for transient data.  Use ``0`` for static
+            strand_id:       Strand ID for transient data. Use ``0`` for static
                              zones. Default to ``0`` (static) if not defined.
             aux:             Zone-level auxiliary data as ``{name: value}`` string
                              pairs.
@@ -649,11 +649,11 @@ class Write:
 
         Note:
             If the file is already open, ``data`` and ``variables`` may be omitted to
-            write a zone header only.  If the file has not been opened yet,
+            write a zone header only. If the file has not been opened yet,
             ``variables`` must be provided on this call.
 
         Note:
-            Data arrays are written as DOUBLE precision by default.  To write other
+            Data arrays are written as DOUBLE precision by default. To write other
             types, cast the NumPy arrays before calling (e.g.
             ``arr.astype(np.float32)``).
 
@@ -673,7 +673,7 @@ class Write:
         if datapacking != DataPacking.BLOCK:
             raise NotImplementedError(
                 "DATAPACKING=POINT is an ASCII-only layout and is not supported "
-                "by the SZL binary format.  Use DataPacking.BLOCK (the default) "
+                "by the SZL binary format. Use DataPacking.BLOCK (the default) "
                 "or write to a .dat file instead."
             )
 
@@ -935,12 +935,12 @@ class Write:
         chosen automatically from the max index.
 
         Args:
-            data:            Sequence of 1-D arrays, one per dataset variable.  NODAL
+            data:            Sequence of 1-D arrays, one per dataset variable. NODAL
                              arrays must have length ``num_nodes``; CELL_CENTERED arrays
                              must have length ``num_cells``.  ``num_nodes`` and
                              ``num_cells`` are inferred from ``node_map`` (or from the
                              ``con_sharing`` source zone when ``node_map`` is omitted).
-            zone_type:       FE zone type from the ZoneType enum.  Must be one of the
+            zone_type:       FE zone type from the ZoneType enum. Must be one of the
                              types in ``_FE_SIMPLE``.
             node_map:        Integer array of shape ``(num_cells, nodes_per_cell)``
                              containing 1-based node indices.  32- or 64-bit write is
@@ -948,17 +948,17 @@ class Write:
                              Required unless ``con_sharing`` is set, in which case the
                              connectivity -- and the node/cell counts derived from it --
                              are inherited from the source zone instead.
-            title:           Zone title string.  Defaults to ``"FE_Zone_{current_zone +
+            title:           Zone title string. Defaults to ``"FE_Zone_{current_zone +
                              1}"`` if not provided.
-            variables:       Variable name list.  Required only when the file has not
-                             been opened yet (lazy-open path).  Ignored on subsequent
+            variables:       Variable name list. Required only when the file has not
+                             been opened yet (lazy-open path). Ignored on subsequent
                              zones once the file is already initialised. Default to
                              ``[V1, V2, V3, ...]`` if not provided in open or zone call.
-            value_locations: Per-variable ValueLocation.  Defaults to all NODAL.
-            passive_vars:    Per-variable passive flags.  Defaults to all active
+            value_locations: Per-variable ValueLocation. Defaults to all NODAL.
+            passive_vars:    Per-variable passive flags. Defaults to all active
                              (False).
-            var_sharing:     Per-variable share from zone index.  Defaults to no
-                             sharing.  A shared variable's type and value location are
+            var_sharing:     Per-variable share from zone index. Defaults to no
+                             sharing. A shared variable's type and value location are
                              inherited from its source zone and are cross-checked
                              against ``node_map`` / ``con_sharing`` for a consistent
                              node/cell count.
@@ -1019,7 +1019,7 @@ class Write:
         if datapacking != DataPacking.BLOCK:
             raise NotImplementedError(
                 "DATAPACKING=POINT is an ASCII-only layout and is not supported "
-                "by the SZL binary format.  Use DataPacking.BLOCK (the default) "
+                "by the SZL binary format. Use DataPacking.BLOCK (the default) "
                 "or write to a .dat file instead."
             )
         if zone_type not in _FE_SIMPLE:

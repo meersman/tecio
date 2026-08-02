@@ -29,7 +29,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help=(
             "Write output files to tests/output/<test-name>/ instead of a "
-            "temporary directory.  Files persist after the run so they can "
+            "temporary directory. Files persist after the run so they can "
             "be opened in Tecplot 360 for visual verification."
         ),
     )

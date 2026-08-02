@@ -10,7 +10,7 @@ Covers:
   missing file, FEPOLYGON in append source).
 * Cross-format round-trip via append (read SZL, write PLT, verify counts).
 
-These tests are format-agnostic at the ``tecio.open()`` level.  All writes
+These tests are format-agnostic at the ``tecio.open()`` level. All writes
 use ``.szplt`` unless the test specifically targets PLT/DAT behaviour.
 """
 

@@ -14,7 +14,7 @@ Onera test file contents (confirmed via tecdump):
     Zone 2 has zone-level aux data.
 
 Design notes:
-    - All ``main()`` functions return int.  All error-path assertions use
+    - All ``main()`` functions return int. All error-path assertions use
       ``assert ret == 1`` — no ``pytest.raises(SystemExit)`` needed.
       (Requires the tecscale and tecmerge patches that replace sys.exit calls
       in helper functions with return-None / raise-FileNotFoundError.)
@@ -25,7 +25,7 @@ Design notes:
     - The ``onera_path`` fixture is parametrised over all three formats;
       single-format tests reference ``_ONERA["szplt"]`` directly.
     - Both Onera zones are FE, so ``tecslice`` IJK flags produce verbatim
-      copies with a warning.  Tests verify the warning and zone count.
+      copies with a warning. Tests verify the warning and zone count.
 
 Test files required in ``tests/``:
     Onera.szplt  Onera.plt  Onera.dat
@@ -120,9 +120,9 @@ def _struct(container: dict[str, Any], name: str) -> Any:
 def _write_synthetic_ijk(path: Path) -> None:
     """Write a small 2-zone ASCII DAT exercising passive and shared variables.
 
-    Zone 1 (``Z1``) has all three variables active.  Zone 2 (``Z2``) shares
+    Zone 1 (``Z1``) has all three variables active. Zone 2 (``Z2``) shares
     variable 1 from zone 1, marks variable 2 passive, and keeps variable 3
-    active.  Each active array has four values.
+    active. Each active array has four values.
 
     Ordered (IJK) zones have no connectivity, so this only exercises
     variable sharing -- see ``shared_dataset``/``shared_path`` above for FE
@@ -642,7 +642,7 @@ class TestTecmerge:
     Design note on deduplication:
         tecmerge._expand_inputs deduplicates resolved paths, so passing the
         same path twice is equivalent to passing it once — intended behaviour
-        for glob patterns.  Tests that need N distinct "files" therefore copy
+        for glob patterns. Tests that need N distinct "files" therefore copy
         the source into tmp_path under different names so each resolves to a
         unique path.
     """
@@ -984,7 +984,7 @@ class TestTecslice:
     """Tests for tecslice - slices structured zones along IJK or time.
 
     Both Onera zones are FE (FEBRICK and FEQUADRILATERAL), so IJK slice flags
-    produce verbatim copies with a warning to stderr.  Tests verify that
+    produce verbatim copies with a warning to stderr. Tests verify that
     behaviour explicitly.
     """
 
@@ -2087,7 +2087,14 @@ class TestTecaux:
         shutil.copy(aux_path, src)
         strip_dst = tmp_path / f"stripped{aux_path.suffix}"
 
-        ret = tecaux(["--strip", "--export-json", "-o", str(strip_dst), "--force", str(src)])
+        ret = tecaux([
+            "--strip",
+            "--export-json",
+            "-o",
+            str(strip_dst),
+            "--force",
+            str(src),
+        ])
         assert ret == 0
 
         # Stripped file: nothing left at any level, sharing still intact
@@ -2118,7 +2125,10 @@ class TestTecaux:
         # And it round-trips: feeding the export back in via -j reproduces the original
         # aux data on a fresh copy
         reimported = tmp_path / f"reimported{aux_path.suffix}"
-        assert tecaux(["-j", str(json_dst), "-o", str(reimported), "--force", str(src)]) == 0
+        assert (
+            tecaux(["-j", str(json_dst), "-o", str(reimported), "--force", str(src)])
+            == 0
+        )
         with tecio.open(str(reimported), "r") as r:
             assert dict(r.auxdata.items())["Solver"] == "MyCFD"
             assert dict(r.zone[0].auxdata.items())["Description"] == "Wing"
@@ -2180,7 +2190,7 @@ class TestTecaux:
     def test_strip_export_rejects_add_flags(
         self, aux_path: Path, tmp_path: Path
     ) -> None:
-        """--strip/--export-json combined with -d/-z/-v/-j is rejected, not guessed at."""
+        """--strip/--export-json combined with -d/-z/-v/-j is rejected."""
         dst = tmp_path / f"out{aux_path.suffix}"
         assert tecaux(["--strip", "-d", "X=1", "-o", str(dst), str(aux_path)]) == 1
         assert tecaux(["--export-json", "-z", "1", "X=1", str(aux_path)]) == 1

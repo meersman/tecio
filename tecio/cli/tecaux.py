@@ -2,13 +2,13 @@ r"""Add, remove, or export dataset, zone, or variable level auxiliary data.
 
 Tecplot's auxiliary data mechanism attaches arbitrary ``name=value`` metadata to a
 dataset, a zone, or a variable (solver name, run date, units, a description, or any
-other annotation that doesn't belong in the numerical data itself_).  Managing this
+other annotation that doesn't belong in the numerical data itself_). Managing this
 after the fact ordinarily means writing a one-off script against the TecIO API.
 ``tecaux`` does this from the command line, in a single read/write pass, in three
 mutually exclusive modes:
 
 * By default (no ``--strip``/``--export-json``): merges new auxiliary entries (from
-  ``-d``/``-z``/``-v`` and/or ``-j``) into a copy of the input file.  Every zone,
+  ``-d``/``-z``/``-v`` and/or ``-j``) into a copy of the input file. Every zone,
   variable, and existing sharing relationship is preserved exactly; an existing key with
   the same name is overwritten.
 * ``--strip`` removes every auxiliary entry at all three levels and writes the result to
@@ -31,12 +31,12 @@ mutually exclusive modes:
 
 :Options:
     ``-d KEY=VALUE``, ``--data KEY=VALUE``
-        A ``name=value`` pair to set as dataset-level auxiliary data.  Repeat the flag
+        A ``name=value`` pair to set as dataset-level auxiliary data. Repeat the flag
         for multiple pairs.
 
     ``-z INDEX KEY=VALUE``, ``--zone INDEX KEY=VALUE``
         A ``name=value`` pair to set as zone-level auxiliary data on the one-based zone
-        ``INDEX`` -- or on every zone if ``INDEX`` is the literal word ``all``.  Repeat
+        ``INDEX`` -- or on every zone if ``INDEX`` is the literal word ``all``. Repeat
         the flag for multiple pairs and/or multiple zones; each occurrence takes exactly
         one zone and one pair, so ``-z 1 A=1 -z 1 B=2`` sets both ``A`` and ``B`` on
         zone 1.
@@ -44,32 +44,32 @@ mutually exclusive modes:
     ``-v INDEX_OR_NAME KEY=VALUE``, ``--var INDEX_OR_NAME KEY=VALUE``
         A ``name=value`` pair to set as variable-level auxiliary data on the variable
         given by a one-based index or a name (case-insensitive) -- or on every variable
-        if the target is the literal word ``all``.  Repeatable, same as ``-z``.
+        if the target is the literal word ``all``. Repeatable, same as ``-z``.
 
     ``-j PATH``, ``--json PATH``
-        Load bulk auxiliary data from a JSON file (see format below).  Applied before
+        Load bulk auxiliary data from a JSON file (see format below). Applied before
         any ``-d``/``-z``/``-v`` flags, which take precedence on a key collision.
 
     ``-s``, ``--strip``
         Remove all auxiliary data (dataset, zone, and variable levels) and write the
-        result to ``<stem>_no_aux<ext>`` (or ``-o``'s path).  Mutually exclusive with
-        ``-d``/``-z``/``-v``/``-j``.  Combine with ``--export-json`` to keep a JSON copy
+        result to ``<stem>_no_aux<ext>`` (or ``-o``'s path). Mutually exclusive with
+        ``-d``/``-z``/``-v``/``-j``. Combine with ``--export-json`` to keep a JSON copy
         of what was removed.
 
     ``--export-json``
         Write every existing auxiliary entry to ``<stem>_aux.json``, in the same
         ``AUXDATASET``/``AUXZONE``/``AUXVAR`` format ``-j`` reads, without modifying
-        the source file, unless combined with ``--strip``.  Mutually exclusive with
+        the source file, unless combined with ``--strip``. Mutually exclusive with
         ``-d``/``-z``/``-v``/``-j``.
 
     ``-o PATH``, ``--output PATH``
-        Output file path.  The extension controls the output format: ``.szplt``,
-        ``.plt``, or ``.dat``.  Defaults to ``<stem>_aux<ext>``, or
-        ``<stem>_no_aux<ext>`` with ``--strip``.  Not used by ``--export-json`` alone
+        Output file path. The extension controls the output format: ``.szplt``,
+        ``.plt``, or ``.dat``. Defaults to ``<stem>_aux<ext>``, or
+        ``<stem>_no_aux<ext>`` with ``--strip``. Not used by ``--export-json`` alone
         which always writes ``<stem>_aux.json``, regardless of ``-o``.
 
     ``-f``, ``--force``
-        Overwrite the output file(s) if they already exist.  Without this flag the
+        Overwrite the output file(s) if they already exist. Without this flag the
         command exits with an error rather than silently clobbering an existing file.
 
 :JSON Format:
@@ -104,9 +104,9 @@ mutually exclusive modes:
 
 :Returns:
     In the default mode, a new Tecplot file written to the output path with the
-    requested auxiliary data merged in.  With ``--strip``, a new Tecplot file with all
-    auxiliary data removed.  With ``--export-json``, a JSON file of everything that was
-    found (and the source file is untouched, unless ``--strip`` is also given).  Exit
+    requested auxiliary data merged in. With ``--strip``, a new Tecplot file with all
+    auxiliary data removed. With ``--export-json``, a JSON file of everything that was
+    found (and the source file is untouched, unless ``--strip`` is also given). Exit
     code is ``0`` on success and non-zero if the input file cannot be read, a
     ``-z``/``-v``/JSON target cannot be resolved, ``--strip``/``--export-json`` is
     combined with ``-d``/``-z``/``-v``/``-j``, or an output file already exists and
@@ -343,9 +343,9 @@ def _parse_kv(token: str) -> tuple[str, str]:
     """Parse one ``KEY=VALUE`` token.
 
     Args:
-        token: A single string like ``"Solver=MyCFD"``.  Only the first ``"="`` is
+        token: A single string like ``"Solver=MyCFD"``. Only the first ``"="`` is
                significant, so a value may itself contain ``"="``
-               (e.g. ``"Formula=a=b+c"``).  A value containing spaces must be quoted as
+               (e.g. ``"Formula=a=b+c"``). A value containing spaces must be quoted as
                a whole on the command line, the same as any other shell argument
                (e.g. ``-z 1 "Description=Wing surface"``) -- this function only ever
                sees whatever single token the shell already produced, so it can't
@@ -375,7 +375,7 @@ def _resolve_variable(spec: str, var_names: list[str]) -> int | None:
         var_names: Ordered list of variable names from the reader.
 
     Returns:
-        0-based variable index, or ``None`` if *spec* cannot be resolved.  Callers are
+        0-based variable index, or ``None`` if *spec* cannot be resolved. Callers are
         responsible for reporting the failure.
 
     """
@@ -918,7 +918,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                 # add_auxdataset_dict()/add_auxvar_dict() only buffer; the write happens
                 # in flush_aux(), normally auto-triggered by the *lazy*-open path on the
-                # first zone write.  Passing variables= above means this writer is
+                # first zone write. Passing variables= above means this writer is
                 # already open (eager), so that automatic trigger never fires.
                 writer.flush_aux()
 

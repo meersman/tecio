@@ -525,7 +525,7 @@ class TestClassicApi:
         tecnode142(node_map)  # writes connectivity (FE only)
         tecend142()  # finalises and closes the file
 
-    Only one file can be open at a time.  Zone header → data → connectivity
+    Only one file can be open at a time. Zone header → data → connectivity
     must be strictly ordered before declaring the next zone.
     """
 

@@ -2,10 +2,10 @@ r"""Convert a Tecplot data file to a MATLAB ``.mat`` file.
 
 MATLAB is widely used for engineering analysis and post-processing, but it cannot read
 Tecplot binary files directly, and the Tecplot ASCII format is awkward to parse on the
-MATLAB side.  Moving data across normally requires a Tecplot license or a hand-written
+MATLAB side. Moving data across normally requires a Tecplot license or a hand-written
 reader.  ``tec2mat`` bridges this gap by reading any supported Tecplot format
 (``.szplt``, ``.plt``, or ``.dat``) and writing a single MATLAB ``.mat`` file via
-:func:`scipy.io.savemat`.  Each input file maps to exactly one output file
+:func:`scipy.io.savemat`. Each input file maps to exactly one output file
 (``flow.szplt`` -> ``flow.mat``): every zone becomes a named struct, every variable is
 preserved at its native precision, and connectivity and metadata are retained so the
 dataset can be reconstructed in MATLAB without a Tecplot installation.
@@ -22,26 +22,26 @@ dataset can be reconstructed in MATLAB without a Tecplot installation.
 
 :Options:
     ``-o PATH``, ``--output PATH``
-        Output file path.  Defaults to the input file stem with a ``.mat`` extension in
+        Output file path. Defaults to the input file stem with a ``.mat`` extension in
         the same directory as the input file.
 
     ``-f``, ``--force``
-        Overwrite the output file if it already exists.  Without this flag the command
+        Overwrite the output file if it already exists. Without this flag the command
         exits with an error rather than silently clobbering an existing file.
 
     ``-c``, ``--compress``
         Compress the variable arrays inside the ``.mat`` file (passes
-        ``do_compression=True`` to :func:`scipy.io.savemat`).  Reduces file size at the
+        ``do_compression=True`` to :func:`scipy.io.savemat`). Reduces file size at the
         cost of some write/read time.
 
     ``--oned-as {column,row}``
         Orientation for one-dimensional arrays (finite-element nodal/cell vectors and
         the per-variable metadata arrays) in the ``.mat`` file.  ``column`` (the
-        default) writes ``N x 1`` column vectors; ``row`` writes ``1 x N``.  Has no
+        default) writes ``N x 1`` column vectors; ``row`` writes ``1 x N``. Has no
         effect on the two- and three-dimensional arrays of ordered zones.
 
 :Returns:
-    A single MATLAB ``.mat`` file written to the output path.  Exit code is ``0`` on
+    A single MATLAB ``.mat`` file written to the output path. Exit code is ``0`` on
     success and non-zero if the input file cannot be read or the output file already
     exists and ``--force`` is not set.
 
@@ -75,14 +75,14 @@ Output structure:
                                           if this zone shares its connectivity
 
     Variable arrays are stored at their on-disk NumPy dtype, so single/double/integer
-    precision is preserved.  The real variable names are kept only in ``info.var_names``
+    precision is preserved. The real variable names are kept only in ``info.var_names``
     because they are frequently not valid MATLAB field names (e.g. ``"X [ft]"``); the
     per-zone data is addressed by 1-based index (``var_1`` ...) instead.
 
     Passive and shared variables carry no data: their ``var_<k>`` field is an empty
-    matrix ``[]``.  A shared variable is therefore never duplicated on disk -- the data
+    matrix ``[]``. A shared variable is therefore never duplicated on disk -- the data
     lives in its source zone and ``var_shared_from`` records where, so the MATLAB user
-    can dereference it (see the examples below).  Shared FE connectivity follows the
+    can dereference it (see the examples below). Shared FE connectivity follows the
     same convention: a zone sharing its node map has no ``node_map`` field at all, only
     ``node_map_shared_from``.
 
@@ -111,7 +111,7 @@ Examples:
         x = d.zone_1.var_1;        % first variable of the first zone
         p = d.zone_1.var_3;        % third variable
 
-    Variables shared from another zone are stored once.  Resolve them with a small
+    Variables shared from another zone are stored once. Resolve them with a small
     helper that follows ``var_shared_from``::
 
         function v = tecvar(d, zoneIdx, varIdx)
@@ -142,17 +142,17 @@ See Also:
       converting it.
 
 Note:
-    ``tec2mat`` requires SciPy (:mod:`scipy.io`).  Install it with ``pip install
+    ``tec2mat`` requires SciPy (:mod:`scipy.io`). Install it with ``pip install
     scipy`` if it is not already available.
 
 Note:
     :func:`scipy.io.savemat` writes the MAT version 5 format and assembles the whole
-    file in memory before writing.  Very large datasets are therefore limited by
+    file in memory before writing. Very large datasets are therefore limited by
     available memory and by the ~4 GB-per-variable ceiling of the MAT v5 format.
 
 Note:
     FEPOLYGON and FEPOLYHEDRON zones are written with their variable data, but their
-    face-based connectivity cannot be read and the ``node_map`` field is omitted.  A
+    face-based connectivity cannot be read and the ``node_map`` field is omitted. A
     warning is printed for each such zone.
 """
 
@@ -191,7 +191,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         prog="tec2mat",
         description=(
             # -|-------------------|---------------------------------------------|
-            "Convert a Tecplot file to a MATLAB .mat file.  Each input file maps\n"
+            "Convert a Tecplot file to a MATLAB .mat file. Each input file maps\n"
             "to one output file, with every zone stored as a named struct."
         ),
         epilog=(
@@ -219,7 +219,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="PATH",
         help=(
-            "Output file path.  Defaults to the input file stem with a "
+            "Output file path. Defaults to the input file stem with a "
             ".mat extension in the same directory as the input."
         ),
     )
@@ -247,7 +247,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=(
             "Orientation for 1-D arrays (FE vectors and per-variable "
             "metadata).  'column' (default) writes Nx1 vectors; 'row' "
-            "writes 1xN.  Ordered-zone arrays are unaffected."
+            "writes 1xN. Ordered-zone arrays are unaffected."
         ),
     )
     return parser.parse_args(argv)
@@ -263,7 +263,7 @@ def _build_info_dict(reader: Any) -> dict[str, Any]:
 
     The returned dict is stored by :func:`scipy.io.savemat` as a MATLAB struct named
     ``info``, holding the dataset title, file type, zone/variable counts, and the
-    ordered list of real variable names as a MATLAB cell array.  The real names are
+    ordered list of real variable names as a MATLAB cell array. The real names are
     kept here as metadata because they are frequently not valid MATLAB field names
     (e.g. ``"X [ft]"``); the per-zone arrays are addressed by 1-based index instead.
 
@@ -288,12 +288,12 @@ def _build_info_dict(reader: Any) -> dict[str, Any]:
 def _zone_to_dict(zone: Any, num_vars: int) -> dict[str, Any]:
     """Build one zone's struct for the output file.
 
-    The returned dict becomes a MATLAB struct (named ``zone_<n>`` by the caller).  It
+    The returned dict becomes a MATLAB struct (named ``zone_<n>`` by the caller). It
     contains the zone metadata, one ``var_<k>`` field per dataset variable (1-based),
     and, for simple finite-element zones, the ``node_map`` connectivity array.
 
     Each ``var_<k>`` holds the variable's data array at its native NumPy dtype, so the
-    on-disk precision is preserved on the MATLAB side.  Passive and shared variables
+    on-disk precision is preserved on the MATLAB side. Passive and shared variables
     carry no data: their ``var_<k>`` field is an empty matrix ``[]`` and the
     per-variable metadata records how to interpret it:
 
@@ -377,7 +377,7 @@ def _zone_to_dict(zone: Any, num_vars: int) -> dict[str, Any]:
     d["var_dtypes"] = np.array(dtypes, dtype=object)
     d["var_shared_from"] = shared_from
 
-    # Connectivity for simple FE zones only.  Ordered zones have no node map, and poly
+    # Connectivity for simple FE zones only. Ordered zones have no node map, and poly
     # zones expose none through the readers.
     #
     # A zone that shares connectivity is handled the same way as a shared variable

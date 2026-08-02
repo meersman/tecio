@@ -454,7 +454,7 @@ def create_FE_hanging_node_poly() -> tuple[
          \     |  /
           1--- 3 /
 
-    For FEPOLYGON, every face is an *edge* (2 nodes).  Faces are defined
+    For FEPOLYGON, every face is an *edge* (2 nodes). Faces are defined
     once and shared between adjacent elements via left/right element indices.
     A value of 0 in left/right means the face is on the domain boundary.
 

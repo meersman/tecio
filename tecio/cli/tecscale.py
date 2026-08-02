@@ -3,7 +3,7 @@ r"""Scale and/or offset variable arrays in a Tecplot data file.
 CFD solvers and experimental data sources frequently produce output in differing unit
 systems, and converting between them (e.g.pressure in Pa to kPa, temperature in Kelvin
 to Celsius or lengths in meters to feet) is a routine step before visualisation or
-comparison.  Performing these transformations would otherwise require loading the file
+comparison. Performing these transformations would otherwise require loading the file
 in Tecplot or writing a dedicated script. ``tecscale`` applies the linear transformation
 
 .. math::
@@ -11,7 +11,7 @@ in Tecplot or writing a dedicated script. ``tecscale`` applies the linear transf
     v' = v \cdot s + b
 
 to every value in a selected variable array, where :math:`s` is the scale factor and
-:math:`b` is the additive offset.  The transformation can be restricted to a single zone
+:math:`b` is the additive offset. The transformation can be restricted to a single zone
 and the output format is controlled by the output file extension, allowing unit
 conversion and format conversion to be performed in a single step.
 
@@ -144,14 +144,14 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=float,
         default=1.0,
         metavar="FLOAT",
-        help="Multiplicative scale factor.  Default: 1.0.",
+        help="Multiplicative scale factor. Default: 1.0.",
     )
     parser.add_argument(
         "-offset",
         type=float,
         default=0.0,
         metavar="FLOAT",
-        help="Additive offset applied after scaling.  Default: 0.0.",
+        help="Additive offset applied after scaling. Default: 0.0.",
     )
     parser.add_argument(
         "-zone",
@@ -159,7 +159,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="INDEX",
         help=(
-            "1-based zone index to apply the transformation to.  Default is all zones."
+            "1-based zone index to apply the transformation to. Default is all zones."
         ),
     )
     parser.add_argument(
@@ -169,7 +169,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="PATH",
         help=(
-            "Output file path.  The extension controls the output format.  "
+            "Output file path. The extension controls the output format.  "
             "Defaults to <stem>_scaled<ext> in the same directory."
         ),
     )
@@ -225,7 +225,7 @@ def _resolve_variable(spec: str, var_names: list[str]) -> int | None:
             return i
 
     print(
-        f"Error: variable '{spec}' not found.  Available: {var_names}",
+        f"Error: variable '{spec}' not found. Available: {var_names}",
         file=sys.stderr,
     )
     return None

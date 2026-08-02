@@ -138,7 +138,7 @@ class VariableList(Generic[_VarT]):
     """Read-only sequence of variables with positional *and* named access.
 
     Drop-in for the ``list`` previously returned by ``ReadZone.variable``:
-    iteration, ``len()``, and integer indexing are unchanged.  A string key
+    iteration, ``len()``, and integer indexing are unchanged. A string key
     resolves a variable by its exact, case-sensitive name.
 
     Subscripting returns the variable *object*; use its ``.values`` (or the
@@ -157,7 +157,7 @@ class VariableList(Generic[_VarT]):
     def __init__(self, variables: list[_VarT]) -> None:
         self._items: list[_VarT] = variables
         # Built lazily on first name lookup so purely positional use pays no
-        # cost.  For SZL this also avoids issuing a C call per variable name
+        # cost. For SZL this also avoids issuing a C call per variable name
         # until a name is actually requested.
         self._name_index: dict[str, int] | None = None
 

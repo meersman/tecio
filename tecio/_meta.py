@@ -2,7 +2,7 @@ r"""Structural metadata records shared by the Tecplot file writers.
 
 The writer for each output format -- SZL (``.szplt``), PLT (``.plt``), and ASCII DAT
 (``.dat``) -- keeps a running, in-memory description of what it has committed to disk:
-the dataset header, auxiliary-data counts, and one record per zone.  Defining that
+the dataset header, auxiliary-data counts, and one record per zone. Defining that
 description once here lets all three writers share a single representation instead of
 each maintaining ad-hoc bookkeeping.
 
@@ -16,10 +16,10 @@ Design notes:
       never the variable data arrays, so the record stays cheap in memory even for files
       with many zones.
     * ``slots=True`` removes the per-instance ``__dict__``, and immutable tuple fields
-      keep the per-variable lists compact.  A :class:`ZoneMeta` is a write-once snapshot
+      keep the per-variable lists compact. A :class:`ZoneMeta` is a write-once snapshot
       and is therefore ``frozen``; :class:`WriterMeta` is mutable because it grows as
       zones are written.
-    * Enum types are imported only under :data:`typing.TYPE_CHECKING`.  With ``from
+    * Enum types are imported only under :data:`typing.TYPE_CHECKING`. With ``from
       __future__ import annotations`` the annotations are never evaluated at runtime,
       which keeps this module free of any import cycle with :mod:`tecio.libtecio`.
 """
@@ -104,7 +104,7 @@ class WriterMeta:
     """Running record of everything a writer has committed to a file.
 
     Populated incrementally as the file header, auxiliary data, and zones are
-    written, so it always reflects the current on-disk state.  It is the single
+    written, so it always reflects the current on-disk state. It is the single
     source of truth for cross-zone validation (for example, resolving the shape
     of a shared variable) and is suitable for summarising the writer state.
 

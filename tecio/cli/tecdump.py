@@ -2,10 +2,10 @@ r"""Dump the full contents of a Tecplot data file to standard output.
 
 Inspecting the contents of a binary Tecplot file (variable names, zone metadata,
 auxiliary data, and raw nodal or element values) ordinarily requires either opening the
-file in Tecplot itself or writing a dedicated script against the TecIO API.  For a quick
+file in Tecplot itself or writing a dedicated script against the TecIO API. For a quick
 sanity check during a simulation or post-processing workflow, ``tecdump`` serializes
 every record in the file to plain text, providing a complete and human-readable
-representation of the file contents directly in the terminal.  The output is structured
+representation of the file contents directly in the terminal. The output is structured
 hierarchically: file header and auxiliary data first, followed by per-zone headers and,
 optionally, the underlying variable and connectivity arrays.
 
@@ -27,7 +27,7 @@ arrays can be suppressed entirely to focus on structural metadata.
 
 :Options:
     ``--ignore-zones``
-        Print only the file-level header and auxiliary data, then exit.  Zone records
+        Print only the file-level header and auxiliary data, then exit. Zone records
         and variable arrays are suppressed entirely. Useful for confirming file-level
         metadata such as solver, strand IDs, or global auxiliary entries without the
         overhead of parsing zone data.
@@ -47,7 +47,7 @@ arrays can be suppressed entirely to focus on structural metadata.
 
     ``-maxvals INT``
         Maximum number of values to print from any variable or connectivity array before
-        truncating with a summary line.  Defaults to a small number suitable for a quick
+        truncating with a summary line. Defaults to a small number suitable for a quick
         preview; set to a large value (e.g. ``1000000``) to print an array in full.
 
 :Returns:

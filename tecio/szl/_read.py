@@ -395,7 +395,7 @@ class ReadZone:
     ) -> npt.NDArray | None | tuple[npt.NDArray | None, ...]:
         """Return variable data array(s) for this zone.
 
-        A single key (0-based index or exact name) returns one array.  A list of exact
+        A single key (0-based index or exact name) returns one array. A list of exact
         names returns a tuple of arrays in the order given, suitable for unpacking::
 
             p = zone.get_array("p")
@@ -403,8 +403,8 @@ class ReadZone:
 
         Returns:
             One array (or ``None`` only if the variable is passive) for a scalar
-            key; a tuple of such arrays for a list of names.  A single-element list
-            yields a 1-tuple, not a bare array.  A shared variable resolves to its
+            key; a tuple of such arrays for a list of names. A single-element list
+            yields a 1-tuple, not a bare array. A shared variable resolves to its
             source zone's array, per :attr:`ReadVariable.values`.
 
         Raises:

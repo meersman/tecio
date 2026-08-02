@@ -1,12 +1,12 @@
 r"""Extract a subset of zones and/or variables from a Tecplot data file.
 
 Large Tecplot files produced by CFD solvers frequently contain many zones and variables,
-only a fraction of which are relevant to a given analysis.  Loading the full file into
+only a fraction of which are relevant to a given analysis. Loading the full file into
 Tecplot or writing a dedicated extraction script is impractical when the goal is simply
 to isolate a surface zone or a handful of flow variables for downstream processing.
 ``tecextract`` addresses this by writing a new Tecplot file containing only the
 requested subset, with the output format determined by the file extension of the output
-path.  This makes it straightforward to reduce file size, change format, or prepare a
+path. This makes it straightforward to reduce file size, change format, or prepare a
 subset for use with another tool in a single command.
 
 :Usage:
@@ -158,7 +158,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar="LIST",
         help=(
             "Comma-separated list of 1-based zone indices to extract "
-            "(e.g. -zones 1,3,5).  Default is all zones."
+            "(e.g. -zones 1,3,5). Default is all zones."
         ),
     )
     parser.add_argument(
@@ -168,7 +168,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar="LIST",
         help=(
             "Comma-separated list of 1-based variable indices to extract "
-            "(e.g. -variables 1,2,5).  Default is all variables."
+            "(e.g. -variables 1,2,5). Default is all variables."
         ),
     )
     parser.add_argument(
@@ -178,8 +178,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="PATH",
         help=(
-            "Output file path.  The extension controls the output format "
-            "(.szplt, .plt, .dat).  Defaults to <stem>_extract<ext> in "
+            "Output file path. The extension controls the output format "
+            "(.szplt, .plt, .dat). Defaults to <stem>_extract<ext> in "
             "the same directory as the input."
         ),
     )

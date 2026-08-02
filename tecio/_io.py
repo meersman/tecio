@@ -5,15 +5,15 @@ Supported modes mirror Python's built-in :func:`open`:
     ======  ============================================================================
     Mode    Behaviour
     ======  ============================================================================
-    ``r``   Open existing file for reading.  Raises :exc:`FileNotFoundError` if the file
+    ``r``   Open existing file for reading. Raises :exc:`FileNotFoundError` if the file
             does not exist.
-    ``w``   Open file for writing.  Overwrites any existing file.
+    ``w``   Open file for writing. Overwrites any existing file.
     ``x``   Exclusive creation — open for writing only if the file does **not** already
-            exist.  Raises :exc:`FileExistsError` otherwise.
+            exist. Raises :exc:`FileExistsError` otherwise.
     ``a``   Append — stream all zones from the existing file into a new temporary file,
-            then continue writing new zones into that same file.  On
+            then continue writing new zones into that same file. On
             :meth:`~AppendWrite.close` the temporary file atomically replaces the
-            original path.  Returns an :class:`AppendWrite` object whose write API is
+            original path. Returns an :class:`AppendWrite` object whose write API is
             identical to the format's ``Write`` class.
     ``a+``  Append-read — same streaming copy as ``a``, but the returned
             :class:`AppendReadWrite` object also exposes the full ``Read`` API populated
@@ -24,14 +24,14 @@ Supported modes mirror Python's built-in :func:`open`:
 Note:
     ``"a"`` and ``"a+"`` work by reading the source file in full and re-writing it
     zone-by-zone into a temporary sibling file, then leaving the ``Write`` handle open
-    for the caller to add further zones.  On close the temporary file is atomically
-    renamed over the original path (POSIX) or replaced (Windows).  This is the only safe
+    for the caller to add further zones. On close the temporary file is atomically
+    renamed over the original path (POSIX) or replaced (Windows). This is the only safe
     approach because PLT and SZL are sequential binary formats with no in-place editing
     capability.
 
 Note:
     FEPOLYGON and FEPOLYHEDRON zones are not copied during append operations because the
-    ``Write`` API does not yet expose a poly-zone writer.  A :exc:`NotImplementedError`
+    ``Write`` API does not yet expose a poly-zone writer. A :exc:`NotImplementedError`
     is raised if such zones are encountered in the source file.
 """
 
@@ -120,7 +120,7 @@ def _copy_zones(reader: szl.Read | plt.Read, writer: szl.Write | plt.Write) -> N
     """Stream all zones from *reader* into the open *writer*.
 
     Each zone is copied variable-by-variable at its original data type and value
-    location.  Both variable sharing (``var_sharing``) and FE connectivity sharing
+    location. Both variable sharing (``var_sharing``) and FE connectivity sharing
     (``con_sharing``) are preserved: a zone that shares its connectivity is
     re-emitted as a share rather than a duplicated node map.
 
@@ -211,9 +211,9 @@ def _copy_zones(reader: szl.Read | plt.Read, writer: szl.Write | plt.Write) -> N
 class AppendWrite:
     """Write handle returned by :func:`tecio.open` with ``mode='a'``.
 
-    Appends new zones to an existing Tecplot file.  Internally the existing file is
+    Appends new zones to an existing Tecplot file. Internally the existing file is
     stream-copied zone-by-zone into a temporary sibling file, and the write handle is
-    left open past all copied zones so new zones can be appended.  On :meth:`close` (or
+    left open past all copied zones so new zones can be appended. On :meth:`close` (or
     context-manager exit) the temporary file is atomically renamed over the original
     path — a POSIX rename on Unix, :func:`Path.replace` on Windows.
 
@@ -225,7 +225,7 @@ class AppendWrite:
 
     Note:
         FEPOLYGON and FEPOLYHEDRON zones cannot be copied because the Write API does not
-        yet expose a poly-zone writer.  A :exc:`NotImplementedError` is raised during
+        yet expose a poly-zone writer. A :exc:`NotImplementedError` is raised during
         ``open()`` if such zones are present in the source file.
 
     Example:
@@ -270,32 +270,32 @@ class AppendWrite:
         """Append a structured IJK-ordered zone.
 
         Delegates to the underlying format writer's ``write_ijk_zone``
-        (e.g. :meth:`tecio.szl.Write.write_ijk_zone`).  All parameters from that method
+        (e.g. :meth:`tecio.szl.Write.write_ijk_zone`). All parameters from that method
         are accepted here with one exception: ``variables`` is not meaningful because
         the variable list is fixed at open time from the existing file.
 
         Args:
             data (Sequence[ndarray]): One NumPy array per **active** variable
-                (non-passive, non-shared).  Shape ``(imax[, jmax[, kmax]])`` is inferred
-                automatically.  Fortran (column-major) order is assumed.
-            title (str | None): Zone title.  Defaults to ``"IJK_Zone_{n}"``.
+                (non-passive, non-shared). Shape ``(imax[, jmax[, kmax]])`` is inferred
+                automatically. Fortran (column-major) order is assumed.
+            title (str | None): Zone title. Defaults to ``"IJK_Zone_{n}"``.
             value_locations (Sequence[ValueLocation] | None): Per-variable
-                :class:`~tecio.libtecio.ValueLocation` for active variables.  Defaults
+                :class:`~tecio.libtecio.ValueLocation` for active variables. Defaults
                 to all :attr:`~tecio.libtecio.ValueLocation.NODAL`.
             passive_vars (Sequence[bool | int] | None): Per-variable passive flag for
                 the **full** variable list (length = total variables in the file, not
-                just active ones).  Defaults to all ``False``.
+                just active ones). Defaults to all ``False``.
             var_sharing (Sequence[int] | None): Per-variable share-from zone index
                 (1-based, counting all zones including those copied from the original
-                file).  ``0`` = no sharing.  Defaults to all ``0``.  Sharing grid
+                file).  ``0`` = no sharing. Defaults to all ``0``. Sharing grid
                 coordinates from zone 1 is a common pattern for transient data to avoid
                 duplicating large arrays.
-            solution_time (float): Solution time for transient data.  Defaults to
+            solution_time (float): Solution time for transient data. Defaults to
                 ``0.0``.
-            strand_id (int): Strand ID grouping related time steps.  Zones with the same
-                strand ID animate together in Tecplot 360.  Defaults to ``0`` (static).
+            strand_id (int): Strand ID grouping related time steps. Zones with the same
+                strand ID animate together in Tecplot 360. Defaults to ``0`` (static).
             aux (dict[str, str] | None): Zone-level auxiliary data as ``{name: value}``
-                pairs.  Defaults to ``None``.
+                pairs. Defaults to ``None``.
 
         Example:
             Append a time step, sharing the grid from zone 1:
@@ -321,7 +321,7 @@ class AppendWrite:
         FEPOLYGON and FEPOLYHEDRON are not supported.
 
         Args:
-            zone_type (ZoneType): Element topology.  One of:
+            zone_type (ZoneType): Element topology. One of:
                 :attr:`~tecio.libtecio.ZoneType.FELINESEG`,
                 :attr:`~tecio.libtecio.ZoneType.FETRIANGLE`,
                 :attr:`~tecio.libtecio.ZoneType.FEQUADRILATERAL`,
@@ -349,7 +349,7 @@ class AppendWrite:
             face_nbr_mode (FaceNeighborMode | None): Face-neighbor mode. Defaults to
                 :attr:`~tecio.libtecio.FaceNeighborMode.LOCAL_ONE_TO_ONE`. Ignored when
                 ``face_neighbors`` is ``None``.
-            solution_time (float): Solution time.  Defaults to ``0.0``.
+            solution_time (float): Solution time. Defaults to ``0.0``.
             strand_id (int): Strand ID. Defaults to ``0``.
             aux (dict[str, str] | None): Zone-level auxiliary data.
 
@@ -411,7 +411,7 @@ class AppendReadWrite(AppendWrite):
     """Read + write handle returned by :func:`tecio.open` with ``mode='a+'``.
 
     Inherits all write methods from :class:`AppendWrite` and additionally exposes the
-    full read interface populated from the **original** file.  The read data reflects
+    full read interface populated from the **original** file. The read data reflects
     the file as it existed before any new zones were appended — zones written during the
     current session are not visible via :attr:`zone` until the file is closed and
     re-opened.
@@ -672,7 +672,7 @@ def open(
     """Open a Tecplot file for reading, writing, or appending.
 
     Selects the correct format handler from the file extension and returns the
-    appropriate reader or writer.  All handles are context managers.
+    appropriate reader or writer. All handles are context managers.
 
     Args:
         path (str | os.PathLike): File path. Extension determines the format handler:
@@ -687,9 +687,9 @@ def open(
             - ``'w'`` -- Open Tecplot file for writing, truncating the file first.
             - ``'x'`` -- Open Tecplot file for exclusive creation, failing if the file
               already exists.
-            - ``'a'`` -- Append new zones to an existing file.  The file is
+            - ``'a'`` -- Append new zones to an existing file. The file is
               stream-copied to a temporary file; on close the temporary atomically
-              replaces the original.  Raises :exc:`FileNotFoundError` if the file does
+              replaces the original. Raises :exc:`FileNotFoundError` if the file does
               not exist (use ``'w'`` to create a new file).
             - ``'a+'`` -- Same as ``'a'`` but the returned handle also exposes the full
               read API populated from the original file.
@@ -717,9 +717,9 @@ def open(
              - Dataset title string embedded in the file header.
            * - ``variables``
              - ``None``
-             - Variable name list.  For SZL and PLT this may be deferred to the first
+             - Variable name list. For SZL and PLT this may be deferred to the first
                :meth:`~tecio.szl.Write.write_ijk_zone` or
-               :meth:`~tecio.szl.Write.write_fe_zone` call.  Required at open time for
+               :meth:`~tecio.szl.Write.write_fe_zone` call. Required at open time for
                DAT.
            * - ``file_type``
              - ``FileType.FULL``
@@ -729,7 +729,7 @@ def open(
 
     Keyword Args (modes ``'a'``, ``'a+'``):
         ``title``, ``variables``, and ``file_type`` default to the values read from the
-        existing file.  In most cases you should **not** pass these — they are
+        existing file. In most cases you should **not** pass these — they are
         documented here for completeness.
 
         .. list-table::
@@ -741,7 +741,7 @@ def open(
              - Description
            * - ``title``
              - From file
-             - Override the dataset title in the output file.  Rarely needed — the
+             - Override the dataset title in the output file. Rarely needed — the
                existing title is preserved by default.
            * - ``variables``
              - From file
@@ -750,7 +750,7 @@ def open(
                and any new zones.
            * - ``file_type``
              - From file
-             - Override the file type.  Rarely needed.
+             - Override the file type. Rarely needed.
 
     Returns:
         - ``'r'`` → :class:`tecio.szl.Read`, :class:`tecio.plt.Read`, or
@@ -793,7 +793,7 @@ def open(
 
     if ext not in _HANDLERS:
         raise ValueError(
-            f"Unsupported file extension: '{ext}'.  Supported: {sorted(_HANDLERS)}"
+            f"Unsupported file extension: '{ext}'. Supported: {sorted(_HANDLERS)}"
         )
 
     if mode == "r":
@@ -815,5 +815,5 @@ def open(
 
     else:
         raise ValueError(
-            f"Unrecognised mode '{mode}'.  Supported modes: 'r', 'w', 'x', 'a', 'a+'"
+            f"Unrecognised mode '{mode}'. Supported modes: 'r', 'w', 'x', 'a', 'a+'"
         )

@@ -1,21 +1,21 @@
 r"""Native binary reader for Tecplot PLT (``.plt``) files.
 
 This module provides a pure-Python / NumPy reader for Tecplot PLT binary files (format
-versions v112 and v191).  It is a **standalone debugging module** intended to be
+versions v112 and v191). It is a **standalone debugging module** intended to be
 integrated into the existing :mod:`plt` module once validated.
 
 Notes:
     * **No byte-swapping boilerplate.** The INT32 value of ``1`` written immediately
-      after the magic number is used to detect endianness at open time.  All subsequent
+      after the magic number is used to detect endianness at open time. All subsequent
       reads use the correct NumPy byte-order prefix (``"<"`` or ``">"``).
     * **Lazy variable data.** Zone and variable *metadata* is parsed during ``__init__``
-      and stored as lightweight dataclass attributes.  Actual numeric data is read from
+      and stored as lightweight dataclass attributes. Actual numeric data is read from
       disk only when ``.values`` (or ``.get_values()``) is called, matching the
       behaviour of :class:`szl.ReadVariable`.
     * **No text / geometry support.** Header records with markers 399.0 (geometry) and
       499.0 (text) are detected and skipped without parsing their contents.
     * **v112 and v191 zone headers.** Zone marker ``299.0`` → v112 header; ``298.0`` →
-      v191 header.  Both are fully supported.
+      v191 header. Both are fully supported.
 
 Limitations
     * FEPOLYGON and FEPOLYHEDRON zones are parsed for metadata but face-map reading is
@@ -92,7 +92,7 @@ _DATATYPE_DTYPE: dict[DataType, str] = {
     DataType.BYTE: "u1",
 }
 
-# PLT format variable location integers → ValueLocation enum.  The PLT spec uses 0 =
+# PLT format variable location integers → ValueLocation enum. The PLT spec uses 0 =
 # Node, 1 = Cell Centered (format guide §IV.iv), which is the opposite of the
 # ValueLocation enum (CELL_CENTERED=0, NODAL=1).
 _PLT_VALUELOCATION_MAP: dict[int, ValueLocation] = {
@@ -155,7 +155,7 @@ def _read_string(fp: io.BufferedIOBase, byte_order: str) -> str:
     """Read a null-terminated string stored as INT32 code-points.
 
     The PLT format stores each character as a 4-byte integer (see Note 1 of the format
-    spec).  The string is terminated by a zero INT32.
+    spec). The string is terminated by a zero INT32.
     """
     chars: list[str] = []
     while True:
@@ -250,7 +250,7 @@ class _ZoneMeta:
 class ReadAuxData:
     """Dictionary-like interface for PLT auxiliary data.
 
-    Values are stored as plain Python strings.  Convenience converters ``as_int``,
+    Values are stored as plain Python strings. Convenience converters ``as_int``,
     ``as_float``, and ``as_bool`` are provided to match the :class:`szl.ReadAuxData`
     API.
     """
@@ -376,11 +376,11 @@ class ReadVariable:
     def _resolve_data_meta(self) -> _ZoneMeta | None:
         """Return the :class:`_ZoneMeta` that owns this variable's data.
 
-        For a variable this zone stores itself this is simply ``self._meta``.  For a
+        For a variable this zone stores itself this is simply ``self._meta``. For a
         shared variable, the chain of per-variable ``shared_zone`` references is
         followed to the owning zone (with a cycle/range guard against malformed
         files) -- the variable-level analogue of
-        :meth:`ReadZone._resolve_connectivity_meta`.  Returns ``None`` when the
+        :meth:`ReadZone._resolve_connectivity_meta`. Returns ``None`` when the
         share cannot be resolved, e.g. when ``all_metas`` was not supplied at
         construction.
         """
@@ -511,7 +511,7 @@ class ReadVariable:
             return None
 
         # Resolve to the zone that actually owns this variable's data (self for unshared
-        # variables, the share-chain source otherwise).  The resolved meta describes the
+        # variables, the share-chain source otherwise). The resolved meta describes the
         # on-disk block being read, so it also drives the count, dtype, and ordered-zone
         # reshape/ghost-trim logic below.
         meta = self._resolve_data_meta()
@@ -561,7 +561,7 @@ class ReadVariable:
         if full_read and meta.zone_type == ZoneType.ORDERED:
             ni, nj, nk = meta.i_max, meta.j_max, meta.k_max
             if meta.value_locations[self.var_index - 1] == ValueLocation.CELL_CENTERED:
-                # On disk: i * j * (k-1) values in Fortran order.  Ghost padding
+                # On disk: i * j * (k-1) values in Fortran order. Ghost padding
                 # occupies the last row in I and J after reshape, so reshape to (ni, nj,
                 # nk-1) then slice to (ni-1, nj-1, nk-1) to discard the ghost values and
                 # return only significant cells.
@@ -727,7 +727,7 @@ class ReadZone:
     ) -> npt.NDArray | None | tuple[npt.NDArray | None, ...]:
         """Return variable data array(s) for this zone.
 
-        A single key (0-based index or exact name) returns one array.  A list of exact
+        A single key (0-based index or exact name) returns one array. A list of exact
         names returns a tuple of arrays in the order given, suitable for unpacking::
 
             p = zone.get_array("p")
@@ -735,7 +735,7 @@ class ReadZone:
 
         Returns:
             One array (or ``None`` if the variable is passive or shared) for a scalar
-            key; a tuple of such arrays for a list of names.  A single-element list
+            key; a tuple of such arrays for a list of names. A single-element list
             yields a 1-tuple, not a bare array.
 
         Raises:
@@ -750,10 +750,10 @@ class ReadZone:
     def _resolve_connectivity_meta(self) -> _ZoneMeta | None:
         """Return the :class:`_ZoneMeta` that owns this zone's connectivity.
 
-        For a zone with its own connectivity this is simply ``self._meta``.  For a zone
+        For a zone with its own connectivity this is simply ``self._meta``. For a zone
         that shares connectivity, the chain of ``connectivity_shared_zone`` references
         is followed to the owning zone (with a cycle/range guard against malformed
-        files).  Returns ``None`` when the share cannot be resolved -- e.g. when
+        files). Returns ``None`` when the share cannot be resolved -- e.g. when
         ``all_metas`` was not supplied at construction.
         """
         meta = self._meta
@@ -839,7 +839,7 @@ class ReadZone:
 class _PltParser:
     """Low-level PLT binary parser.
 
-    Called once from :class:`Read.__init__`.  After construction the following
+    Called once from :class:`Read.__init__`. After construction the following
     attributes are available:
 
         ===================   ===============================================
@@ -1137,7 +1137,7 @@ class _PltParser:
     def _parse_data_section(self, fp: io.BufferedIOBase) -> None:
         """Parse the data section and record variable file offsets.
 
-        The EOHMARKER has already been consumed by :meth:`_parse_header`.  We iterate
+        The EOHMARKER has already been consumed by :meth:`_parse_header`. We iterate
         over zones in declaration order, matching each data block to the corresponding
         :class:`_ZoneMeta` in ``self.zones``.
         """
@@ -1201,7 +1201,7 @@ class _PltParser:
         """Record file offsets for each active variable data block.
 
         Data is stored in **block** order (all values for variable 0, then all values
-        for variable 1, …).  We seek rather than read so we do not load the data into
+        for variable 1, …). We seek rather than read so we do not load the data into
         memory.
         """
         for v in range(num_vars):
@@ -1228,7 +1228,7 @@ class _PltParser:
         """Return the number of values on disk for variable *var_idx*.
 
         For cell-centered variables in ORDERED zones the PLT format writes ``IMax * JMax
-        * (KMax - 1)`` values on disk (see Note 5 of the format spec).  The significant
+        * (KMax - 1)`` values on disk (see Note 5 of the format spec). The significant
         cell count is ``(I-1) * (J-1) * (K-1)``; the remainder are ghost (zero-padded)
         values that are trimmed in :meth:`ReadVariable.get_values` after reshaping.
 
@@ -1242,7 +1242,7 @@ class _PltParser:
             j = max(meta.j_max, 1)
             k = max(meta.k_max, 1)
             if loc == ValueLocation.CELL_CENTERED:
-                # PLT Note 5: IMax * JMax * (KMax - 1) values on disk.  Only K is
+                # PLT Note 5: IMax * JMax * (KMax - 1) values on disk. Only K is
                 # reduced; I and J retain their full extent as ghost padding in the
                 # Fortran-order layout.
                 return i * j * max(k - 1, 1)
@@ -1427,7 +1427,7 @@ class Read:
         """Context manager protocol for read-only file interfaces.
 
         Read classes hold no open file handle between accesses, so there is nothing to
-        release on exit.  Provided for API consistency with the Write classes and to
+        release on exit. Provided for API consistency with the Write classes and to
         support the ``with tecio.open(...) as r:`` pattern.
         """
         pass

@@ -250,9 +250,9 @@ def _stage_point_rows(
 ) -> None:
     """Write *cols* as ``DATAPACKING=POINT`` rows into *buf*.
 
-    Each element of *cols* is the flat value array for one variable.  One tab-separated
+    Each element of *cols* is the flat value array for one variable. One tab-separated
     row is written per point (node or cell): all variable values for that point appear
-    on the same line.  All column arrays must have the same length.  Does nothing when
+    on the same line. All column arrays must have the same length. Does nothing when
     *cols* is empty.
 
     Example:
@@ -288,12 +288,12 @@ class Write:
         path:
             Destination file path.
         title:
-            Dataset title.  Defaults to ``"untitled"``.
+            Dataset title. Defaults to ``"untitled"``.
         variables:
             Variable name list.  ``None`` defers file creation until the first
             zone-writing call (lazy open).
         file_type:
-            :class:`FileType` enum.  Defaults to :attr:`FileType.FULL`.
+            :class:`FileType` enum. Defaults to :attr:`FileType.FULL`.
         precision:
             Uniform floating point precision for the whole file.  :attr:`DataType.FLOAT`
             (default; ``"single"``) or :attr:`DataType.DOUBLE` (``"double"``). Also
@@ -509,24 +509,24 @@ class Write:
         Zone dimensions are inferred from the shape of the first NODAL array.
 
         Args:
-            data:            One NumPy array per dataset variable.  Array shape is used
+            data:            One NumPy array per dataset variable. Array shape is used
                              to infer ``imax``, ``jmax``, and ``kmax``; Fortran
-                             (column-major) order is assumed.  Pass ``None`` to write a
+                             (column-major) order is assumed. Pass ``None`` to write a
                              zone header only.
-            title:           Zone title.  Defaults to ``"IJK_Zone_{current_zone + 1}"``.
-            variables:       Variable name list.  Required on the first call when the
+            title:           Zone title. Defaults to ``"IJK_Zone_{current_zone + 1}"``.
+            variables:       Variable name list. Required on the first call when the
                              file has not been opened yet (lazy-open path); ignored once
                              the file is already initialised. Default to ``[V1, V2, V3,
                              ...]`` if not provided in open or zone call.
-            value_locations: Per-variable :class:`~libtecio.ValueLocation`.  Defaults to
+            value_locations: Per-variable :class:`~libtecio.ValueLocation`. Defaults to
                              all ``NODAL``.
-            passive_vars:    Per-variable passive flags.  Defaults to all active
+            passive_vars:    Per-variable passive flags. Defaults to all active
                              (``False``).
-            var_sharing:     Per-variable share-from zone index (1-based).  Defaults to
+            var_sharing:     Per-variable share-from zone index (1-based). Defaults to
                              no sharing (all zeros).
-            solution_time:   Solution time for transient data.  Use ``0.0`` for static
+            solution_time:   Solution time for transient data. Use ``0.0`` for static
                              zones. Default to ``0.0`` if not defined.
-            strand_id:       Strand ID for transient data.  Use ``0`` for static
+            strand_id:       Strand ID for transient data. Use ``0`` for static
                              zones. Default to ``0`` (static) if not defined.
             aux:             Zone-level auxiliary data as ``{name: value}`` string
                              pairs.
@@ -795,12 +795,12 @@ class Write:
             ``FEPOLYGON`` and ``FEPOLYHEDRON`` raise :exc:`NotImplementedError`.
 
         Args:
-            data:            Sequence of 1-D arrays, one per dataset variable.  NODAL
+            data:            Sequence of 1-D arrays, one per dataset variable. NODAL
                              arrays must have length ``num_nodes``; CELL_CENTERED arrays
                              must have length ``num_cells``.  ``num_nodes`` and
                              ``num_cells`` are inferred from ``node_map`` (or from the
                              ``con_sharing`` source zone when ``node_map`` is omitted).
-            zone_type:       FE zone type from the ZoneType enum.  Must be one of the
+            zone_type:       FE zone type from the ZoneType enum. Must be one of the
                              types in ``_FE_SIMPLE``.
             node_map:        Integer array of shape ``(num_cells, nodes_per_cell)``
                              containing 1-based node indices.  32- or 64-bit write is
@@ -808,17 +808,17 @@ class Write:
                              Required unless ``con_sharing`` is set, in which case the
                              connectivity -- and the node/cell counts derived from it --
                              are inherited from the source zone instead.
-            title:           Zone title string.  Defaults to ``"FE_Zone_{current_zone +
+            title:           Zone title string. Defaults to ``"FE_Zone_{current_zone +
                              1}"`` if not provided.
-            variables:       Variable name list.  Required only when the file has not
-                             been opened yet (lazy-open path).  Ignored on subsequent
+            variables:       Variable name list. Required only when the file has not
+                             been opened yet (lazy-open path). Ignored on subsequent
                              zones once the file is already initialised. Default to
                              ``[V1, V2, V3, ...]`` if not provided in open or zone call.
-            value_locations: Per-variable ValueLocation.  Defaults to all NODAL.
-            passive_vars:    Per-variable passive flags.  Defaults to all active
+            value_locations: Per-variable ValueLocation. Defaults to all NODAL.
+            passive_vars:    Per-variable passive flags. Defaults to all active
                              (False).
-            var_sharing:     Per-variable share from zone index.  Defaults to no
-                             sharing.  Cross-checked against ``node_map`` /
+            var_sharing:     Per-variable share from zone index. Defaults to no
+                             sharing. Cross-checked against ``node_map`` /
                              ``con_sharing`` for a consistent node/cell count.
             con_sharing:     Optional zone index that the connectivity is shared from.
                              ``None`` or ``0`` indicates no sharing (this zone owns its

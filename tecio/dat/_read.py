@@ -3,7 +3,7 @@ r"""Tecplot ASCII DAT file reader API.
 Supported ``DATAPACKING`` modes:
     * ``BLOCK`` — one contiguous value block per variable (Tecplot default).
     * ``POINT`` — one row of all variable values per node, followed by a separate
-      row-per-cell section for any cell-centred variables.  This is the format most
+      row-per-cell section for any cell-centred variables. This is the format most
       commonly produced by third-party exporters and tools that treat the file like a
       CSV with a header.
 """
@@ -213,9 +213,9 @@ def _next_token_is_value(text: str, i: int) -> bool:
     """Return ``True`` if the token at *i* is a value, not the next key.
 
     Supports the legacy whitespace-separated ``KEY VALUE`` form in zone headers
-    (e.g. ``STRANDID 2``).  A token is treated as the *next key* — and therefore not a
+    (e.g. ``STRANDID 2``). A token is treated as the *next key* — and therefore not a
     value for the preceding key — when it is immediately followed (after optional
-    whitespace) by ``=``.  A quoted token is always a value.
+    whitespace) by ``=``. A quoted token is always a value.
 
     Example:
         >>> _next_token_is_value("STRANDID 2", 9)
@@ -270,7 +270,7 @@ def _kv_split(text: str) -> dict[str, str]:
             i += 1
             continue
 
-        # Determine the separator between key and value.  The modern form is
+        # Determine the separator between key and value. The modern form is
         # ``KEY = VALUE``; some legacy files (and ``preplot``) also accept a bare
         # whitespace separator, e.g. ``STRANDID 2``.
         while i < n and text[i] in " \t":
@@ -362,7 +362,7 @@ def _parse_legacy_element_type(text: str) -> ZoneType:
     """Parse a legacy ``ET=`` (element type) value into a :class:`ZoneType`.
 
     Recognises the canonical Tecplot element names (``TRIANGLE``,
-    ``QUADRILATERAL``, ``TETRAHEDRON``, ``BRICK``, ``LINESEG``).  A prefix-based
+    ``QUADRILATERAL``, ``TETRAHEDRON``, ``BRICK``, ``LINESEG``). A prefix-based
     fallback provides a little tolerance for the minor spelling variants some
     third-party exporters emit, keeping the reader as permissive as ``preplot``.
 
@@ -473,7 +473,7 @@ def _parse_varsharelist(text: str) -> dict[int, int]:
         "([1-3,5]=2)"     → {0: 2, 1: 2, 2: 2, 4: 2}
 
     Note that the bracketed group may contain either a single integer or a
-    hyphen-separated range.  Mixed forms such as ``[1-3,5]`` are also produced by some
+    hyphen-separated range. Mixed forms such as ``[1-3,5]`` are also produced by some
     writers.
 
     Args:
@@ -751,7 +751,7 @@ class ReadVariable:
         """Return :class:`DataType` inferred from the stored NumPy dtype.
 
         A shared variable reports the source zone's actual dtype, since its data array
-        is resolved from that zone (see :attr:`shared_zone`).  Only a passive variable
+        is resolved from that zone (see :attr:`shared_zone`). Only a passive variable
         (which has no data array anywhere in the file) returns :attr:`DataType.FLOAT` as
         a placeholder.
         """
@@ -846,7 +846,7 @@ class ReadZone:
     Attributes:
         datapacking: :class:`~tecio.libtecio.DataPacking` member reflecting the
             ``DATAPACKING`` keyword found in the zone header (``BLOCK`` or
-            ``POINT``).  The data arrays are identical either way; this attribute
+            ``POINT``). The data arrays are identical either way; this attribute
             records how the values were laid out on disk.
         shared_connectivity: 1-based source zone index if this zone's connectivity is
             shared via ``CONNECTIVITYSHAREZONE``, else ``None``.  :attr:`node_map`
@@ -921,7 +921,7 @@ class ReadZone:
     def nodes_per_cell(self) -> int:
         """Nodes per cell based on zone type.
 
-        Uses the module-level ``_NODES_PER_ELEM`` table for simple FE types.  For
+        Uses the module-level ``_NODES_PER_ELEM`` table for simple FE types. For
         ORDERED zones the count is inferred from the number of active dimensions (1-D →
         2, 2-D → 4, 3-D → 8).
 
@@ -954,7 +954,7 @@ class ReadZone:
     ) -> npt.NDArray | None | tuple[npt.NDArray | None, ...]:
         """Return variable data array(s) for this zone.
 
-        A single key (0-based index or exact name) returns one array.  A list of exact
+        A single key (0-based index or exact name) returns one array. A list of exact
         names returns a tuple of arrays in the order given, suitable for unpacking::
 
             p = zone.get_array("p")
@@ -986,7 +986,7 @@ class ReadZone:
 class Read:
     """Read a Tecplot ASCII DAT file into memory.
 
-    The entire file is parsed on construction.  All data is then available through the
+    The entire file is parsed on construction. All data is then available through the
     same attributes and methods as :class:`szl.Read`.
 
     Example:
@@ -1049,7 +1049,7 @@ class Read:
         """Context manager protocol for read-only file interfaces.
 
         Read classes hold no open file handle between accesses, so there is nothing to
-        release on exit.  Provided for API consistency with the Write classes and to
+        release on exit. Provided for API consistency with the Write classes and to
         support the ``with tecio.open(...) as r:`` pattern.
         """
         pass
@@ -1300,7 +1300,7 @@ class Read:
         # (legacy).  ``ET`` (element type) only ever appears on finite-element zones —
         # ordered/structured data has no elements — so it merely names the element
         # *shape* once a zone is already known to be FE, and is ignored on ordered
-        # zones.  Modern keywords win when present.
+        # zones. Modern keywords win when present.
         legacy_is_fe: bool | None = None
         legacy_packing: DataPacking | None = None
         if "F" in kv:
@@ -1310,11 +1310,11 @@ class Read:
             zt_raw = kv["ZONETYPE"].rstrip(",").strip().lower()
             zone_type = _STR_TO_ZONETYPE.get(zt_raw, ZoneType.ORDERED)
         elif legacy_is_fe is False:
-            # F=POINT/BLOCK: ordered zone.  A stray ET (if any) does not apply.
+            # F=POINT/BLOCK: ordered zone. A stray ET (if any) does not apply.
             zone_type = ZoneType.ORDERED
         elif legacy_is_fe or "ET" in kv:
             # Finite-element zone: F=FEPOINT/FEBLOCK, or an ET keyword with no F
-            # (some exporters omit F).  The element shape comes from ET, which is
+            # (some exporters omit F). The element shape comes from ET, which is
             # then required.
             if "ET" not in kv:
                 raise ValueError(
@@ -1584,9 +1584,9 @@ class Read:
 
         The spec writes two interleaved sections:
 
-            * **Nodal section** — ``num_nodes`` rows, one per node.  Each row contains
+            * **Nodal section** — ``num_nodes`` rows, one per node. Each row contains
               the values of all active nodal variables in dataset order.
-            * **Cell-centered section** — ``num_cells`` rows, one per element.  Each row
+            * **Cell-centered section** — ``num_cells`` rows, one per element. Each row
               contains the values of all active CC variables in dataset order.
 
         When all variables are nodal the cell-centered section is empty and is skipped

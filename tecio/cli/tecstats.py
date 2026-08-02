@@ -26,7 +26,7 @@ corrective operation.
         are reported.
 
     ``-variable INDEX``
-        Restrict output to the variable at the given one-based index.  If omitted, all
+        Restrict output to the variable at the given one-based index. If omitted, all
         variables are reported.
 
     ``-csv``
@@ -154,14 +154,14 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=int,
         default=None,
         metavar="INDEX",
-        help="1-based zone index to report.  Default is all zones.",
+        help="1-based zone index to report. Default is all zones.",
     )
     parser.add_argument(
         "-variable",
         type=int,
         default=None,
         metavar="INDEX",
-        help="1-based variable index to report.  Default is all variables.",
+        help="1-based variable index to report. Default is all variables.",
     )
     parser.add_argument(
         "-csv",
@@ -169,7 +169,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=False,
         dest="write_csv",
         help=(
-            "Write statistics to a CSV file.  The filename is derived "
+            "Write statistics to a CSV file. The filename is derived "
             "automatically from the input file stem with a _stats suffix "
             "always appended, preceded by optional _zone_N and _var_N "
             "segments when -zone or -variable are active "

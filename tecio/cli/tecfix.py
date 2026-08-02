@@ -156,7 +156,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="PATH",
         help=(
-            "Explicit output file path.  Defaults to <stem>_fixed<ext> "
+            "Explicit output file path. Defaults to <stem>_fixed<ext> "
             "in the same directory as the input file."
         ),
     )
@@ -196,7 +196,7 @@ def _classify_array(arr: npt.NDArray) -> str | None:
 
     """
     # Some readers (e.g. DAT) may return an empty or None array for passive
-    # or otherwise unavailable variables.  Treat these as clean -> there is
+    # or otherwise unavailable variables. Treat these as clean -> there is
     # nothing to inspect and numpy operations like isnan would error or
     # return misleading results on a zero-size array.
     if arr is None or arr.size == 0:
@@ -235,7 +235,7 @@ def _process_zone(
 
     For each variable:
     - If the variable is already passive or shared, it is forwarded exactly
-      as-is.  Sharing references are 1-based zone indices that are identical
+      as-is. Sharing references are 1-based zone indices that are identical
       in the output file because tecfix writes every zone in order without
       skipping any.
     - If the variable is a floating-point type and contains NaN or Inf it is
@@ -478,7 +478,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     } or None
 
                     # Sanitize solution_time: if it is NaN the zone metadata
-                    # is corrupt.  Reset both solution_time and strand_id to 0
+                    # is corrupt. Reset both solution_time and strand_id to 0
                     # so Tecplot treats the zone as stationary and the writer
                     # does not propagate the bad value downstream.
                     sol_time = zone.solution_time

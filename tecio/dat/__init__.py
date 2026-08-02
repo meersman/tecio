@@ -6,7 +6,7 @@ files, but are useful for small datasets, debugging, and interoperability
 with other tools.
 
 This module provides :class:`Read` for parsing and :class:`Write` for
-producing Tecplot 360 ASCII data files (``.dat`` / ``.tec``).  Both
+producing Tecplot 360 ASCII data files (``.dat`` / ``.tec``). Both
 classes mirror the interfaces of :class:`szl.Read` / :class:`szl.Write`
 and :class:`plt.Read` / :class:`plt.Write` so that downstream code can
 switch between file formats by changing only the file extension passed to

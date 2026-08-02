@@ -82,7 +82,7 @@ def _normalize_precision(precision: DataType | str) -> DataType:
 def _infer_data_type(dt: DataType | np.dtype) -> DataType:
     """Return a C-supported :class:`DataType` for a :class:`DataType` or NumPy dtype.
 
-    Maps NumPy dtypes to the closest supported Tecplot data type.  For PLT format only
+    Maps NumPy dtypes to the closest supported Tecplot data type. For PLT format only
     FLOAT and DOUBLE are supported; all integer types are upcast to DOUBLE.  precision
     is promoted to ``FLOAT``; 64-bit integers are promoted to ``INT32``; ``int8`` and
     ``uint8`` map to ``BYTE``.
@@ -128,7 +128,7 @@ def _write_data(data: npt.ArrayLike, dtype: np.dtype | DataType | None = None) -
     """Write a single variable's data using ``tecdat142``.
 
     ``tecdat142`` only accepts ``float32`` or ``float64``; integer types are
-    upcast to ``float64``.  The array is ravelled in Fortran (column-major)
+    upcast to ``float64``. The array is ravelled in Fortran (column-major)
     order before writing, which matches Tecplot's expected BLOCK layout.
 
     Args:
@@ -198,12 +198,12 @@ class Write:
     """Write Tecplot PLT (``.plt``) files using the classic TecIO API.
 
     The classic TecIO API maintains a single implicit global file context;
-    only one PLT file may be open at a time.  This class wraps that
+    only one PLT file may be open at a time. This class wraps that
     procedural API behind the same interface as :class:`szl.Write`.
 
     Dataset- and variable-level auxiliary data can be set at any time before
-    the first zone is written.  They are buffered and flushed automatically
-    when the first zone header is created.  Zone-level auxiliary data is
+    the first zone is written. They are buffered and flushed automatically
+    when the first zone header is created. Zone-level auxiliary data is
     passed directly to each zone-writing method.
 
     Like :class:`szl.Write`, the file can be opened *eagerly* (when
@@ -214,10 +214,10 @@ class Write:
     Args:
         path:         Output file path (should end in ``.plt``).
         title:        Dataset title string.
-        variables:    Variable name list.  If provided the file is opened
-                      immediately.  If ``None``, the file is opened on the first
+        variables:    Variable name list. If provided the file is opened
+                      immediately. If ``None``, the file is opened on the first
                       zone write.
-        file_type:    :class:`~libtecio.FileType` enum.  Defaults to
+        file_type:    :class:`~libtecio.FileType` enum. Defaults to
                       :attr:`~libtecio.FileType.FULL`.
 
     Attributes:
@@ -226,8 +226,8 @@ class Write:
         variables:    Variable name list, or ``None`` if the file has not been opened
                       yet.
         file_type:    File type (FULL, GRID, or SOLUTION).
-        current_zone: The index of the most recently written zone.  Before any zones
-                      have been written, ``current_zone`` is ``0``.  During a call to a
+        current_zone: The index of the most recently written zone. Before any zones
+                      have been written, ``current_zone`` is ``0``. During a call to a
                       zone writing method, ``current_zone`` still refers to the
                       previously written zone.  ``current_zone`` is incremented only
                       after a zone writing method successfully completes.
@@ -238,7 +238,7 @@ class Write:
 
     Caution:
         Unlike the SZL writer, zone data must be written strictly in order: header →
-        variable data → connectivity.  This is enforced internally by the write methods.
+        variable data → connectivity. This is enforced internally by the write methods.
 
     Examples:
         Define file header fields on open.
@@ -325,7 +325,7 @@ class Write:
         self._opened: bool = False
 
         # Running record of everything committed to the file so far (header,
-        # aux counts, per-zone dimensions/sharing).  Used to validate
+        # aux counts, per-zone dimensions/sharing). Used to validate
         # var_sharing / con_sharing on later zones against what an earlier
         # zone actually wrote, rather than trusting the caller's arrays
         # alone.
@@ -349,7 +349,7 @@ class Write:
         """Close the file on context-manager exit.
 
         The file is closed regardless of whether an exception was raised in
-        the ``with`` block.  If closing itself raises, that secondary
+        the ``with`` block. If closing itself raises, that secondary
         exception is only re-raised when the ``with`` block completed without
         error; otherwise the original exception takes precedence.
         """
@@ -419,7 +419,7 @@ class Write:
         """Write buffered dataset- and variable-level aux data to the file.
 
         Must be called *after* ``tecini142`` and *before* the first
-        ``teczne142``.  The zone-writing methods call this automatically;
+        ``teczne142``. The zone-writing methods call this automatically;
         users need not call it directly unless flushing explicitly.
 
         In the classic API:
@@ -433,7 +433,7 @@ class Write:
         for name, value in self.auxdataset.items():
             libtecio.tecauxstr142(str(name), str(value))
 
-        # Variable-level aux data.  Keys may be 1-based int indices or names.
+        # Variable-level aux data. Keys may be 1-based int indices or names.
         for key, subdict in self.auxvar.items():
             if isinstance(key, int):
                 var_idx = key - 1  # Convert to 0-based
@@ -492,22 +492,22 @@ class Write:
         produce an ``(I, J, 1)`` zone.
 
         Args:
-            data:            Sequence of NumPy arrays, one per active variable.  NODAL
-                             arrays must all share the same shape.  CELL_CENTERED arrays
+            data:            Sequence of NumPy arrays, one per active variable. NODAL
+                             arrays must all share the same shape. CELL_CENTERED arrays
                              must have shape ``(imax-1, jmax-1, kmax-1)`` (minimum 1 in
                              each dimension).
-            title:           Zone title.  Defaults to ``"IJK_Zone_{current_zone + 1}"``.
-            variables:       Variable name list.  Required only when the file has not
-                             been opened yet (lazy-open path).  Ignored on subsequent
+            title:           Zone title. Defaults to ``"IJK_Zone_{current_zone + 1}"``.
+            variables:       Variable name list. Required only when the file has not
+                             been opened yet (lazy-open path). Ignored on subsequent
                              zones once the file is already initialised. Default to
                              ``[V1, V2, V3, ...]`` if not provided in open or zone call.
-            value_locations: Per-variable :class:`ValueLocation`.  Defaults to all
+            value_locations: Per-variable :class:`ValueLocation`. Defaults to all
                              :attr:`~ValueLocation.NODAL`.
             passive_vars:    Per-variable passive flags (one per dataset variable, not
-                             just active variables).  Defaults to all active
+                             just active variables). Defaults to all active
                              (``False``).
             var_sharing:     Per-variable source-zone sharing indices (one per dataset
-                             variable).  ``0`` means no sharing.  Defaults to no
+                             variable).  ``0`` means no sharing. Defaults to no
                              sharing.
             solution_time:   Solution time for transient data (``0.0`` indicates
                              steady-state).
@@ -540,7 +540,7 @@ class Write:
         if datapacking != DataPacking.BLOCK:
             raise NotImplementedError(
                 "DATAPACKING=POINT is an ASCII-only layout and is not supported "
-                "by the PLT binary format.  Use DataPacking.BLOCK (the default) "
+                "by the PLT binary format. Use DataPacking.BLOCK (the default) "
                 "or write to a .dat file instead."
             )
 
@@ -797,27 +797,27 @@ class Write:
         Args:
             data:            Sequence of 1-D NumPy arrays, one per active variable.
                              NODAL arrays must have length ``num_nodes``; CELL_CENTERED
-                             arrays must have length ``num_cells``.  Both counts are
+                             arrays must have length ``num_cells``. Both counts are
                              inferred from *node_map* (or from the ``con_sharing``
                              source zone when *node_map* is omitted).
-            zone_type:       FE zone type from the ZoneType enum.  Must be one of the
+            zone_type:       FE zone type from the ZoneType enum. Must be one of the
                              types in ``_FE_SIMPLE``.
             node_map:        Integer array of shape ``(num_cells, nodes_per_cell)`` with
-                             1-based node indices.  Required unless ``con_sharing`` is
+                             1-based node indices. Required unless ``con_sharing`` is
                              set, in which case the connectivity -- and the node/cell
                              counts derived from it -- are inherited from the source
                              zone instead.
-            title:           Zone title.  Defaults to ``"FE_Zone_{current_zone + 1}"``.
-            variables:       Variable name list.  Required only when the file has not
-                             been opened yet (lazy-open path).  Ignored on subsequent
+            title:           Zone title. Defaults to ``"FE_Zone_{current_zone + 1}"``.
+            variables:       Variable name list. Required only when the file has not
+                             been opened yet (lazy-open path). Ignored on subsequent
                              zones once the file is already initialised. Default to
                              ``[V1, V2, V3, ...]`` if not provided in open or zone call.
-            value_locations: Per-variable :class:`ValueLocation`.  Defaults to all
+            value_locations: Per-variable :class:`ValueLocation`. Defaults to all
                              :attr:`~ValueLocation.NODAL`.
-            passive_vars:    Per-variable passive flags (dataset-length).  Defaults to
+            passive_vars:    Per-variable passive flags (dataset-length). Defaults to
                              all active.
             var_sharing:     Per-variable sharing zone indices (dataset-length).
-                             Defaults to no sharing.  Cross-checked against
+                             Defaults to no sharing. Cross-checked against
                              ``node_map`` / ``con_sharing`` for a consistent node/cell
                              count.
             con_sharing:     Optional zone index that the connectivity is shared from.
@@ -827,7 +827,7 @@ class Write:
                              neighbor mode is set to global. Connectivity cannot be
                              shared between cell-based and face-based finite element
                              zones.
-            face_neighbors:  Optional face-neighbour connection array.  Its length sets
+            face_neighbors:  Optional face-neighbour connection array. Its length sets
                              ``num_face_connections`` in the zone header automatically.
             face_nbr_mode:   Face-neighbour mode; used only when *face_neighbors* is
                              provided.
@@ -863,7 +863,7 @@ class Write:
         if datapacking != DataPacking.BLOCK:
             raise NotImplementedError(
                 "DATAPACKING=POINT is an ASCII-only layout and is not supported "
-                "by the PLT binary format.  Use DataPacking.BLOCK (the default) "
+                "by the PLT binary format. Use DataPacking.BLOCK (the default) "
                 "or write to a .dat file instead."
             )
         if zone_type not in _FE_SIMPLE:

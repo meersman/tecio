@@ -1,7 +1,7 @@
 r"""Convert between Tecplot data file formats.
 
 The three Tecplot file formats, SZL binary (``.szplt``), PLT binary (``.plt``), and
-ASCII DAT (``.dat``), are not always interchangeable in practice.  Tecplot itself
+ASCII DAT (``.dat``), are not always interchangeable in practice. Tecplot itself
 stores all data internally in binary form and provides license-free command-line
 utilities (``preplot``, ``tec360 -convert``) for converting from lower-level formats
 upward to SZL, but no supported path exists for the reverse without a active license.
@@ -182,7 +182,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="PATH",
         help=(
-            "Explicit output file path.  Defaults to the input file stem with "
+            "Explicit output file path. Defaults to the input file stem with "
             "the new extension in the same directory as the input."
         ),
     )
@@ -198,7 +198,7 @@ def _copy_zones(reader: Any, writer: Any) -> None:
     """Stream all zones from *reader* into the open *writer*.
 
     Each zone is reproduced at its original data type and value location.
-    Connectivity (node maps) is copied verbatim for FE zones.  Zone-level
+    Connectivity (node maps) is copied verbatim for FE zones. Zone-level
     auxiliary data is forwarded as well.
 
     Args:

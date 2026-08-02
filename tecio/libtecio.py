@@ -234,7 +234,7 @@ class DataPacking(Enum):
     """Zone data packing order for ASCII (``.dat``) files.
 
     Controls whether data is laid out variable-by-variable or point-by-point
-    in the ASCII file.  The ``DATAPACKING`` keyword in a zone header takes one
+    in the ASCII file. The ``DATAPACKING`` keyword in a zone header takes one
     of these two values.
 
     .. list-table::

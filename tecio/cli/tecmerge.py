@@ -3,8 +3,8 @@ r"""Merge zones from multiple Tecplot data files into a single output file.
 Post-processing workflows commonly produce results distributed across multiple files.
 ``tecmerge`` collects all zones from an arbitrary number of input files into a single
 output, reconciling variable lists across sources by taking their union and writing any
-variable absent from a given source as passive.  Input files may be specified explicitly
-or via a quoted glob pattern and may be any mix of supported formats.  When merging
+variable absent from a given source as passive. Input files may be specified explicitly
+or via a quoted glob pattern and may be any mix of supported formats. When merging
 time-step sequences, solution times and strand IDs can be assigned automatically from a
 start time and either a fixed interval or an end time.
 
@@ -44,7 +44,7 @@ start time and either a fixed interval or an end time.
         Solution time of the first input file. Used with ``--assign-time-strands``.
 
     ``-delta VALUE``
-        Constant time increment between successive input files.  Mutually exclusive with
+        Constant time increment between successive input files. Mutually exclusive with
         ``-end``.
 
     ``-end VALUE``
@@ -136,8 +136,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         nargs="+",
         metavar="FILE",
         help=(
-            "Input Tecplot files.  Glob patterns are expanded (quote the "
-            "pattern to prevent shell expansion).  Files are merged in the "
+            "Input Tecplot files. Glob patterns are expanded (quote the "
+            "pattern to prevent shell expansion). Files are merged in the "
             "order given / matched."
         ),
     )
@@ -150,7 +150,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         required=True,
         metavar="PATH",
         help=(
-            "Output file path.  The extension controls the output format "
+            "Output file path. The extension controls the output format "
             "(.szplt, .plt, .dat)."
         ),
     )
@@ -166,7 +166,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="STRING",
         help=(
-            "Dataset title for the output file.  Defaults to the title of "
+            "Dataset title for the output file. Defaults to the title of "
             "the first input file."
         ),
     )
@@ -180,7 +180,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         dest="assign_ts",
         help=(
             "Assign evenly-spaced solution times and a strand ID to all "
-            "zones.  Each input file corresponds to one time step.  "
+            "zones. Each input file corresponds to one time step.  "
             "Requires -start and one of -delta or -end."
         ),
     )
@@ -192,7 +192,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Solution time of the first input file.",
     )
     # -delta and -end are mutually exclusive -- either specifies the spacing,
-    # the other specifies the endpoint.  Providing both over-constrains the
+    # the other specifies the endpoint. Providing both over-constrains the
     # problem and is therefore disallowed at the parser level.
     step_group = ts.add_mutually_exclusive_group()
     step_group.add_argument(
@@ -208,7 +208,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="VALUE",
         help=(
-            "Solution time of the last input file.  The step is computed as "
+            "Solution time of the last input file. The step is computed as "
             "(end - start) / (N - 1) where N is the number of input files."
         ),
     )
@@ -217,7 +217,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=int,
         default=1,
         metavar="ID",
-        help="Strand ID to assign to all zones.  Default: 1.",
+        help="Strand ID to assign to all zones. Default: 1.",
     )
 
     return parser.parse_args(argv)
@@ -310,7 +310,7 @@ def _write_zone(
 ) -> None:
     """Write one zone to *writer* using the reconciled variable list.
 
-    Variables present in *zone* are copied verbatim.  Variables absent from
+    Variables present in *zone* are copied verbatim. Variables absent from
     *zone* (``None`` entries in *local_index_map*) are written as passive.
 
     Args:

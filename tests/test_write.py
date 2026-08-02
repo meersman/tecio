@@ -946,7 +946,7 @@ class TestPrecisionOverride:
 
     SZL and DAT share one rule (explicit precision overrides only
     floating-point-inferred variables; integers are always preserved) but differ in
-    their *default* (SZL: no override at all; DAT: FLOAT/single).  PLT has a
+    their *default* (SZL: no override at all; DAT: FLOAT/single). PLT has a
     fundamentally different rule (applies to every variable, including integers, with no
     automatic mode) forced by a real, confirmed constraint of the classic API -- not a
     design choice, so it's tested separately rather than parametrized alongside SZL/DAT.
