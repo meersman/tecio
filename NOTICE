@@ -2,8 +2,8 @@ tecio-python
 Copyright 2025 John Meersman
 
 This product requires the Tecplot TecIO library, which is proprietary software
-owned by Tecplot, Inc. and is not covered by this license.
-Tecplot and TecIO are trademarks of Tecplot, Inc.
+owned by Tecplot, Inc. and is not covered by this license. Tecplot and TecIO
+are trademarks of Tecplot, Inc.
 
 The license agreement for the TecIO compiled shared libraries is located at:
 lib/tecio_license_agreement.txt
