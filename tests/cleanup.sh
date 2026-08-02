@@ -8,4 +8,5 @@ rm -f batch.log
 rm -f batch.log
 rm -f *.csv
 rm -f *.mat
+rm -f *.json
 rm -rf output/

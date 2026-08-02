@@ -233,6 +233,75 @@ def shared_path(request, shared_dataset: dict[str, Path]) -> Path:
     return shared_dataset[request.param]
 
 
+def _write_aux_dataset(path: Path) -> None:
+    """Same 3-zone sharing layout as ``_write_shared_dataset``, plus real
+    auxiliary data at all three levels (dataset, two of three zones, two of
+    five variables -- deliberately sparse, so the sparse-export behavior of
+    ``--export-json`` gets exercised too).  ``shared_dataset`` is used
+    everywhere else specifically *because* it has no pre-existing aux data,
+    so this is a separate fixture rather than a modification of it.
+    """
+    x = np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float32)
+    y = np.array([0.0, 0.0, 1.0, 0.0], dtype=np.float32)
+    z = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
+    nodes = np.array([[1, 2, 3, 4]], dtype=np.int64)
+    c1 = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float64)
+    c2 = np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float64)
+    w1 = np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float64)
+    w3 = np.array([50.0, 60.0, 70.0, 80.0], dtype=np.float64)
+
+    with tecio.open(str(path), "w", variables=["x", "y", "z", "c", "w"]) as w:
+        w.add_auxdataset_dict({"Solver": "MyCFD", "Version": "2.1"})
+        w.add_auxvar_dict({1: {"Units": "m"}, 4: {"Units": "Pa"}})
+        w.flush_aux()
+        w.write_fe_zone(
+            zone_type=ZoneType.FETETRAHEDRON,
+            data=[x, y, z, c1, w1],
+            node_map=nodes,
+            title="Zone1_Owner",
+            strand_id=1,
+            solution_time=0.0,
+            aux={"Description": "Wing"},
+        )
+        w.write_fe_zone(
+            zone_type=ZoneType.FETETRAHEDRON,
+            data=[c2],
+            var_sharing=[1, 1, 1, 0, 1],
+            con_sharing=1,
+            title="Zone2_SharesFromZone1",
+            strand_id=1,
+            solution_time=1.0,
+        )
+        w.write_fe_zone(
+            zone_type=ZoneType.FETETRAHEDRON,
+            data=[w3],
+            var_sharing=[1, 1, 1, 2, 0],
+            con_sharing=1,
+            title="Zone3_SharesFromZone1And2",
+            strand_id=1,
+            solution_time=2.0,
+            aux={"Description": "Empennage"},
+        )
+
+
+@pytest.fixture(scope="session")
+def aux_dataset(tmp_path_factory) -> dict[str, Path]:
+    """Write the aux-populated dataset once per session, in every format."""
+    out_dir = tmp_path_factory.mktemp("aux_dataset")
+    paths: dict[str, Path] = {}
+    for fmt, ext in zip(_FORMATS, ["szplt", "plt", "dat"], strict=True):
+        p = out_dir / f"aux.{ext}"
+        _write_aux_dataset(p)
+        paths[fmt] = p
+    return paths
+
+
+@pytest.fixture(params=_FORMATS)
+def aux_path(request, aux_dataset: dict[str, Path]) -> Path:
+    """Yield the aux-populated dataset's input file for each supported format."""
+    return aux_dataset[request.param]
+
+
 _FLAG_TO_EXT = {"-szplt": ".szplt", "-plt": ".plt", "-dat": ".dat"}
 
 
@@ -2004,6 +2073,117 @@ class TestTecaux:
         ret = tecaux(["-d", "X=1", "-f", "-o", str(dst), str(shared_path)])
         assert ret == 0
         assert dst.stat().st_size > 0
+
+    # -- Strip / Export json --------------------------------------------------------
+
+    def test_strip_and_export_together(self, aux_path: Path, tmp_path: Path) -> None:
+        """--strip --export-json in one call covers the mechanical happy path for both.
+
+        Uses ``aux_path`` (see ``_write_aux_dataset`` above), not
+        ``shared_path`` -- the latter deliberately has no pre-existing aux
+        data, so it can't exercise stripping/exporting anything real.
+        """
+        src = tmp_path / f"flow{aux_path.suffix}"
+        shutil.copy(aux_path, src)
+        strip_dst = tmp_path / f"stripped{aux_path.suffix}"
+
+        ret = tecaux(["--strip", "--export-json", "-o", str(strip_dst), "--force", str(src)])
+        assert ret == 0
+
+        # Stripped file: nothing left at any level, sharing still intact
+        with tecio.open(str(strip_dst), "r") as r:
+            assert dict(r.auxdata.items()) == {}
+            assert dict(r.zone[0].auxdata.items()) == {}
+            assert dict(r.zone[2].auxdata.items()) == {}
+            assert dict(r.get_var_auxdata(1).items()) == {}
+            assert dict(r.get_var_auxdata(4).items()) == {}
+            assert r.zone[1].variable[0].shared_zone == 1
+            assert r.zone[2].shared_connectivity == 1
+            np.testing.assert_allclose(
+                r.zone[1].variable[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
+            )
+
+        # JSON: exactly the original (pre-strip) data, sparse
+        json_dst = src.with_name(f"{src.stem}_aux.json")
+        assert json_dst.exists()
+        with open(json_dst) as f:
+            dumped = json.load(f)
+        assert dumped["AUXDATASET"] == {"Solver": "MyCFD", "Version": "2.1"}
+        assert dumped["AUXZONE"] == {
+            "1": {"Description": "Wing"},
+            "3": {"Description": "Empennage"},
+        }
+        assert dumped["AUXVAR"] == {"1": {"Units": "m"}, "4": {"Units": "Pa"}}
+
+        # And it round-trips: feeding the export back in via -j reproduces the original
+        # aux data on a fresh copy
+        reimported = tmp_path / f"reimported{aux_path.suffix}"
+        assert tecaux(["-j", str(json_dst), "-o", str(reimported), "--force", str(src)]) == 0
+        with tecio.open(str(reimported), "r") as r:
+            assert dict(r.auxdata.items())["Solver"] == "MyCFD"
+            assert dict(r.zone[0].auxdata.items())["Description"] == "Wing"
+
+    def test_export_json_alone_leaves_source_untouched(
+        self, aux_path: Path, tmp_path: Path
+    ) -> None:
+        """--export-json without --strip never modifies the source file.
+
+        Only checkable without --strip: with --strip also given, the source is
+        *expected* to be left alone too (only the separate strip output changes), so
+        this specific guarantee has no combined-mode equivalent.
+        """
+        src = tmp_path / f"flow{aux_path.suffix}"
+        shutil.copy(aux_path, src)
+        before = src.read_bytes()
+
+        assert tecaux(["--export-json", str(src)]) == 0
+
+        assert src.read_bytes() == before
+        assert (tmp_path / "flow_aux.json").exists()
+
+    def test_strip_alone_does_not_write_json(
+        self, aux_path: Path, tmp_path: Path
+    ) -> None:
+        """--strip without --export-json produces no JSON file at all.
+
+        Regression guard: if a future edit ever dropped the ``if args.export_json:``
+        guard around the JSON-writing step, a test that only ever exercised the combined
+        case would never notice, since a JSON file would legitimately exist either way.
+        """
+        src = tmp_path / f"flow{aux_path.suffix}"
+        shutil.copy(aux_path, src)
+
+        assert tecaux(["--strip", str(src)]) == 0
+
+        assert (tmp_path / f"flow_no_aux{aux_path.suffix}").exists()
+        assert not (tmp_path / "flow_aux.json").exists()
+
+    def test_output_flag_ignored_with_warning_for_export_only(
+        self, aux_path: Path, tmp_path: Path, capsys
+    ) -> None:
+        """-o is meaningless (and warned about) for --export-json without --strip.
+
+        Only reachable in export-only mode: when --strip is also given, -o legitimately
+        applies to the strip output, so this warning path can't be exercised through the
+        combined call at all.
+        """
+        src = tmp_path / f"flow{aux_path.suffix}"
+        shutil.copy(aux_path, src)
+        ignored_path = tmp_path / "ignored.dat"
+
+        ret = tecaux(["--export-json", "-o", str(ignored_path), str(src)])
+        assert ret == 0
+        assert "is ignored" in capsys.readouterr().err
+        assert not ignored_path.exists()
+        assert (tmp_path / "flow_aux.json").exists()
+
+    def test_strip_export_rejects_add_flags(
+        self, aux_path: Path, tmp_path: Path
+    ) -> None:
+        """--strip/--export-json combined with -d/-z/-v/-j is rejected, not guessed at."""
+        dst = tmp_path / f"out{aux_path.suffix}"
+        assert tecaux(["--strip", "-d", "X=1", "-o", str(dst), str(aux_path)]) == 1
+        assert tecaux(["--export-json", "-z", "1", "X=1", str(aux_path)]) == 1
 
 
 # --------------------------------------------------------------------------------------

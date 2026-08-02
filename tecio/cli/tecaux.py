@@ -1,21 +1,29 @@
-r"""Add dataset-, zone-, or variable-level auxiliary data to a Tecplot data file.
+r"""Add, remove, or export dataset, zone, or variable level auxiliary data.
 
-Tecplot's auxiliary data mechanism attaches arbitrary ``name=value`` string metadata to
-a dataset, a zone, or a variable -- solver name, run date, units, a description, or any
-other annotation that doesn't belong in the numerical data itself.  Adding this after
-the fact ordinarily means writing a one-off script against the TecIO API.  ``tecaux``
-does this from the command line: it copies the input file verbatim (every zone,
-variable, and existing sharing relationship preserved exactly) and merges in whatever
-new auxiliary entries were requested at each level, in a single read/write pass.  An
-existing key with the same name is overwritten; everything else about the source file is
-unchanged.
+Tecplot's auxiliary data mechanism attaches arbitrary ``name=value`` metadata to a
+dataset, a zone, or a variable (solver name, run date, units, a description, or any
+other annotation that doesn't belong in the numerical data itself_).  Managing this
+after the fact ordinarily means writing a one-off script against the TecIO API.
+``tecaux`` does this from the command line, in a single read/write pass, in three
+mutually exclusive modes:
+
+* By default (no ``--strip``/``--export-json``): merges new auxiliary entries (from
+  ``-d``/``-z``/``-v`` and/or ``-j``) into a copy of the input file.  Every zone,
+  variable, and existing sharing relationship is preserved exactly; an existing key with
+  the same name is overwritten.
+* ``--strip`` removes every auxiliary entry at all three levels and writes the result to
+  a new file, still preserving sharing.
+* ``--export-json`` writes every *existing* auxiliary entry to a JSON file, in the same
+  format ``-j`` reads back -- without touching the source file at all, unless combined
+  with ``--strip``.
 
 :Usage:
 
 .. code:: bash
 
     tecaux [-h] [-d KEY=VALUE] ... [-z INDEX KEY=VALUE] ...
-           [-v INDEX_OR_NAME KEY=VALUE] ... [-j PATH] [-o PATH] [-f] PATH
+           [-v INDEX_OR_NAME KEY=VALUE] ... [-j PATH] [-s] [--export-json]
+           [-o PATH] [-f] PATH
 
 :Positional Arguments:
     ``PATH``
@@ -42,14 +50,27 @@ unchanged.
         Load bulk auxiliary data from a JSON file (see format below).  Applied before
         any ``-d``/``-z``/``-v`` flags, which take precedence on a key collision.
 
+    ``-s``, ``--strip``
+        Remove all auxiliary data (dataset, zone, and variable levels) and write the
+        result to ``<stem>_no_aux<ext>`` (or ``-o``'s path).  Mutually exclusive with
+        ``-d``/``-z``/``-v``/``-j``.  Combine with ``--export-json`` to keep a JSON copy
+        of what was removed.
+
+    ``--export-json``
+        Write every existing auxiliary entry to ``<stem>_aux.json``, in the same
+        ``AUXDATASET``/``AUXZONE``/``AUXVAR`` format ``-j`` reads, without modifying
+        the source file, unless combined with ``--strip``.  Mutually exclusive with
+        ``-d``/``-z``/``-v``/``-j``.
+
     ``-o PATH``, ``--output PATH``
         Output file path.  The extension controls the output format: ``.szplt``,
-        ``.plt``, or ``.dat``.  Defaults to ``<stem>_aux<ext>`` in the same directory as
-        the input file.
+        ``.plt``, or ``.dat``.  Defaults to ``<stem>_aux<ext>``, or
+        ``<stem>_no_aux<ext>`` with ``--strip``.  Not used by ``--export-json`` alone
+        which always writes ``<stem>_aux.json``, regardless of ``-o``.
 
     ``-f``, ``--force``
-        Overwrite the output file if it already exists.  Without this flag the command
-        exits with an error rather than silently clobbering an existing file.
+        Overwrite the output file(s) if they already exist.  Without this flag the
+        command exits with an error rather than silently clobbering an existing file.
 
 :JSON Format:
     .. code:: json
@@ -77,11 +98,19 @@ unchanged.
     (the same three forms ``-z``/``-v`` accept on the command line). Every JSON key must
     be a quoted string, including numeric indices (``"1"``, not ``1``).
 
+    ``--export-json`` writes this exact format back out, keyed by exact 1-based index
+    (never ``"all"``, even if every zone happens to share identical aux content) and
+    omitting any zone/variable/level with nothing to report.
+
 :Returns:
-    A new Tecplot file written to the output path with the requested auxiliary data
-    merged in.  Exit code is ``0`` on success and non-zero if the input file cannot be
-    read, a ``-z``/``-v``/JSON target cannot be resolved, or the output file already
-    exists and ``--force`` is not set.
+    In the default mode, a new Tecplot file written to the output path with the
+    requested auxiliary data merged in.  With ``--strip``, a new Tecplot file with all
+    auxiliary data removed.  With ``--export-json``, a JSON file of everything that was
+    found (and the source file is untouched, unless ``--strip`` is also given).  Exit
+    code is ``0`` on success and non-zero if the input file cannot be read, a
+    ``-z``/``-v``/JSON target cannot be resolved, ``--strip``/``--export-json`` is
+    combined with ``-d``/``-z``/``-v``/``-j``, or an output file already exists and
+    ``--force`` is not set.
 
 Examples:
     Tag a dataset with solver metadata (repeat the flag for multiple pairs)::
@@ -114,6 +143,21 @@ Examples:
     Bulk metadata from a file, with one CLI override on top::
 
         $ tecaux -j metadata.json -d Version=2.2 flow.szplt
+
+    Back up everything currently on a file before editing it by hand, without touching
+    the file itself::
+
+        $ tecaux --export-json flow.szplt        # writes flow_aux.json
+
+    Sanitize a file for external sharing, discarding whatever aux data it had::
+
+        $ tecaux --strip flow.szplt               # writes flow_no_aux.szplt
+
+    Sanitize a file but keep a record of what was removed, in case it's needed later
+    (e.g. to reapply with ``-j`` after review)::
+
+        $ tecaux --strip --export-json flow.szplt
+        # writes flow_no_aux.szplt and flow_aux.json
 
     Call directly from a Python session::
 
@@ -182,6 +226,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "    $ tecaux -z all RunDate=2024-01-15 <file>\n"
             "  Bulk metadata from a file\n"
             "    $ tecaux -j metadata.json <file>\n"
+            "  Export existing aux data without touching the source file\n"
+            "    $ tecaux --export-json <file>\n"
+            "  Strip all aux data, keeping a JSON backup of what was removed\n"
+            "    $ tecaux --strip --export-json <file>\n"
         ),
         formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
             prog, width=70, max_help_position=24
@@ -241,6 +289,29 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "-s",
+        "--strip",
+        action="store_true",
+        default=False,
+        help=(
+            "Remove all auxiliary data (dataset, zone, and variable levels) "
+            "and write the result to <stem>_no_aux<ext> (or -o's path). "
+            "Mutually exclusive with -d/-z/-v/-j; combine with "
+            "--export-json to also save what was removed."
+        ),
+    )
+    parser.add_argument(
+        "--export-json",
+        action="store_true",
+        default=False,
+        help=(
+            "Write every existing auxiliary entry to <stem>_aux.json, in "
+            "the same AUXDATASET/AUXZONE/AUXVAR format -j reads -- without "
+            "modifying the source file, unless combined with --strip. "
+            "Mutually exclusive with -d/-z/-v/-j."
+        ),
+    )
+    parser.add_argument(
         "-o",
         "--output",
         type=str,
@@ -248,7 +319,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar="PATH",
         help=(
             "Output file path. The extension controls the output format. "
-            "Defaults to <stem>_aux<ext> in the same directory as the input."
+            "Defaults to <stem>_aux<ext> in the same directory as the input "
+            "(or <stem>_no_aux<ext> with --strip; not used by --export-json "
+            "alone, which always writes <stem>_aux.json)."
         ),
     )
     parser.add_argument(
@@ -440,6 +513,57 @@ def _load_json_aux(
     return dataset_aux, zone_groups, var_groups
 
 
+def _collect_all_aux(reader: Any) -> dict[str, Any]:
+    """Collect every dataset-, zone-, and variable-level aux entry from *reader*.
+
+    The exact inverse of ``_load_json_aux``: produces the same
+    ``AUXDATASET``/``AUXZONE``/``AUXVAR`` structure, so a file exported with
+    ``--export-json`` can be fed straight back in with ``-j`` (to the same
+    file, a modified copy, or an entirely different one) without any
+    reshaping. Zones/variables are keyed by their exact 1-based index --
+    never collapsed into an ``"all"`` entry even when every zone happens to
+    share the same aux content, since a later zone added to the file
+    wouldn't have had that entry originally and shouldn't silently inherit
+    it on a subsequent import.
+
+    A zone or variable with no aux entries at all is omitted entirely
+    (sparse), not written as an empty object -- matching how a missing key
+    on the *input* side already means "nothing to apply here".
+
+    Args:
+        reader: An open ``Read`` instance.
+
+    Returns:
+        A dict with up to three top-level keys (``AUXDATASET``, ``AUXZONE``,
+        ``AUXVAR``); a level with nothing to export is omitted entirely, so
+        a file with no aux data anywhere yields ``{}``.
+
+    """
+    result: dict[str, Any] = {}
+
+    dataset_aux = dict(reader.auxdata.items())
+    if dataset_aux:
+        result["AUXDATASET"] = dataset_aux
+
+    zone_aux: dict[str, dict[str, str]] = {}
+    for i, zone in enumerate(reader.zone):
+        entries = dict(zone.auxdata.items())
+        if entries:
+            zone_aux[str(i + 1)] = entries
+    if zone_aux:
+        result["AUXZONE"] = zone_aux
+
+    var_aux: dict[str, dict[str, str]] = {}
+    for i in range(reader.num_vars):
+        entries = dict(reader.get_var_auxdata(i + 1).items())
+        if entries:
+            var_aux[str(i + 1)] = entries
+    if var_aux:
+        result["AUXVAR"] = var_aux
+
+    return result
+
+
 # --------------------------------------------------------------------------------------
 # Per-zone processing
 # --------------------------------------------------------------------------------------
@@ -501,13 +625,161 @@ def _process_zone(
     return writer_data, writer_locs, passive_vars, var_sharing, existing_aux
 
 
+def _write_zone_data(
+    writer: Any,
+    zone: Any,
+    writer_data: list[np.ndarray],
+    writer_locs: list[Any],
+    passive_vars: list[bool],
+    var_sharing: list[int],
+    zone_aux: dict[str, str] | None,
+) -> None:
+    """Perform the actual write zone call for one already processed zone.
+
+    Shared between add-mode (``main()``) and strip/export-mode
+    (``_run_strip_or_export()``) -- the only thing that differs between them
+    is what *zone_aux* is (a merged dict, or ``None`` when stripping), so
+    this is the one piece worth keeping in exactly one place rather than
+    risking the ``con_sharing``/``node_map`` handling drifting between two
+    copies.
+
+    Args:
+        writer:       Open ``Write`` instance for the destination file.
+        zone:         Source ``ReadZone`` being copied.
+        writer_data:  Active, non-shared variable arrays (from ``_process_zone``).
+        writer_locs:  Matching value locations (from ``_process_zone``).
+        passive_vars: Per-variable passive flags, dataset order.
+        var_sharing:  Per-variable sharing, dataset order.
+        zone_aux:     Zone-level aux to write, or ``None`` for none at all.
+
+    """
+    zt = zone.zone_type
+    common_kw: dict[str, Any] = dict(
+        title=zone.title,
+        value_locations=writer_locs,
+        passive_vars=passive_vars,
+        var_sharing=var_sharing,
+        solution_time=zone.solution_time,
+        strand_id=zone.strand_id,
+        aux=zone_aux,
+    )
+
+    if zt == ZoneType.ORDERED:
+        writer.write_ijk_zone(data=writer_data, **common_kw)
+    else:
+        con_sharing = zone.shared_connectivity
+        writer.write_fe_zone(
+            zone_type=zt,
+            data=writer_data,
+            node_map=None if con_sharing else zone.node_map,
+            con_sharing=con_sharing,
+            **common_kw,
+        )
+
+
 # --------------------------------------------------------------------------------------
 # Main entry point
 # --------------------------------------------------------------------------------------
 
 
+def _run_strip_or_export(args: argparse.Namespace, src: Path) -> int:
+    """Handle ``--strip``/``--export-json``, independently or together.
+
+    Args:
+        args: Parsed arguments; ``args.strip`` and/or ``args.export_json``
+              is ``True`` (``main()`` only calls this when at least one is).
+        src:  Validated-to-exist input file path.
+
+    Returns:
+        Exit code -- ``0`` on success, ``1`` on error.
+
+    """
+    if args.output is not None and args.export_json and not args.strip:
+        print(
+            "Warning: -o is ignored by --export-json alone -- the export "
+            f"always goes to {src.stem}_aux.json.",
+            file=sys.stderr,
+        )
+
+    json_dst = src.with_name(f"{src.stem}_aux.json")
+    strip_dst = (
+        Path(args.output)
+        if args.output is not None
+        else src.with_stem(src.stem + "_no_aux")
+    )
+
+    if args.export_json and json_dst.exists() and not args.force:
+        print(
+            f"Error: output file already exists: {json_dst}\nUse --force to overwrite.",
+            file=sys.stderr,
+        )
+        return 1
+    if args.strip and strip_dst.exists() and not args.force:
+        print(
+            (
+                f"Error: output file already exists: {strip_dst}\n"
+                "Use --force to overwrite."
+            ),
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        with tecio_open(str(src), "r") as reader:
+            if args.export_json:
+                aux = _collect_all_aux(reader)
+                with open(json_dst, "w", encoding="utf-8") as fh:
+                    json.dump(aux, fh, indent=2)
+                print(f"Exported auxiliary data: {src}  ->  {json_dst}")
+
+            if args.strip:
+                print(f"Stripping auxiliary data: {src}  ->  {strip_dst}")
+                with tecio_open(
+                    str(strip_dst),
+                    "w",
+                    title=reader.title,
+                    variables=reader.variables,
+                    file_type=reader.file_type,
+                ) as writer:
+                    for i, zone in enumerate(reader.zone):
+                        zt = zone.zone_type
+                        if zt in _FE_POLY:
+                            print(
+                                f"Warning: zone {i + 1} ('{zone.title}') is "
+                                f"{zt.name} and cannot be copied -- skipping.",
+                                file=sys.stderr,
+                            )
+                            continue
+
+                        writer_data, writer_locs, passive_vars, var_sharing, _ = (
+                            _process_zone(zone)
+                        )
+                        # No dataset/var aux is ever added to the writer, and zone_aux
+                        # is unconditionally None here.
+                        _write_zone_data(
+                            writer,
+                            zone,
+                            writer_data,
+                            writer_locs,
+                            passive_vars,
+                            var_sharing,
+                            None,
+                        )
+                print(f"Done. Stripped output written to: {strip_dst}")
+
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error: {exc}", file=sys.stderr)
+        if args.strip:
+            strip_dst.unlink(missing_ok=True)
+        if args.export_json:
+            json_dst.unlink(missing_ok=True)
+        return 1
+
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """Add auxiliary data to a Tecplot file.
+    """Add, remove, or export auxiliary data to a Tecplot file.
 
     Returns:
         Exit code -- ``0`` on success, ``1`` on error.
@@ -519,6 +791,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not src.exists():
         print(f"Error: input file not found: {src}", file=sys.stderr)
         return 1
+
+    if args.strip or args.export_json:
+        add_flags_given = bool(args.data or args.zone or args.var or args.json)
+        if add_flags_given:
+            print(
+                "Error: --strip/--export-json cannot be combined with "
+                "-d/-z/-v/-j -- run them as separate calls.",
+                file=sys.stderr,
+            )
+            return 1
+        return _run_strip_or_export(args, src)
 
     dst = (
         Path(args.output)
@@ -665,27 +948,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                         **zone_by_target.get(zone_num, {}),
                     } or None
 
-                    common_kw: dict[str, Any] = dict(
-                        title=zone.title,
-                        value_locations=writer_locs,
-                        passive_vars=passive_vars,
-                        var_sharing=var_sharing,
-                        solution_time=zone.solution_time,
-                        strand_id=zone.strand_id,
-                        aux=merged_zone_aux,
+                    _write_zone_data(
+                        writer,
+                        zone,
+                        writer_data,
+                        writer_locs,
+                        passive_vars,
+                        var_sharing,
+                        merged_zone_aux,
                     )
-
-                    if zt == ZoneType.ORDERED:
-                        writer.write_ijk_zone(data=writer_data, **common_kw)
-                    else:
-                        con_sharing = zone.shared_connectivity
-                        writer.write_fe_zone(
-                            zone_type=zt,
-                            data=writer_data,
-                            node_map=None if con_sharing else zone.node_map,
-                            con_sharing=con_sharing,
-                            **common_kw,
-                        )
 
     except Exception as exc:  # noqa: BLE001
         print(f"Error: {exc}", file=sys.stderr)
