@@ -9,10 +9,23 @@ The public *read* interface matches the ``ReadZone`` classes in
 :mod:`tecio.szl`, :mod:`tecio.plt`, and :mod:`tecio.dat` (``title``,
 ``zone_type``, ``dimensions``, ``num_nodes``, ``num_elements``,
 ``nodes_per_cell``, ``solution_time``, ``strand_id``, ``node_map``,
-``auxdata``, ``variable``, ``is_enabled()``, ``datapacking``) so a zone can be
-fed straight into the writers.  Dimensions for ordered zones and node/element
-counts for FE zones are inferred from the variable arrays / node map when not
-supplied explicitly.
+``shared_connectivity``, ``auxdata``, ``variable``, ``get_array``,
+``is_enabled()``, ``datapacking``) so a zone can be fed straight into the
+writers.  Dimensions for ordered zones and node/element counts for FE zones are
+inferred from the variable arrays / node map when not supplied explicitly.
+
+Connectivity sharing:
+    Like the readers, an FE zone may inherit its connectivity from an earlier
+    zone rather than owning a :attr:`node_map` of its own.  Sharing is stored as
+    a direct reference to the source :class:`Zone`, so :attr:`node_map` reads
+    through to that source and :attr:`shared_connectivity` reports the source
+    zone's 1-based index (derived from its current dataset position, so it
+    survives zone reordering).  :meth:`tecio.Dataset.branch_connectivity` turns
+    a shared node map into an owned copy.
+
+Zones can be built directly from ``{"name": array}`` dictionaries via
+:meth:`Zone.ijk_from_dict` (ordered) and :meth:`Zone.fe_from_dict` (finite
+element, with the node map supplied separately).
 """
 
 from __future__ import annotations
@@ -23,15 +36,15 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 
-from ._variable import Variable
 from .libtecio import DataPacking, DataType, ValueLocation, ZoneType
+from ._variable import Variable, coerce_value_location
 
 if TYPE_CHECKING:
     from ._dataset import Dataset
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
+# ======================================================================================
+# Module-level constants and helpers
+# ======================================================================================
 
 #: Nodes per element for the simple (cell-based) FE zone types.
 _NODES_PER_ELEM: dict[ZoneType, int] = {
@@ -45,10 +58,59 @@ _NODES_PER_ELEM: dict[ZoneType, int] = {
 #: FE zone types supported end-to-end by the writers.
 _FE_SIMPLE: frozenset[ZoneType] = frozenset(_NODES_PER_ELEM)
 
+#: Default FE zone type inferred from a node map's nodes-per-cell.  A count of 4
+#: is ambiguous (tetrahedron vs. quadrilateral); tetrahedron is assumed, so pass
+#: ``zone_type`` explicitly for quad-surface meshes.
+_NODES_TO_FE_TYPE: dict[int, ZoneType] = {
+    2: ZoneType.FELINESEG,
+    3: ZoneType.FETRIANGLE,
+    4: ZoneType.FETETRAHEDRON,
+    8: ZoneType.FEBRICK,
+}
 
-# ===========================================================================
+
+def _coerce_zone_type(value: ZoneType | int | str) -> ZoneType:
+    """Coerce an enum / int / case-insensitive name to a :class:`ZoneType`."""
+    if isinstance(value, ZoneType):
+        return value
+    if isinstance(value, str):
+        return ZoneType[value.strip().upper()]
+    return ZoneType(int(value))
+
+
+def _infer_fe_zone_type(node_map: npt.NDArray) -> ZoneType:
+    """Infer a simple FE :class:`ZoneType` from a node map's nodes-per-cell."""
+    npc = int(node_map.shape[1]) if node_map.ndim == 2 else int(node_map.shape[-1])
+    try:
+        return _NODES_TO_FE_TYPE[npc]
+    except KeyError:
+        raise ValueError(
+            f"Cannot infer an FE zone type from nodes-per-cell={npc}; "
+            "pass zone_type explicitly."
+        ) from None
+
+
+def _variables_from_dict(
+    data: Mapping[str, npt.ArrayLike],
+    value_locations: Mapping[str, ValueLocation | int | str] | None,
+) -> list[Variable]:
+    """Build a list of active :class:`Variable` objects from a name->array map."""
+    vlocs = value_locations or {}
+    return [
+        Variable(
+            str(name),
+            values=np.asarray(arr),
+            value_location=coerce_value_location(
+                vlocs.get(name, ValueLocation.NODAL)
+            ),
+        )
+        for name, arr in data.items()
+    ]
+
+
+# ======================================================================================
 # AuxData
-# ===========================================================================
+# ======================================================================================
 
 
 class AuxData(dict):
@@ -97,9 +159,9 @@ class AuxData(dict):
         return default
 
 
-# ===========================================================================
+# ======================================================================================
 # Zone
-# ===========================================================================
+# ======================================================================================
 
 
 class Zone:
@@ -119,7 +181,13 @@ class Zone:
         solution_time:  Solution time for transient data.
         strand_id:      Strand ID grouping related time steps.
         node_map:       FE connectivity of shape ``(num_elements,
-                        nodes_per_cell)`` with 1-based node indices.
+                        nodes_per_cell)`` with 1-based node indices.  May be
+                        ``None`` for an FE zone that shares its connectivity via
+                        *connectivity_source*.
+        connectivity_source: Source :class:`Zone` this FE zone inherits its
+                        connectivity from.  When set, :attr:`node_map` reads
+                        through to that zone and :attr:`shared_connectivity`
+                        reports its 1-based index.
         variables:      Initial list of :class:`Variable` objects.  When the
                         zone is added to a dataset the list is reconciled with
                         the dataset variable list.
@@ -138,7 +206,7 @@ class Zone:
     def __init__(
         self,
         title: str = "",
-        zone_type: ZoneType | int = ZoneType.ORDERED,
+        zone_type: ZoneType | int | str = ZoneType.ORDERED,
         *,
         dimensions: tuple[int, int, int] | None = None,
         num_nodes: int | None = None,
@@ -146,24 +214,28 @@ class Zone:
         solution_time: float = 0.0,
         strand_id: int = 0,
         node_map: npt.ArrayLike | None = None,
+        connectivity_source: Zone | None = None,
         variables: list[Variable] | None = None,
         aux: Mapping[str, Any] | None = None,
         dataset: Dataset | None = None,
     ) -> None:
         self._dataset: Dataset | None = dataset
         self.title: str = str(title)
-        self.zone_type: ZoneType = ZoneType(zone_type)
+        self.zone_type: ZoneType = _coerce_zone_type(zone_type)
         self.solution_time: float = float(solution_time)
         self.strand_id: int = int(strand_id)
-        self.node_map: npt.NDArray | None = (
+        self._node_map: npt.NDArray | None = (
             None if node_map is None else np.asarray(node_map)
         )
+        self._connectivity_source: Zone | None = connectivity_source
         self.auxdata: AuxData = AuxData(aux or {})
 
         self._dimensions: tuple[int, int, int] | None = (
             tuple(int(d) for d in dimensions) if dimensions is not None else None
         )
-        self._num_nodes: int | None = int(num_nodes) if num_nodes is not None else None
+        self._num_nodes: int | None = (
+            int(num_nodes) if num_nodes is not None else None
+        )
         self._num_elements: int | None = (
             int(num_elements) if num_elements is not None else None
         )
@@ -172,9 +244,91 @@ class Zone:
         for var in variables or []:
             self._attach_variable(var)
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
+    # Alternative constructors
+    # ----------------------------------------------------------------------------------
+
+    @classmethod
+    def ijk_from_dict(
+        cls,
+        data: Mapping[str, npt.ArrayLike],
+        *,
+        title: str = "",
+        value_locations: Mapping[str, ValueLocation | int | str] | None = None,
+        dimensions: tuple[int, int, int] | None = None,
+        solution_time: float = 0.0,
+        strand_id: int = 0,
+        aux: Mapping[str, Any] | None = None,
+    ) -> Zone:
+        """Build an ordered (IJK) zone from a ``{"name": array}`` mapping.
+
+        Each entry becomes a variable; dimensions are inferred from the arrays
+        unless *dimensions* is given.  Use *value_locations* to mark individual
+        variables as cell-centered (any array/enum/name accepted).
+
+        Example:
+            >>> z = Zone.ijk_from_dict({"x": np.arange(5.0), "p": np.arange(5.0)})
+            >>> z.dimensions
+            (5, 1, 1)
+        """
+        return cls(
+            title=title,
+            zone_type=ZoneType.ORDERED,
+            dimensions=dimensions,
+            solution_time=solution_time,
+            strand_id=strand_id,
+            variables=_variables_from_dict(data, value_locations),
+            aux=aux,
+        )
+
+    @classmethod
+    def fe_from_dict(
+        cls,
+        data: Mapping[str, npt.ArrayLike],
+        node_map: npt.ArrayLike,
+        *,
+        zone_type: ZoneType | int | str | None = None,
+        title: str = "",
+        value_locations: Mapping[str, ValueLocation | int | str] | None = None,
+        solution_time: float = 0.0,
+        strand_id: int = 0,
+        aux: Mapping[str, Any] | None = None,
+    ) -> Zone:
+        """Build a finite-element zone from a mapping plus a *node_map*.
+
+        Args:
+            data:            ``{"name": array}`` of nodal/cell-centered arrays.
+            node_map:        Connectivity of shape ``(num_elements,
+                             nodes_per_cell)`` with 1-based node indices.
+            zone_type:       FE :class:`~tecio.libtecio.ZoneType`.  When ``None``
+                             it is inferred from the node map's nodes-per-cell
+                             (a count of 4 defaults to ``FETETRAHEDRON``; pass
+                             ``FEQUADRILATERAL`` explicitly for quad meshes).
+            value_locations: Optional per-variable value-location overrides.
+
+        Example:
+            >>> nm = np.array([[1, 2, 3], [2, 3, 4]])
+            >>> z = Zone.fe_from_dict({"x": np.arange(4.0)}, nm)
+            >>> z.zone_type.name
+            'FETRIANGLE'
+        """
+        nm = np.asarray(node_map)
+        zt = _infer_fe_zone_type(nm) if zone_type is None else _coerce_zone_type(
+            zone_type
+        )
+        return cls(
+            title=title,
+            zone_type=zt,
+            node_map=nm,
+            solution_time=solution_time,
+            strand_id=strand_id,
+            variables=_variables_from_dict(data, value_locations),
+            aux=aux,
+        )
+
+    # ----------------------------------------------------------------------------------
     # Parent-child relationships
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     @property
     def dataset(self) -> Dataset | None:
@@ -191,9 +345,9 @@ class Zone:
         var._zone = self
         self._variable.append(var)
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
     # Variable access / mutation
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     def get_variable(self, key: int | str) -> Variable:
         """Return a variable by 0-based index or by name (case-insensitive).
@@ -221,7 +375,7 @@ class Zone:
         name: str,
         values: npt.ArrayLike | None = None,
         *,
-        value_location: ValueLocation | int = ValueLocation.NODAL,
+        value_location: ValueLocation | int | str = ValueLocation.NODAL,
         data_type: DataType | int | None = None,
     ) -> Variable:
         """Add (or update) a variable in this zone.
@@ -238,7 +392,7 @@ class Zone:
                 name, value_location=value_location, data_type=data_type
             )
             var = self.get_variable(name)
-            var.value_location = ValueLocation(value_location)
+            var.value_location = value_location
             if data_type is not None:
                 var.data_type = data_type
             if values is not None:
@@ -260,6 +414,28 @@ class Zone:
             var.values = np.asarray(values)
         return var
 
+    def get_array(
+        self, key: int | str | list[str]
+    ) -> npt.NDArray | None | tuple[npt.NDArray | None, ...]:
+        """Return variable data array(s) for this zone (reader parity).
+
+        A single key (0-based index or exact name) returns one array; a list of
+        names returns a tuple of arrays in order, suitable for unpacking::
+
+            p = zone.get_array("p")
+            x, y, z = zone.get_array(["x", "y", "z"])
+
+        A passive variable resolves to ``None``; a shared variable reads through
+        to its source array, mirroring the readers.
+
+        Raises:
+            KeyError:   If a name does not exist.
+            IndexError: If an index is out of range.
+        """
+        if isinstance(key, list):
+            return tuple(self.get_variable(k).values for k in key)
+        return self.get_variable(key).values
+
     def __getattr__(self, name: str) -> Any:
         """Access a variable's data array as ``zone.<variable_name>``.
 
@@ -278,14 +454,84 @@ class Zone:
             f"{type(self).__name__!r} object has no attribute {name!r}"
         )
 
-    # ------------------------------------------------------------------
-    # Dimensions / counts (read parity with ReadZone)
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
+    # Connectivity
+    # ----------------------------------------------------------------------------------
 
-    def _first_active(
+    @property
+    def node_map(self) -> npt.NDArray | None:
+        """FE connectivity ``(num_elements, nodes_per_cell)``, 1-based indices.
+
+        Reads through to the source zone when the connectivity is shared; assign
+        an array to make the zone own its connectivity (which clears any share).
+        """
+        if self._connectivity_source is not None:
+            return self._connectivity_source.node_map
+        return self._node_map
+
+    @node_map.setter
+    def node_map(self, value: npt.ArrayLike | None) -> None:
+        self._node_map = None if value is None else np.asarray(value)
+        if value is not None:
+            self._connectivity_source = None
+
+    @property
+    def shared_connectivity(self) -> int | None:
+        """1-based index of the source zone this zone's connectivity is shared from.
+
+        Derived from the source zone's current dataset position (so it survives
+        reordering).  ``None`` when the zone owns its :attr:`node_map` (always
+        ``None`` for ordered zones, which have no explicit connectivity).
+        """
+        source = self._connectivity_source
+        if source is None:
+            return None
+        dataset = source.dataset
+        if dataset is None:
+            return None
+        try:
+            return dataset.zone.index(source) + 1
+        except ValueError:
+            return None
+
+    @shared_connectivity.setter
+    def shared_connectivity(self, value: int | Zone | None) -> None:
+        if value is None or value == 0:
+            self._connectivity_source = None
+            return
+        if isinstance(value, Zone):
+            self.share_connectivity_from(value)
+            return
+        dataset = self.dataset
+        if dataset is None:
+            raise ValueError(
+                "Cannot resolve shared_connectivity by index on a detached "
+                "zone; pass the source Zone to share_connectivity_from()."
+            )
+        self.share_connectivity_from(dataset.zone[int(value) - 1])
+
+    def share_connectivity_from(self, source: Zone) -> None:
+        """Share this zone's connectivity from *source* (a read-through reference)."""
+        self._connectivity_source = source
+        self._node_map = None
+
+    @property
+    def connectivity_source(self) -> Zone | None:
+        """The source :class:`Zone` connectivity is shared from, or ``None``."""
+        return self._connectivity_source
+
+    def shares_connectivity(self) -> bool:
+        """Return ``True`` if this zone reads its connectivity from a source zone."""
+        return self._connectivity_source is not None
+
+    # ----------------------------------------------------------------------------------
+    # Dimensions / counts (read parity with ReadZone)
+    # ----------------------------------------------------------------------------------
+
+    def _first_with_data(
         self, *, nodal: bool = False, cell: bool = False
     ) -> Variable | None:
-        """Return the first variable holding data of the requested location."""
+        """Return the first variable resolving to data of the requested location."""
         for var in self._variable:
             if var.values is None:
                 continue
@@ -299,11 +545,11 @@ class Zone:
 
     def _infer_ordered_dimensions(self) -> tuple[int, int, int]:
         """Infer ``(i, j, k)`` from a variable array for an ordered zone."""
-        var = self._first_active(nodal=True)
+        var = self._first_with_data(nodal=True)
         if var is not None and var.values is not None:
             shp = var.values.shape
             return tuple(int(shp[d]) if d < len(shp) else 1 for d in range(3))
-        var = self._first_active(cell=True)
+        var = self._first_with_data(cell=True)
         if var is not None and var.values is not None:
             shp = var.values.shape
             return tuple(int(shp[d]) + 1 if d < len(shp) else 1 for d in range(3))
@@ -330,9 +576,10 @@ class Zone:
             return max(i, 1) * max(j, 1) * max(k, 1)
         if self._num_nodes is not None:
             return self._num_nodes
-        if self.node_map is not None:
-            return int(np.asarray(self.node_map).max())
-        var = self._first_active(nodal=True)
+        node_map = self.node_map
+        if node_map is not None:
+            return int(np.asarray(node_map).max())
+        var = self._first_with_data(nodal=True)
         return int(var.values.size) if var is not None else 0
 
     @property
@@ -342,9 +589,10 @@ class Zone:
             return self.num_nodes
         if self._num_elements is not None:
             return self._num_elements
-        if self.node_map is not None:
-            return int(np.asarray(self.node_map).shape[0])
-        var = self._first_active(cell=True)
+        node_map = self.node_map
+        if node_map is not None:
+            return int(np.asarray(node_map).shape[0])
+        var = self._first_with_data(cell=True)
         return int(var.values.size) if var is not None else 0
 
     @property
@@ -371,9 +619,9 @@ class Zone:
         """Always ``True`` for an in-memory zone."""
         return True
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
     # Misc
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     def __len__(self) -> int:
         return len(self._variable)
@@ -383,6 +631,9 @@ class Zone:
             size = f"dimensions={self.dimensions}"
         else:
             size = f"num_nodes={self.num_nodes}, num_elements={self.num_elements}"
+            shared = self.shared_connectivity
+            if shared is not None:
+                size += f", shared_connectivity={shared}"
         return (
             f"Zone(title={self.title!r}, zone_type={self.zone_type.name}, "
             f"{size}, num_variables={len(self._variable)})"

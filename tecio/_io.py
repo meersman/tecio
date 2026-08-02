@@ -120,7 +120,9 @@ def _copy_zones(reader: szl.Read | plt.Read, writer: szl.Write | plt.Write) -> N
     """Stream all zones from *reader* into the open *writer*.
 
     Each zone is copied variable-by-variable at its original data type and value
-    location.  Connectivity (node maps) is copied for FE zones.
+    location.  Both variable sharing (``var_sharing``) and FE connectivity sharing
+    (``con_sharing``) are preserved: a zone that shares its connectivity is
+    re-emitted as a share rather than a duplicated node map.
 
     Args:
         reader: An already-opened ``Read`` instance.
@@ -148,7 +150,7 @@ def _copy_zones(reader: szl.Read | plt.Read, writer: szl.Write | plt.Write) -> N
 
         for var in zone.variable:
             passive_vars.append(var.is_passive())
-            sv = var.shared_zone  # None or 0-based zone number (szl convention)
+            sv = var.shared_zone  # None, or the 1-based source-zone index shared from
             # Write API expects 0 = no sharing, positive = 1-based zone source.
             var_sharing.append((sv) if sv is not None else 0)
             value_locations.append(var.value_location)
@@ -187,10 +189,16 @@ def _copy_zones(reader: szl.Read | plt.Read, writer: szl.Write | plt.Write) -> N
         if zt == ZoneType.ORDERED:
             writer.write_ijk_zone(data=active_data, **common_kw)
         else:
+            # Forward connectivity sharing: when shared, pass ``con_sharing`` and omit
+            # the node map so the writer derives the node/cell counts from the source
+            # zone; otherwise write this zone's own node map.
+            cv = zone.shared_connectivity  # None, or 1-based source-zone index
+            con_sharing = cv if cv is not None else 0
             writer.write_fe_zone(
                 zone_type=zt,
                 data=active_data,
-                node_map=zone.node_map,
+                node_map=None if con_sharing else zone.node_map,
+                con_sharing=con_sharing,
                 **common_kw,
             )
 

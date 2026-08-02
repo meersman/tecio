@@ -20,8 +20,18 @@ A variable is in exactly one of three states:
     ===========  =============================================================
     *active*     Owns a NumPy array in :attr:`values`.
     *passive*    Has no data in this zone (:meth:`is_passive` is ``True``).
-    *shared*     Borrows data from another zone (:attr:`shared_zone` is set).
+    *shared*     References a source :class:`Variable` in another zone
+                 (:meth:`is_shared` is ``True``); :attr:`values` reads through
+                 to that source, exactly as the readers resolve a shared
+                 variable to its origin.
     ===========  =============================================================
+
+Sharing is stored as a direct object reference to the source variable rather
+than a bare index, so :attr:`shared_zone` -- the 1-based index of the source
+zone -- is *derived* from where that source currently sits in the dataset.  A
+share therefore survives zone reordering, and :meth:`tecio.Dataset.branch_variables`
+can turn every shared variable into an independent copy by reading its resolved
+:attr:`values` and clearing the reference.
 """
 
 from __future__ import annotations
@@ -37,9 +47,9 @@ if TYPE_CHECKING:
     from ._dataset import Dataset
     from ._zone import Zone
 
-# ---------------------------------------------------------------------------
+# ======================================================================================
 # Module-level helpers
-# ---------------------------------------------------------------------------
+# ======================================================================================
 
 #: Canonical NumPy dtype -> Tecplot :class:`DataType` for the supported types.
 _DTYPE_TO_DATATYPE: dict[np.dtype, DataType] = {
@@ -83,9 +93,18 @@ def infer_data_type(dtype: npt.DTypeLike) -> DataType:
     raise ValueError(f"Unsupported dtype for Tecplot data: {dt!r}")
 
 
-# ===========================================================================
+def coerce_value_location(value: ValueLocation | int | str) -> ValueLocation:
+    """Coerce an enum / int / case-insensitive name to a :class:`ValueLocation`."""
+    if isinstance(value, ValueLocation):
+        return value
+    if isinstance(value, str):
+        return ValueLocation[value.strip().upper()]
+    return ValueLocation(int(value))
+
+
+# ======================================================================================
 # Variable
-# ===========================================================================
+# ======================================================================================
 
 
 class Variable:
@@ -97,17 +116,19 @@ class Variable:
                         list lives on the parent dataset.
         values:         Optional NumPy array for this zone-variable pair.  When
                         provided the variable becomes *active* and any
-                        ``is_passive`` / ``shared_zone`` arguments are ignored.
+                        ``is_passive`` / ``shared_from`` arguments are ignored.
         data_type:      Optional explicit :class:`~tecio.libtecio.DataType`
                         override.  When ``None`` the type is inferred from the
-                        array dtype (and falls back to ``FLOAT`` when there is
-                        no data, matching the read classes).
+                        (resolved) array dtype, falling back to ``FLOAT`` when
+                        there is no data, matching the read classes.
         value_location: :class:`~tecio.libtecio.ValueLocation` (NODAL or
-                        CELL_CENTERED).  Defaults to ``NODAL``.
+                        CELL_CENTERED); also accepts a case-insensitive name.
+                        Defaults to ``NODAL``.
         is_passive:     Mark the variable passive (no data in this zone).
-        shared_zone:    Source-zone index this variable borrows data from, or
-                        ``None``.  The index base matches whatever the source
-                        reader/writer uses (it is passed through unchanged).
+        shared_from:    Source :class:`Variable` this one borrows data from.
+                        When set, :attr:`values` reads through to the source and
+                        :attr:`shared_zone` reports the source zone's 1-based
+                        index.
         zone:           Optional back-reference to the owning :class:`Zone`.
 
     Example:
@@ -125,35 +146,35 @@ class Variable:
         values: npt.ArrayLike | None = None,
         *,
         data_type: DataType | int | None = None,
-        value_location: ValueLocation | int = ValueLocation.NODAL,
+        value_location: ValueLocation | int | str = ValueLocation.NODAL,
         is_passive: bool = False,
-        shared_zone: int | None = None,
+        shared_from: Variable | None = None,
         zone: Zone | None = None,
     ) -> None:
         self._zone: Zone | None = zone
         self._name: str = str(name)
-        self._value_location: ValueLocation = ValueLocation(value_location)
+        self._value_location: ValueLocation = coerce_value_location(value_location)
         self._data_type_override: DataType | None = (
             DataType(data_type) if data_type is not None else None
         )
-        self._shared_zone: int | None = shared_zone
         self._data: npt.NDArray | None = None
+        self._source: Variable | None = None
         self._is_passive: bool = bool(is_passive)
 
         if values is not None:
             # Data always wins: an explicit array makes the variable active.
             self._data = np.asarray(values)
             self._is_passive = False
-            self._shared_zone = None
-        elif shared_zone is not None:
+        elif shared_from is not None:
+            self._source = shared_from
             self._is_passive = False
         else:
             # No data and not shared -> the only valid state is passive.
             self._is_passive = True
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
     # Parent-child relationships
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     @property
     def zone(self) -> Zone | None:
@@ -165,9 +186,9 @@ class Variable:
         """Owning :class:`~tecio.Dataset`, or ``None`` if detached."""
         return self._zone.dataset if self._zone is not None else None
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
     # Identity
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     @property
     def name(self) -> str:
@@ -183,22 +204,24 @@ class Variable:
     def name(self, value: str) -> None:
         self._name = str(value)
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
     # Metadata (read parity with ReadVariable)
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     @property
     def data_type(self) -> DataType:
         """On-disk :class:`~tecio.libtecio.DataType` for this zone-variable.
 
-        Returns the explicit override when set, otherwise the type inferred
-        from the array dtype.  Passive/shared variables with no array report
-        :attr:`DataType.FLOAT` as a placeholder.
+        Returns the explicit override when set, otherwise the type inferred from
+        the resolved array dtype (a shared variable reports its source's type).
+        A passive variable with no array reports :attr:`DataType.FLOAT` as a
+        placeholder.
         """
         if self._data_type_override is not None:
             return self._data_type_override
-        if self._data is not None:
-            return infer_data_type(self._data.dtype)
+        arr = self.values
+        if arr is not None:
+            return infer_data_type(arr.dtype)
         return DataType.FLOAT
 
     @data_type.setter
@@ -211,20 +234,55 @@ class Variable:
         return self._value_location
 
     @value_location.setter
-    def value_location(self, value: ValueLocation | int) -> None:
-        self._value_location = ValueLocation(value)
+    def value_location(self, value: ValueLocation | int | str) -> None:
+        self._value_location = coerce_value_location(value)
 
     @property
     def shared_zone(self) -> int | None:
-        """Source-zone index this variable borrows data from, or ``None``."""
-        return self._shared_zone
+        """1-based index of the source zone this variable borrows data from.
+
+        Derived from the current position of the source variable's zone within
+        the dataset, so it stays correct across zone reordering.  ``None`` when
+        the variable is not shared (or the source is detached from a dataset).
+        """
+        source = self._source
+        if source is None:
+            return None
+        zone = source._zone
+        dataset = zone.dataset if zone is not None else None
+        if dataset is None:
+            return None
+        try:
+            return dataset.zone.index(zone) + 1
+        except ValueError:
+            return None
 
     @shared_zone.setter
-    def shared_zone(self, value: int | None) -> None:
-        self._shared_zone = value
-        if value is not None:
-            self._data = None
-            self._is_passive = False
+    def shared_zone(self, value: int | Variable | None) -> None:
+        if value is None:
+            self._source = None
+            return
+        if isinstance(value, Variable):
+            self.share_from(value)
+            return
+        dataset = self.dataset
+        if dataset is None:
+            raise ValueError(
+                "Cannot resolve shared_zone by index on a detached variable; "
+                "pass the source Variable to share_from() instead."
+            )
+        self.share_from(dataset.zone[int(value) - 1].get_variable(self._name))
+
+    def share_from(self, source: Variable) -> None:
+        """Share this variable's data from *source* (a read-through reference)."""
+        self._source = source
+        self._data = None
+        self._is_passive = False
+
+    @property
+    def source(self) -> Variable | None:
+        """The source :class:`Variable` shared from, or ``None``."""
+        return self._source
 
     @property
     def passive(self) -> bool:
@@ -240,7 +298,7 @@ class Variable:
         self._is_passive = bool(value)
         if self._is_passive:
             self._data = None
-            self._shared_zone = None
+            self._source = None
 
     def is_passive(self) -> bool:
         """Return ``True`` if the variable has no data in this zone."""
@@ -250,17 +308,24 @@ class Variable:
         """Return ``True`` unless the variable is passive."""
         return not self._is_passive
 
-    # ------------------------------------------------------------------
+    def is_shared(self) -> bool:
+        """Return ``True`` if this variable reads through to a source variable."""
+        return self._source is not None
+
+    # ----------------------------------------------------------------------------------
     # Data access
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     @property
     def values(self) -> npt.NDArray | None:
-        """The data array, or ``None`` for passive/shared variables.
+        """The data array, or ``None`` for a passive variable.
 
-        Assigning an array makes the variable active and clears the passive
-        flag and any sharing.  Assigning ``None`` clears the data.
+        A shared variable reads through to its source's array (matching the
+        readers).  Assigning an array makes the variable active and clears the
+        passive flag and any sharing; assigning ``None`` clears local data.
         """
+        if self._source is not None:
+            return self._source.values
         return self._data
 
     @values.setter
@@ -270,17 +335,19 @@ class Variable:
             return
         self._data = np.asarray(array)
         self._is_passive = False
-        self._shared_zone = None
+        self._source = None
 
     @property
     def num_values(self) -> int:
-        """Number of values stored (``0`` for passive/shared variables)."""
-        return 0 if self._data is None else int(self._data.size)
+        """Number of values available (``0`` for a passive variable)."""
+        arr = self.values
+        return 0 if arr is None else int(arr.size)
 
     @property
     def shape(self) -> tuple[int, ...] | None:
-        """Shape of the data array, or ``None`` if there is no data."""
-        return None if self._data is None else self._data.shape
+        """Shape of the (resolved) data array, or ``None`` if there is none."""
+        arr = self.values
+        return None if arr is None else arr.shape
 
     def get_values(
         self,
@@ -289,46 +356,52 @@ class Variable:
         """Return all values, or a 1-based half-open slice of the flat array.
 
         Args:
-            value_range: ``(None, None)`` returns the full array as stored.
+            value_range: ``(None, None)`` returns the full (resolved) array.
                 Otherwise ``(start, end)`` is a 1-based, half-open range over
                 the Fortran-flattened values.
 
         Returns:
-            The requested array, or ``None`` for passive/shared variables.
+            The requested array, or ``None`` for a passive variable.
 
         Raises:
             ValueError: If only one of *start* / *end* is given.
         """
-        if self._data is None:
+        arr = self.values
+        if arr is None:
             return None
         start, end = value_range
         if start is None and end is None:
-            return self._data
+            return arr
         if start is None or end is None:
             raise ValueError("Both start and end indices must be specified.")
-        flat = self._data.ravel(order="F")
+        flat = arr.ravel(order="F")
         return flat[start - 1 : end - 1]
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
     # Misc
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     def copy(self) -> Variable:
-        """Return a detached deep copy of this variable (no parent zone)."""
+        """Return a detached deep copy of this variable (no parent zone).
+
+        A shared variable is resolved to an independent copy of its source
+        data, since a detached copy has no dataset in which to follow the share.
+        """
+        arr = self.values
         return Variable(
             self._name,
-            values=None if self._data is None else np.array(self._data),
+            values=None if arr is None else np.array(arr),
             data_type=self._data_type_override,
             value_location=self._value_location,
-            is_passive=self._is_passive,
-            shared_zone=self._shared_zone,
+            is_passive=arr is None,
         )
 
     def __repr__(self) -> str:
-        if self._is_passive:
+        if self._source is not None:
+            src = self.shared_zone
+            state = f"shared<-{src}" if src is not None else "shared"
+        elif self._is_passive:
             state = "passive"
-        elif self._shared_zone is not None:
-            state = f"shared<-{self._shared_zone}"
         else:
             state = f"num_values={self.num_values}"
         return (

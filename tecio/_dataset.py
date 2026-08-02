@@ -1,36 +1,60 @@
-"""Module containing in-memory data container, ``Dataset``.
+"""In-memory ``Dataset`` container -- the top of the ``Dataset -> Zone ->
+Variable`` hierarchy.
 
-A :class:`Dataset` is a uniform, mutable, in-memory mirror of a Tecplot dataset:
-dataset-level metadata and auxiliary data plus an ordered list of
+A :class:`Dataset` is a uniform, mutable, in-memory mirror of a Tecplot
+dataset: dataset-level metadata and auxiliary data plus an ordered list of
 :class:`~tecio._zone.Zone` objects, each holding an ordered list of
 :class:`~tecio._variable.Variable` objects (one per dataset variable).
 
 The public *read* interface mirrors the ``Read`` classes in :mod:`tecio.szl`,
 :mod:`tecio.plt`, and :mod:`tecio.dat` (``title``, ``file_type``, ``num_vars``,
 ``variables``, ``num_zones``, ``zone``, ``auxdata``, ``num_auxdata_items``,
-``var_auxdata``, ``get_var_auxdata``, ``get_zone_auxdata``) so a dataset can be handed
-straight to the zone-copy routine used by the writers.
+``var_auxdata``, ``get_var_auxdata``, ``get_zone_auxdata``) so a dataset can be
+handed straight to the zone-copy routine used by the writers.
 
 Unlike a reader, a dataset is fully mutable and can be:
 
-* populated from any Tecplot file type, a list of files, an open reader, a
-  :class:`dict`, or a :class:`pandas.DataFrame`, with optional ``zones`` / ``variables``
-  subsetting;
-* built up incrementally with :meth:`add_zone` / :meth:`add_variable`, where a new
-  variable defined on one zone is immediately created dataset-wide (passive in every
+* populated from any Tecplot file type, a list of files, an open reader, or a
+  flat ``{"name": array}`` :class:`dict`, with optional ``zones`` /
+  ``variables`` subsetting when loading from files/readers;
+* built up incrementally with :meth:`add_zone` / :meth:`add_variable` (or the
+  :meth:`add_ijk_zone` / :meth:`add_fe_zone` dict helpers), where a new variable
+  defined on one zone is immediately created dataset-wide (passive in every
   other zone) so the dataset always stays rectangular;
-* written back out in any format via :meth:`write` / :meth:`to_szl` / :meth:`to_plt` /
-  :meth:`to_dat`.
+* written back out in any format via :meth:`write` / :meth:`to_szl` /
+  :meth:`to_plt` / :meth:`to_dat`.
 
 Indexing note:
-    Zones and variables are addressed with **0-based** indices from the Python API
-    (matching list indexing), while :meth:`get_var_auxdata` and :meth:`get_zone_auxdata`
-    take **1-based** indices for parity with the read classes.
+    Zones and variables are addressed with **0-based** indices from the Python
+    API (matching list indexing), while :meth:`get_var_auxdata` and
+    :meth:`get_zone_auxdata` take **1-based** indices for parity with the read
+    classes.  Variable- and connectivity-sharing indices (``shared_zone`` and
+    ``shared_connectivity``) are also **1-based**, matching the readers and the
+    writers' ``var_sharing`` / ``con_sharing`` arguments.
+
+Sharing note:
+    A shared variable holds a direct reference to its source
+    :class:`~tecio._variable.Variable`, and a zone that shares connectivity
+    holds a reference to its source :class:`~tecio._zone.Zone`; both read
+    *through* to the source data, and ``shared_zone`` / ``shared_connectivity``
+    are derived from where the source currently sits, so shares survive zone
+    reordering.  Loading a whole file preserves sharing (compact, no duplicated
+    arrays); loading a *subset* of zones resolves each share to an owned copy.
+    :meth:`branch_variables` and :meth:`branch_connectivity` (or :meth:`branch`)
+    turn shares into independent copies on demand.
+
+Precision note:
+    :meth:`write` (and :meth:`to_szl` / :meth:`to_plt` / :meth:`to_dat`) accept
+    an optional whole-file ``precision`` (``"single"`` / ``"double"``).  When it
+    is omitted each format applies its own default -- SZL keeps every variable's
+    own type, PLT stores the whole file at one precision, and ASCII DAT defaults
+    to single precision.  Per-variable on-disk data types are otherwise carried
+    by each array's NumPy dtype.
 
 Roadmap:
-    Analysis helpers (surface/volume slices, iso-surfaces, FE-to-structured resampling,
-    etc.) are intended to build on this container in a future pass and are intentionally
-    left out of this first version.
+    Analysis helpers (surface/volume slices, iso-surfaces, FE-to-structured
+    resampling, etc.) are intended to build on this container in a future pass
+    and are intentionally left out of this first version.
 """
 
 from __future__ import annotations
@@ -43,16 +67,16 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 
+from .libtecio import DataType, FileType, ValueLocation, ZoneType
 from ._variable import Variable
 from ._zone import AuxData, Zone
-from .libtecio import FileType, ValueLocation, ZoneType
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     import pandas as pd
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Module-level helpers
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
 def _own(arr: npt.ArrayLike) -> npt.NDArray:
@@ -78,15 +102,6 @@ def _as_file_type(value: FileType | int | str) -> FileType:
     return FileType(int(value))
 
 
-def _as_zone_type(value: ZoneType | int | str) -> ZoneType:
-    """Coerce an enum / int / UPPER-case name to a :class:`ZoneType`."""
-    if isinstance(value, ZoneType):
-        return value
-    if isinstance(value, str):
-        return ZoneType[value.strip().upper()]
-    return ZoneType(int(value))
-
-
 def _as_value_location(value: ValueLocation | int | str) -> ValueLocation:
     """Coerce an enum / int / UPPER-case name to a :class:`ValueLocation`."""
     if isinstance(value, ValueLocation):
@@ -96,7 +111,7 @@ def _as_value_location(value: ValueLocation | int | str) -> ValueLocation:
     return ValueLocation(int(value))
 
 
-def _require_pandas() -> pd:
+def _require_pandas() -> "pd":
     """Import and return :mod:`pandas`, raising a clear error if it is missing."""
     try:
         import pandas as pd
@@ -108,9 +123,9 @@ def _require_pandas() -> pd:
     return pd
 
 
-# ===========================================================================
+# ======================================================================================
 # Dataset
-# ===========================================================================
+# ======================================================================================
 
 
 class Dataset:
@@ -118,9 +133,9 @@ class Dataset:
 
     Args:
         source:    Optional data source to populate from.  May be a file path,
-                   a list/tuple of file paths, an open ``Read`` instance, a
-                   :class:`dict`, or a :class:`pandas.DataFrame`.  ``None``
-                   creates an empty dataset.
+                   a list/tuple of file paths, an open ``Read`` instance, or a
+                   flat ``{"name": array}`` :class:`dict`.  ``None`` creates an
+                   empty dataset.
         zones:     Optional 0-based zone indices to keep (file/reader sources
                    only).  ``None`` keeps all zones.
         variables: Optional variable filter (file/reader sources only) as a
@@ -132,15 +147,18 @@ class Dataset:
                    file's type when loading.
 
     Example:
-        >>> ds = Dataset("input.szplt")  # load every zone/variable
-        >>> ds.to_plt()  # -> input.plt
-        >>> ds.to_dat("output.dat")  # -> output.dat
+        >>> ds = Dataset("input.szplt")          # load every zone/variable
+        >>> ds.to_plt()                          # -> input.plt
+        >>> ds.to_dat("output.dat")              # -> output.dat
 
-        >>> empty = Dataset(title="demo")
-        >>> z = empty.add_zone(title="line")
-        >>> _ = z.add_variable("x", np.linspace(0, 1, 11))
-        >>> _ = z.add_variable("p", np.random.rand(11))
-        >>> empty.to_szl("demo.szplt")
+        >>> # Build from scratch and write out.
+        >>> ds = Dataset({"x": x_arr, "p": p_arr}, title="demo")
+        >>> ds.to_szl("demo.szplt")
+
+        >>> # Or incrementally, mixing ordered and FE zones.
+        >>> ds = Dataset(title="demo")
+        >>> _ = ds.add_ijk_zone({"x": np.linspace(0, 1, 11), "p": np.random.rand(11)})
+        >>> _ = ds.add_fe_zone({"x": nodes_x, "y": nodes_y}, node_map)
     """
 
     def __init__(
@@ -164,9 +182,9 @@ class Dataset:
         if source is not None:
             self._ingest(source, zones=zones, variables=variables)
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
     # Ingest dispatch
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     def _ingest(
         self,
@@ -180,22 +198,20 @@ class Dataset:
             self._load_files([source], zones=zones, variables=variables)
         elif isinstance(source, (list, tuple)):
             self._load_files(list(source), zones=zones, variables=variables)
-        elif isinstance(source, dict):
+        elif isinstance(source, Mapping):
             self._load_dict(source)
-        elif hasattr(source, "columns") and hasattr(source, "to_numpy"):
-            self._load_dataframe(source)
         elif hasattr(source, "zone") and hasattr(source, "variables"):
             self._load_reader(source, zones=zones, variables=variables)
         else:
             raise TypeError(
                 "Unsupported Dataset source "
                 f"{type(source).__name__!r}; expected a file path, a list of "
-                "paths, a Read instance, a dict, or a pandas DataFrame."
+                "paths, a Read instance, or a flat {name: array} dict."
             )
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
     # Loading from files / readers
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     def _load_files(
         self,
@@ -229,7 +245,9 @@ class Dataset:
         variables: Sequence[int | str] | None,
     ) -> None:
         """Load from an already-open ``Read`` instance (caller keeps ownership)."""
-        self._absorb_reader(reader, zones=zones, variables=variables, set_header=True)
+        self._absorb_reader(
+            reader, zones=zones, variables=variables, set_header=True
+        )
 
     def _absorb_reader(
         self,
@@ -252,8 +270,11 @@ class Dataset:
             if len(reader.auxdata) > 0:
                 self.auxdata.update(reader.auxdata.items())
 
+        base = len(self._zones)  # dataset offset where this reader's zones begin
         for zi in zone_idx:
-            self.add_zone(self._zone_from_reader(reader, zi, var_idx, materialize))
+            self.add_zone(
+                self._zone_from_reader(reader, zi, var_idx, materialize, base)
+            )
 
         if set_header:
             for new_i, orig in enumerate(var_idx):
@@ -272,8 +293,16 @@ class Dataset:
         zi: int,
         var_idx: Sequence[int],
         materialize: bool,
+        base: int,
     ) -> Zone:
-        """Build an in-memory :class:`Zone` from one reader zone."""
+        """Build an in-memory :class:`Zone` from one reader zone.
+
+        On a full load (*materialize* is ``False``) shares are preserved as
+        object references into the already-added source zones -- located at
+        ``base + <reader-local index> - 1`` so multi-file loads resolve within
+        the file that produced them.  On a subset load the reader resolves each
+        share to its source data and an owned copy is stored instead.
+        """
         rz = reader.zone[zi]
         zt = rz.zone_type
 
@@ -281,40 +310,33 @@ class Dataset:
         for vidx in var_idx:
             rv = rz.variable[vidx]
             if rv.is_passive():
+                # No data in this zone; keep the declared on-disk type.
                 var = Variable(
                     rv.name,
                     value_location=rv.value_location,
                     data_type=rv.data_type,
                     is_passive=True,
                 )
-            elif rv.shared_zone is not None:
-                if materialize:
-                    arr = self._resolve_shared(reader, zi, vidx)
-                    if arr is None:
-                        var = Variable(
-                            rv.name,
-                            value_location=rv.value_location,
-                            is_passive=True,
-                        )
-                    else:
-                        var = Variable(
-                            rv.name,
-                            values=_own(arr),
-                            value_location=rv.value_location,
-                        )
-                else:
-                    var = Variable(
-                        rv.name,
-                        value_location=rv.value_location,
-                        data_type=rv.data_type,
-                        shared_zone=rv.shared_zone,
-                    )
+            elif rv.shared_zone is not None and not materialize:
+                # Preserve the share as a reference to the source variable in
+                # the already-added source zone (compact, low memory).
+                source_zone = self._zones[base + rv.shared_zone - 1]
+                var = Variable(
+                    rv.name,
+                    value_location=rv.value_location,
+                    shared_from=source_zone.get_variable(rv.name),
+                )
             else:
+                # Active, or a shared variable being materialized on a subset:
+                # the reader resolves ``values`` to the source array in both
+                # cases.  The array dtype carries the on-disk data type, so it
+                # is left to be inferred rather than pinned by an override.
                 arr = rv.values
                 if arr is None:
                     var = Variable(
                         rv.name,
                         value_location=rv.value_location,
+                        data_type=rv.data_type,
                         is_passive=True,
                     )
                 else:
@@ -338,46 +360,34 @@ class Dataset:
                 aux=aux,
             )
 
-        node_map = rz.node_map
+        # FE zone: preserve connectivity sharing on a full load as a reference to
+        # the source zone, but materialize it when subsetting zones so the result
+        # is self-contained.  The reader resolves ``node_map`` for a shared zone.
+        con_source: Zone | None = None
+        node_map: npt.NDArray | None = None
+        shared_con = rz.shared_connectivity
+        if shared_con is not None and not materialize:
+            con_source = self._zones[base + shared_con - 1]
+        else:
+            src_map = rz.node_map
+            node_map = None if src_map is None else _own(np.asarray(src_map))
+
         return Zone(
             rz.title,
             zt,
             num_nodes=rz.num_nodes,
             num_elements=rz.num_elements,
-            node_map=None if node_map is None else _own(np.asarray(node_map)),
+            node_map=node_map,
+            connectivity_source=con_source,
             solution_time=rz.solution_time,
             strand_id=rz.strand_id,
             variables=variables,
             aux=aux,
         )
 
-    @staticmethod
-    def _resolve_shared(reader: Any, zi: int, vidx: int) -> npt.NDArray | None:
-        """Read the source array for a shared variable when subsetting zones.
-
-        The recorded ``shared_zone`` base is inconsistent across readers, so
-        both the value and ``value - 1`` are tried defensively.  Returns
-        ``None`` if a concrete source array cannot be located.
-        """
-        src = reader.zone[zi].variable[vidx].shared_zone
-        if src is None:
-            return None
-        for cand in (src, src - 1):
-            if 0 <= cand < reader.num_zones:
-                try:
-                    sv = reader.zone[cand].variable[vidx]
-                except IndexError:
-                    continue
-                if sv.is_passive() or sv.shared_zone is not None:
-                    continue
-                arr = sv.values
-                if arr is not None:
-                    return np.asarray(arr)
-        return None
-
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
     # Filter resolution
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     @staticmethod
     def _resolve_variable_filter(
@@ -393,7 +403,8 @@ class Dataset:
                 iv = int(v)
                 if iv < 0 or iv >= len(all_names):
                     raise IndexError(
-                        f"Variable index {iv} out of range [0, {len(all_names) - 1}]."
+                        f"Variable index {iv} out of range "
+                        f"[0, {len(all_names) - 1}]."
                     )
                 result.append(iv)
                 continue
@@ -402,7 +413,9 @@ class Dataset:
                 result.append(all_names.index(name))
                 continue
             low = name.lower()
-            match = next((i for i, n in enumerate(all_names) if n.lower() == low), None)
+            match = next(
+                (i for i, n in enumerate(all_names) if n.lower() == low), None
+            )
             if match is None:
                 raise KeyError(
                     f"Variable {v!r} not found. Available: {list(all_names)}"
@@ -422,13 +435,15 @@ class Dataset:
         for z in zones:
             iz = int(z)
             if iz < 0 or iz >= num_zones:
-                raise IndexError(f"Zone index {iz} out of range [0, {num_zones - 1}].")
+                raise IndexError(
+                    f"Zone index {iz} out of range [0, {num_zones - 1}]."
+                )
             result.append(iz)
         return result
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
     # Building zones / variables
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     def add_variable(
         self,
@@ -503,10 +518,45 @@ class Dataset:
         if zone is None:
             zone = Zone(**kwargs)
         elif not isinstance(zone, Zone):
-            raise TypeError(f"add_zone expected a Zone, got {type(zone).__name__!r}.")
+            raise TypeError(
+                f"add_zone expected a Zone, got {type(zone).__name__!r}."
+            )
         self._reconcile_zone(zone)
         self._zones.append(zone)
         return zone
+
+    def add_ijk_zone(
+        self, data: Mapping[str, npt.ArrayLike], **kwargs: Any
+    ) -> Zone:
+        """Build an ordered zone from ``{"name": array}`` and add it.
+
+        Convenience wrapper around :meth:`Zone.ijk_from_dict` followed by
+        :meth:`add_zone`; keyword arguments are forwarded to the constructor
+        (``title``, ``value_locations``, ``dimensions``, ``solution_time``,
+        ``strand_id``, ``aux``).
+
+        Returns:
+            The added :class:`Zone`.
+        """
+        return self.add_zone(Zone.ijk_from_dict(data, **kwargs))
+
+    def add_fe_zone(
+        self,
+        data: Mapping[str, npt.ArrayLike],
+        node_map: npt.ArrayLike,
+        **kwargs: Any,
+    ) -> Zone:
+        """Build a finite-element zone from a mapping + *node_map* and add it.
+
+        Convenience wrapper around :meth:`Zone.fe_from_dict` followed by
+        :meth:`add_zone`; keyword arguments are forwarded to the constructor
+        (``zone_type``, ``title``, ``value_locations``, ``solution_time``,
+        ``strand_id``, ``aux``).
+
+        Returns:
+            The added :class:`Zone`.
+        """
+        return self.add_zone(Zone.fe_from_dict(data, node_map, **kwargs))
 
     def _reconcile_zone(self, zone: Zone) -> None:
         """Make *zone* consistent with the dataset variable list."""
@@ -531,9 +581,9 @@ class Dataset:
             rebuilt.append(var)
         zone._variable = rebuilt
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
     # Variable management
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     def variable_index(self, key: int | str) -> int:
         """Return the 0-based dataset index for a variable name or index."""
@@ -541,7 +591,8 @@ class Dataset:
             iv = int(key)
             if iv < 0 or iv >= len(self._variables):
                 raise IndexError(
-                    f"Variable index {iv} out of range [0, {len(self._variables) - 1}]."
+                    f"Variable index {iv} out of range "
+                    f"[0, {len(self._variables) - 1}]."
                 )
             return iv
         name = str(key)
@@ -552,7 +603,9 @@ class Dataset:
             (i for i, n in enumerate(self._variables) if n.lower() == low), None
         )
         if match is None:
-            raise KeyError(f"Variable {key!r} not found. Available: {self._variables}")
+            raise KeyError(
+                f"Variable {key!r} not found. Available: {self._variables}"
+            )
         return match
 
     def rename_variable(self, old: int | str, new: str) -> None:
@@ -570,36 +623,48 @@ class Dataset:
         for zone in self._zones:
             del zone.variable[idx]
 
-    def materialize_shared(self) -> None:
-        """Replace shared variables with owned copies of their source data.
+    def branch_variables(self) -> None:
+        """Turn every shared variable into an independent owned copy.
 
-        Useful before reordering or deleting zones, since variable sharing
-        references zones by position.  Variables whose source cannot be located
-        are left shared.
+        Each shared variable's resolved data (read through its source) is copied
+        in place and the share reference is cleared, so ``shared_zone`` becomes
+        ``None``.  This is the variable half of :meth:`branch`; call it before
+        deleting a source zone that other zones borrow variable data from.
         """
         for zone in self._zones:
-            for vidx, var in enumerate(zone.variable):
-                if var.shared_zone is not None:
-                    arr = self._find_share_source(vidx, var.shared_zone)
+            for var in zone.variable:
+                if var.is_shared():
+                    arr = var.values  # resolves through the source reference
                     if arr is not None:
-                        var.values = np.array(arr)
+                        var.values = np.array(arr)  # setter clears the share
 
-    def _find_share_source(self, vidx: int, src: int) -> npt.NDArray | None:
-        """Find a concrete source array for a shared variable, or ``None``."""
-        for cand in (src, src - 1):
-            if 0 <= cand < len(self._zones):
-                sv = self._zones[cand].variable[vidx]
-                if (
-                    sv.shared_zone is None
-                    and not sv.is_passive()
-                    and sv.values is not None
-                ):
-                    return sv.values
-        return None
+    def branch_connectivity(self) -> None:
+        """Turn every shared FE connectivity into an independent owned node map.
 
-    # ------------------------------------------------------------------
+        Each sharing zone's resolved ``node_map`` (read through its source) is
+        copied in place and the share reference is cleared, so
+        ``shared_connectivity`` becomes ``None``.  This is the connectivity half
+        of :meth:`branch`.
+        """
+        for zone in self._zones:
+            if zone.shares_connectivity():
+                node_map = zone.node_map  # resolves through the source zone
+                if node_map is not None:
+                    zone.node_map = np.array(node_map)  # setter clears the share
+
+    def branch(self) -> None:
+        """Break all shares (variables and connectivity) into owned copies.
+
+        Runs :meth:`branch_variables` and :meth:`branch_connectivity` so every
+        zone becomes fully self-contained -- useful before reordering or
+        deleting zones that others share from.
+        """
+        self.branch_variables()
+        self.branch_connectivity()
+
+    # ----------------------------------------------------------------------------------
     # Read-parity properties
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     @property
     def num_vars(self) -> int:
@@ -651,15 +716,16 @@ class Dataset:
             )
         return self._zones[zone_index - 1].auxdata
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
     # Writing
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     def write(
         self,
         path: str | os.PathLike | None = None,
         *,
         file_type: FileType | int | str | None = None,
+        precision: DataType | str | None = None,
     ) -> Path:
         """Write the dataset to *path* (format chosen by its extension).
 
@@ -667,6 +733,14 @@ class Dataset:
             path:      Output path.  Defaults to the dataset's source path when
                        it was loaded from a file.
             file_type: Optional :class:`~tecio.libtecio.FileType` override.
+            precision: Optional whole-file floating-point precision --
+                       :attr:`~tecio.libtecio.DataType.FLOAT` / ``"single"`` or
+                       :attr:`~tecio.libtecio.DataType.DOUBLE` / ``"double"``.
+                       When ``None`` each writer applies its own default (SZL
+                       keeps each variable's own type, PLT defaults to double,
+                       ASCII DAT defaults to single).  ``precision`` only
+                       affects floating-point variables; integer variables keep
+                       their type.
 
         Returns:
             The :class:`~pathlib.Path` written.
@@ -675,12 +749,18 @@ class Dataset:
 
         out = self._resolve_output(path)
         ftype = self.file_type if file_type is None else _as_file_type(file_type)
+        # Only forward ``precision`` when set, so each format's own default
+        # applies otherwise (PLT/DAT require FLOAT or DOUBLE and reject None).
+        extra: dict[str, Any] = {}
+        if precision is not None:
+            extra["precision"] = precision
         with tecio_open(
             str(out),
             "w",
             title=self.title,
             variables=self.variables,
             file_type=ftype,
+            **extra,
         ) as writer:
             self._write_aux(writer)
             self._write_zones(writer)
@@ -691,21 +771,37 @@ class Dataset:
         path: str | os.PathLike | None = None,
         *,
         file_type: FileType | int | str | None = None,
+        precision: DataType | str | None = None,
     ) -> Path:
         """Alias for :meth:`write`."""
-        return self.write(path, file_type=file_type)
+        return self.write(path, file_type=file_type, precision=precision)
 
-    def to_szl(self, path: str | os.PathLike | None = None) -> Path:
+    def to_szl(
+        self,
+        path: str | os.PathLike | None = None,
+        *,
+        precision: DataType | str | None = None,
+    ) -> Path:
         """Write the dataset to a ``.szplt`` file."""
-        return self.write(self._derive_path(path, ".szplt"))
+        return self.write(self._derive_path(path, ".szplt"), precision=precision)
 
-    def to_plt(self, path: str | os.PathLike | None = None) -> Path:
+    def to_plt(
+        self,
+        path: str | os.PathLike | None = None,
+        *,
+        precision: DataType | str | None = None,
+    ) -> Path:
         """Write the dataset to a ``.plt`` file."""
-        return self.write(self._derive_path(path, ".plt"))
+        return self.write(self._derive_path(path, ".plt"), precision=precision)
 
-    def to_dat(self, path: str | os.PathLike | None = None) -> Path:
+    def to_dat(
+        self,
+        path: str | os.PathLike | None = None,
+        *,
+        precision: DataType | str | None = None,
+    ) -> Path:
         """Write the dataset to an ASCII ``.dat`` file."""
-        return self.write(self._derive_path(path, ".dat"))
+        return self.write(self._derive_path(path, ".dat"), precision=precision)
 
     def _resolve_output(self, path: str | os.PathLike | None) -> Path:
         """Return the output path or fall back to the source path."""
@@ -713,7 +809,9 @@ class Dataset:
             return Path(path)
         if self._source_path is not None:
             return self._source_path
-        raise ValueError("No output path provided and dataset has no source file.")
+        raise ValueError(
+            "No output path provided and dataset has no source file."
+        )
 
     def _derive_path(self, path: str | os.PathLike | None, suffix: str) -> Path:
         """Return *path*, or the source path with *suffix* substituted."""
@@ -729,9 +827,9 @@ class Dataset:
     def _write_aux(self, writer: Any) -> None:
         """Forward dataset- and variable-level aux data to *writer*."""
         if len(self.auxdata) > 0:
-            writer.add_auxdataset_dict({
-                str(k): str(v) for k, v in self.auxdata.items()
-            })
+            writer.add_auxdataset_dict(
+                {str(k): str(v) for k, v in self.auxdata.items()}
+            )
         auxvar: dict[int, dict[str, str]] = {}
         for i, aux in enumerate(self._var_auxdata, start=1):
             if aux:
@@ -745,120 +843,20 @@ class Dataset:
 
         _copy_zones(self, writer)
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
     # Construction from Python objects
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     def _load_dict(self, data: Mapping[str, Any]) -> None:
-        """Populate the dataset from a :class:`dict`.
+        """Populate the dataset from a flat ``{name: array}`` mapping.
 
-        Two schemas are accepted -- a structured multi-zone mapping::
-
-            {
-                "title": "demo",
-                "file_type": "FULL",
-                "auxdata": {"Solver": "MyCFD"},
-                "zones": [
-                    {
-                        "title": "zone 1",
-                        "zone_type": "ORDERED",
-                        "solution_time": 0.0,
-                        "strand_id": 0,
-                        "data": {"x": x_arr, "p": p_arr},
-                        "value_locations": {"p": "CELL_CENTERED"},
-                        "aux": {"note": "first"},
-                    },
-                ],
-            }
-
-        or a flat ``{name: array}`` mapping that becomes a single ordered zone.
+        Every entry becomes a variable of a single ordered (IJK) zone whose
+        dimensions are inferred from the arrays.  For cell-centered variables,
+        finite-element zones, or multiple zones, build the zones explicitly with
+        :meth:`add_ijk_zone` / :meth:`add_fe_zone` (or :meth:`Zone.ijk_from_dict`
+        / :meth:`Zone.fe_from_dict`) instead.
         """
-        if "zones" in data:
-            if "title" in data and not self.title:
-                self.title = str(data["title"])
-            if "file_type" in data:
-                self.file_type = _as_file_type(data["file_type"])
-            if "auxdata" in data and data["auxdata"]:
-                self.auxdata.update(data["auxdata"])
-            for zspec in data["zones"]:
-                self.add_zone(self._zone_from_dict(zspec))
-        elif "data" in data:
-            self.add_zone(self._zone_from_dict(data))
-        else:
-            self.add_zone(self._zone_from_dict({"data": dict(data)}))
-
-    def _zone_from_dict(self, spec: Mapping[str, Any]) -> Zone:
-        """Build a :class:`Zone` from a single zone specification dict."""
-        data: Mapping[str, Any] = spec.get("data", {})
-        value_locations: Mapping[str, Any] = spec.get("value_locations", {})
-
-        variables = [
-            Variable(
-                str(name),
-                values=np.asarray(arr),
-                value_location=_as_value_location(
-                    value_locations.get(name, ValueLocation.NODAL)
-                ),
-            )
-            for name, arr in data.items()
-        ]
-
-        kwargs: dict[str, Any] = dict(
-            title=str(spec.get("title", "")),
-            zone_type=_as_zone_type(spec.get("zone_type", ZoneType.ORDERED)),
-            solution_time=float(spec.get("solution_time", 0.0)),
-            strand_id=int(spec.get("strand_id", 0)),
-            variables=variables,
-            aux=spec.get("aux"),
-        )
-        if spec.get("dimensions") is not None:
-            kwargs["dimensions"] = tuple(spec["dimensions"])
-        if spec.get("num_nodes") is not None:
-            kwargs["num_nodes"] = int(spec["num_nodes"])
-        if spec.get("num_elements") is not None:
-            kwargs["num_elements"] = int(spec["num_elements"])
-        if spec.get("node_map") is not None:
-            kwargs["node_map"] = np.asarray(spec["node_map"])
-        return Zone(**kwargs)
-
-    def _load_dataframe(
-        self,
-        df: Any,
-        *,
-        columns: Sequence[str] | None = None,
-        by: str | None = None,
-        value_locations: Mapping[str, Any] | None = None,
-    ) -> None:
-        """Populate the dataset from a :class:`pandas.DataFrame`.
-
-        Each selected column becomes a nodal variable of a single ordered zone.
-        When *by* is given the frame is grouped on that column and one zone is
-        produced per group.
-        """
-        _require_pandas()  # surface a clear error if pandas is unavailable
-        vlocs = value_locations or {}
-        cols = (
-            list(columns) if columns is not None else [c for c in df.columns if c != by]
-        )
-
-        def _make_zone(title: str, frame: Any) -> Zone:
-            variables = [
-                Variable(
-                    str(c),
-                    values=np.asarray(frame[c].to_numpy()),
-                    value_location=_as_value_location(
-                        vlocs.get(c, ValueLocation.NODAL)
-                    ),
-                )
-                for c in cols
-            ]
-            return Zone(title=title, zone_type=ZoneType.ORDERED, variables=variables)
-
-        if by is not None:
-            for key, group in df.groupby(by):
-                self.add_zone(_make_zone(str(key), group))
-        else:
-            self.add_zone(_make_zone("", df))
+        self.add_zone(Zone.ijk_from_dict(dict(data)))
 
     def to_dataframe(
         self,
@@ -891,13 +889,17 @@ class Dataset:
         target = self._zones[zone] if isinstance(zone, int) else zone
         return self._zone_dataframe(pd, target)
 
-    @staticmethod
-    def _zone_dataframe(pd: Any, zone: Zone) -> Any:
-        """Build a per-zone DataFrame of nodal variable columns."""
+    def _zone_dataframe(self, pd: Any, zone: Zone) -> Any:
+        """Build a per-zone DataFrame of nodal variable columns.
+
+        Shared variables are read through to their source array (matching
+        :meth:`tecio.Zone.get_array`); passive, cell-centered, or
+        length-mismatched variables become ``NaN`` columns.
+        """
         n = zone.num_nodes
         data: dict[str, npt.NDArray] = {}
         for var in zone.variable:
-            arr = var.values
+            arr = var.values  # resolves a shared variable to its source array
             if (
                 arr is not None
                 and var.value_location == ValueLocation.NODAL
@@ -908,9 +910,9 @@ class Dataset:
                 data[var.name] = np.full(n, np.nan)
         return pd.DataFrame(data)
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
     # Classmethod constructors
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     @classmethod
     def from_file(
@@ -956,27 +958,16 @@ class Dataset:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any], *, title: str = "") -> Dataset:
-        """Create a dataset from a :class:`dict` (see :meth:`_load_dict`)."""
+        """Create a dataset from a flat ``{name: array}`` mapping.
+
+        The mapping becomes a single ordered zone (see :meth:`_load_dict`).  For
+        richer layouts use :meth:`add_ijk_zone` / :meth:`add_fe_zone`.
+        """
         return cls(dict(data), title=title)
 
-    @classmethod
-    def from_dataframe(
-        cls,
-        df: Any,
-        *,
-        columns: Sequence[str] | None = None,
-        by: str | None = None,
-        value_locations: Mapping[str, Any] | None = None,
-        title: str = "",
-    ) -> Dataset:
-        """Create a dataset from a :class:`pandas.DataFrame`."""
-        obj = cls(title=title)
-        obj._load_dataframe(df, columns=columns, by=by, value_locations=value_locations)
-        return obj
-
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
     # Dunder helpers
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
 
     def __len__(self) -> int:
         return len(self._zones)
