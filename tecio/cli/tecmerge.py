@@ -155,7 +155,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--force",
+        "-f", "--force",
         action="store_true",
         default=False,
         help="Overwrite the output file if it already exists.",

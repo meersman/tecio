@@ -132,7 +132,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "  Explicit output path\n"
             "    $ teconvert -plt -o /tmp/out.plt flow.dat\n"
             "  Overwrite existing\n"
-            "  teconvert --force -dat flow.szplt\n"
+            "    $ teconvert --force -dat flow.szplt\n"
         ),
         formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
             prog, width=70, max_help_position=24
