@@ -71,7 +71,7 @@ Examples:
         teconvert(["-dat", "-o", "flow.dat", "flow.szplt"])
 
 See Also:
-    :mod:`tecio.cli.tecextract`: Extract a zone/variable subset while simultaneously
+    :mod:`tecio.cli.tecextract` - Extract a zone/variable subset while simultaneously
     converting format via the output file extension.
 """
 

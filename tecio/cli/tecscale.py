@@ -80,7 +80,7 @@ Examples:
         tecscale(["-variable", "Pressure", "-scale", "1e-3", "flow.szplt"])
 
 See Also:
-    :mod:`tecio.cli.teconvert`: Convert between Tecplot file formats without applying
+    :mod:`tecio.cli.teconvert` - Convert between Tecplot file formats without applying
     any variable transformation.
 
 """

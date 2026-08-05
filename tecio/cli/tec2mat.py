@@ -136,9 +136,9 @@ Examples:
         end
 
 See Also:
-    * :mod:`tecio.cli.teconvert`: Convert between Tecplot file formats (``.szplt``,
+    * :mod:`tecio.cli.teconvert` - Convert between Tecplot file formats (``.szplt``,
       ``.plt``, ``.dat``) without leaving the Tecplot ecosystem.
-    * :mod:`tecio.cli.tecdump`: Inspect the full contents and metadata of a file before
+    * :mod:`tecio.cli.tecdump` - Inspect the full contents and metadata of a file before
       converting it.
 
 Note:

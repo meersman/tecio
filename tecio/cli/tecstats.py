@@ -85,9 +85,9 @@ Examples:
         tecstats(["-zone", "2", "-variable", "3", "flow.szplt"])
 
 See Also:
-    * :mod:`tecio.cli.tecdump`: Inspect the full contents and metadata of a file,
+    * :mod:`tecio.cli.tecdump` - Inspect the full contents and metadata of a file,
       including auxiliary data and raw variable arrays.
-    * :mod:`tecio.cli.tecfix`: Rewrite a file with invalid variable arrays set to
+    * :mod:`tecio.cli.tecfix` - Rewrite a file with invalid variable arrays set to
        passive once bad values have been identified via statistics.
 
 """

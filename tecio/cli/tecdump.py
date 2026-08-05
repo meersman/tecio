@@ -70,7 +70,7 @@ Examples:
 See Also:
     * :mod:`tecio.cli.tecstats` - Compute per-zone min, max, and mean statistics without
       printing raw values.
-    * :mod:`tecio.cli.tecfix`: Rewrite a file with invalid variable
+    * :mod:`tecio.cli.tecfix` - Rewrite a file with invalid variable
       arrays set to passive once bad values have been identified.
 """
 

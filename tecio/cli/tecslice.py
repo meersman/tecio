@@ -114,10 +114,10 @@ Examples:
         tecslice(["-i", "::2", "-o", "thinned.szplt", "flow.szplt"])
 
 See Also:
-    * :mod:`tecio.cli.tecextract`: Extract a subset of zones or variables by index
+    * :mod:`tecio.cli.tecextract` - Extract a subset of zones or variables by index
       rather than by positional slice.
-    * :mod:`tecio.cli.tecsplit`: Split a file into separate grid and solution files.
-    * :mod:`tecio.cli.tecmerge`: Merge zones from multiple files into a single output.
+    * :mod:`tecio.cli.tecsplit` - Split a file into separate grid and solution files.
+    * :mod:`tecio.cli.tecmerge` - Merge zones from multiple files into a single output.
 """
 
 from __future__ import annotations

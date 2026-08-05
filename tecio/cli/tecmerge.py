@@ -83,10 +83,10 @@ Examples:
         tecmerge(["part1.szplt", "part2.szplt", "--output", "combined.szplt"])
 
 See Also:
-    * :mod:`tecio.cli.tecextract`: Extract a zone/variable subset from a single file —
+    * :mod:`tecio.cli.tecextract` - Extract a zone/variable subset from a single file —
       the inverse of merging.
-    * :mod:`tecio.cli.tecsplit`: Split a file into separate grid and solution files.
-    * :mod:`tecio.cli.tecslice`: Extract planar slices from volumetric zone data.
+    * :mod:`tecio.cli.tecsplit` - Split a file into separate grid and solution files.
+    * :mod:`tecio.cli.tecslice` - Extract planar slices from volumetric zone data.
 
 """
 
@@ -155,7 +155,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "-f", "--force",
+        "-f",
+        "--force",
         action="store_true",
         default=False,
         help="Overwrite the output file if it already exists.",

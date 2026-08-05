@@ -66,9 +66,9 @@ Examples:
         tecfix(["flow.szplt", "--output", "clean.szplt"])
 
 See Also:
-    * :mod:`tecio.cli.tecdump`: Inspect file contents and metadata to
+    * :mod:`tecio.cli.tecdump` - Inspect file contents and metadata to
       identify zones or variables that may require fixing.
-    * :mod:`tecio.cli.tecstats`: Compute per-zone min, max, and mean
+    * :mod:`tecio.cli.tecstats` - Compute per-zone min, max, and mean
       statistics without printing raw values.
 
 Note:
