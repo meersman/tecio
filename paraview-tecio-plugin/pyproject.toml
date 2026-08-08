@@ -1,0 +1,43 @@
+[project]
+name = "TecplotTecioReader"
+version = "0.0.1"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+output-format = "concise"
+
+[tool.ruff.format]
+preview = true
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = [
+   "E",    # pycodestyle
+   "D",    # pydocstyle
+   "F",    # Pyflakes
+   "UP",   # pyupgrade
+   "B",    # flake8-bugbear
+   "SIM",  # flake8-simplify
+   "I",    # isort
+]
+ignore = ["D203", "D213", "SIM105"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",   # allow assert statements in tests
+    "ANN",    # don't require type annotations in tests
+    "D",      # don't require docstrings in tests
+]
+"docs/_demos/**/*.py" = ["E", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ty.terminal]
+output-format = "concise"
+
+[tool.pytest.ini_options]
+pythonpath = ["tecio"]
+testpaths = ["tests"]

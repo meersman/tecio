@@ -277,7 +277,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         description=(
             # -|--------------------|---------------------------------------------|
             "Slice a Tecplot file along IJK indices (ordered zones) and/or\n"
-            "solution time (all zone types).\n"
+            "solution time (all zone types).\n\n"
             "Slice notation: start:end:skip (any component may be omitted)."
         ),
         epilog=(
@@ -329,9 +329,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     ijk = parser.add_argument_group(
         "IJK slicing",
         (
-            "Colon-notation slices for structured axes.  "
-            "Indices are 1-based and inclusive.  "
-            "Applied only to ordered (structured) zones."
+            # -|--------------------|---------------------------------------------|
+            "Colon-notation slices for structured axes. Indices are 1-based and\n"
+            "inclusive. Applied only to ordered (structured) zones."
         ),
     )
     for axis in ("i", "j", "k"):
@@ -351,8 +351,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     tslice = parser.add_argument_group(
         "solution-time slicing",
         (
-            "Applied per strand to all zone types.  "
-            "Strand-0 zones are always written unchanged."
+            # -|--------------------|---------------------------------------------|
+            "Applied per strand to all zone types. Strand-0 zones are always\n"
+            "written unchanged."
         ),
     )
     tslice.add_argument(
