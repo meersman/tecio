@@ -1,14 +1,8 @@
 """ParaView reader plugin for Tecplot 360 data files, built on ``tecio``.
 
-Wraps the ``tecio`` Python bindings for the TecIO C/C++ library (see the `Tecplot 360
-data format guide
-<https://tecplot.azureedge.net/products/360/current/360-data-format.html>`_) so that
-ParaView can load SZL (``.szplt``), classic binary PLT (``.plt`` / ``.bin``), and ASCII
-DAT (``.dat`` / ``.tec``) files through one reader. This exists to close three gaps in
-ParaView's built-in Tecplot reader: it cannot read ``.szplt`` at all, it errors out on
-some ASCII zone-header fields tecio already handles, and it drops Tecplot's auxiliary
-("aux") data on the floor instead of surfacing it as VTK
-:class:`~vtkmodules.vtkCommonDataModel.  vtkFieldData`.
+This plugin closes three gaps in ParaView's built-in Tecplot reader: it cannot read
+``.szplt``, it errors out on some ASCII zone header fields, and does not read auxiliary
+data as VTK :class:`~vtkmodules.vtkCommonDataModel. vtkFieldData`.
 
 Output structure
     Each file is read into one ``vtkMultiBlockDataSet``, one block per zone, named after
@@ -17,13 +11,19 @@ Output structure
     * ``ORDERED`` zones become ``vtkStructuredGrid`` blocks.
     * Classic finite-element zones (line, triangle, quadrilateral, tetrahedron, brick)
       become ``vtkUnstructuredGrid`` blocks.
-    * ``FEPOLYGON``, ``FEPOLYHEDRON``, and ``FEMIXED`` zones are not yet supported --
-      see "Known limitations" below -- and are skipped with a printed warning rather
-      than aborting the whole read.
+    * ``FEPOLYGON``, ``FEPOLYHEDRON``, and ``FEMIXED`` zones are not yet supported and
+      are skipped with a printed warning.
+    * A zone whose aux data marks it a non-``Wall`` boundary (see "Zone visibility"
+      below) still becomes a block, but its entry in the ``Zones`` property defaults
+      to unchecked, matching Tecplot's own default display convention.
 
     Auxiliary data has no first-class equivalent in VTK, so it is mapped onto the
-    nearest matching :class:`vtkFieldData`, each item as a one-element
-    ``vtkStringArray`` named after the aux-data key:
+    nearest matching :class:`vtkFieldData`, each item as a one-element array named after
+    the aux-data key -- numeric (int64/float64) when the value parses cleanly as a
+    number, else a :class:`vtkStringArray`. Tecplot itself treats aux data as usable
+    scalars in its own equations, and a numeric VTK array is the equivalent for
+    ParaView: it works directly in the Python Calculator, Calculator filter, and
+    numeric-oriented annotation filters, not just as inert display text.
 
     * Dataset-level aux data -> the root ``vtkMultiBlockDataSet``'s field data.
     * Variable-level aux data -> also the root field data, keyed ``"<variable
@@ -32,15 +32,37 @@ Output structure
     * Zone-level aux data -> that zone's own block's field data.
 
 Coordinates
-    Tecplot data files do not tag which variables are spatial coordinates (that is a
-    plot/frame setting, not a file-format concept), so this reader guesses: it looks for
-    variables named some spelling of ``x``/``y``/``z`` (case-insensitively,
-    e.g. ``"X"``, ``"x-coordinate"``), and falls back to the first, second, and third
-    dataset variables if nothing matches. The ``XArray``/``YArray``/``ZArray``
-    properties override the guess per axis; set ``ZArray`` explicitly for 3-D data whose
-    variables aren't named conventionally, since there both is no third-variable
-    enforcement and no reliable auto-detected result to fall back on beyond the naming
-    convention. A dataset with no Z match at all is treated as 2-D (``Z=0``).
+    Tecplot data files do not tag which variables are spatial coordinates (that is
+    ordinarily a plot/frame setting, not a file-format concept), so this reader resolves
+    each axis in priority order:
+
+    1. The ``XArray``/``YArray``/``ZArray`` properties, if set to a real variable name.
+    2. The dataset aux data items ``Common.XVar``/``Common.YVar``/``Common.ZVar``, per
+       the Tecplot data format guide -- each holds the 1-based dataset variable number
+       to use for that axis, when the file itself specifies one.
+    3. A name match against some spelling of ``x``/``y``/``z`` (case-insensitively,
+       e.g. ``"X"``, ``"x-coordinate"``).
+    4. For X and Y only, positional fallback to the first and second dataset variables,
+       since almost every Tecplot CFD file leads with its coordinates. Z has no
+       positional fallback beyond the third variable and defaults to all-zero (2-D
+       data) when nothing is found by steps 1-3.
+
+Vector components
+    If the dataset aux data specifies ``Common.UVar``/``Common.VVar``/``Common.WVar``
+    (or the ``UArray``/``VArray``/``WArray`` properties are set manually), this reader
+    assembles those component variables into one 3-component array per zone so glyphs,
+    streamlines, and vector-magnitude coloring work without a separate Calculator
+    step. Unlike coordinates, there's no name-based guessing here (solver vector
+    naming varies too much to guess reliably), so nothing is built at all unless at
+    least one of U/V/W actually resolves; a resolved-but-missing component (2-D flow,
+    or passive in a particular zone) is treated as zero rather than blocking the
+    other components. The array is named ``"Velocity"`` if the dataset aux item
+    ``Common.VectorVarsAreVelocity`` is truthy, else ``"Momentum"``.
+
+Zone visibility
+    Tecplot sets default visiblilty for zones with auxdata that marks them a boundary
+    that isn't a wall (``Common.IsBoundaryZone`` true and ``Common.BoundaryCondition``
+    not ``"Wall"``).
 
 Known limitations (first pass)
     * ``FEPOLYGON`` / ``FEPOLYHEDRON`` / ``FEMIXED`` zones are skipped. Note that
@@ -51,14 +73,12 @@ Known limitations (first pass)
       have no coordinate data to build geometry from and are not handled specially; they
       will fail coordinate resolution unless the variables happen to still be present.
     * Face-based connectivity, custom labels, geometry/text annotations, and Tecplot's
-      classic-PLT auxiliary record types outside dataset/zone/ variable aux data are out
-      of scope for this reader.
+      classic-PLT auxiliary record types outside dataset/zone/ variable aux data are not
+      handled by ``tecio`` data readers.
 
 Requirements
-    The ``tecio`` package (and the TecIO shared library it binds to) must be importable
-    from the same Python interpreter ParaView uses to run this plugin -- ParaView's
-    bundled Python, not necessarily the system Python.  See the accompanying README for
-    setup notes.
+    The ``tecio`` package must be importable from the same Python interpreter ParaView
+    uses to run this plugin.
 """
 
 from __future__ import annotations
@@ -89,10 +109,10 @@ from vtkmodules.vtkCommonDataModel import (
     vtkUnstructuredGrid,
 )
 
-# ParaView's bundled Python (vtkpython) has its own site-packages. The environment
-# variable takes precedence over the hardcoded fallback; edit the fallback (or just set
-# the environment variable and leave this alone) to match your local install.
-# e.g. "/Users/you/tecio-for-paraview"
+# Because ParaView's bundled Python (vtkpython) has its own write-protected
+# site-packages tecio cannot directly be installed into the pvpython environment,
+# create a TECIO_PYTHONPATH environment variable to point to the local install
+# (e.g. "/Users/you/tecio-for-paraview").
 _TECIO_FALLBACK_PATH = os.environ.get("TECIO_PYTHONPATH", "")
 if _TECIO_FALLBACK_PATH and _TECIO_FALLBACK_PATH not in sys.path:
     sys.path.insert(0, _TECIO_FALLBACK_PATH)
@@ -121,10 +141,7 @@ if TYPE_CHECKING:
 _EXTENSIONS = "szplt plt bin dat tec"
 _FILE_DESCRIPTION = "Tecplot 360 Data Files"
 
-# Maps a supported classic finite-element ZoneType to its VTK cell type. Populated
-# lazily (rather than at class-definition time) so that a missing `tecio` import doesn't
-# prevent this module from loading -- the class still needs to be importable so ParaView
-# can register it and show a clear error only once a file is actually opened.
+# Maps a supported classic finite-element ZoneType to its VTK cell type
 _VTK_CELL_TYPE: dict[Any, int] = (
     {
         ZoneType.FELINESEG: VTK_LINE,
@@ -137,9 +154,7 @@ _VTK_CELL_TYPE: dict[Any, int] = (
     else {}
 )
 
-# Conservative, exact-match (case-insensitive, trimmed) spellings of each coordinate
-# axis. Deliberately not a substring match: "contains x" would also catch unrelated
-# variables such as "X Velocity".
+# Exact-match (case-insensitive, trimmed) spellings of each coordinate axis
 _AXIS_SYNONYMS: dict[str, frozenset[str]] = {
     "x": frozenset({
         "x",
@@ -172,6 +187,27 @@ _AXIS_SYNONYMS: dict[str, frozenset[str]] = {
         "z_coord",
     }),
 }
+
+
+# Case-insensitive truthy spellings Tecplot recognizes for Common.IsBoundaryZone
+_BOUNDARY_ZONE_TRUE_VALUES = frozenset({"yes", "y", "true", "t", "on"})
+
+
+def _is_deactivated_boundary_zone(zone: Any) -> bool:
+    """Return True if *zone* should default to hidden, per Tecplot's own convention.
+
+    Mirrors Tecplot 360's documented behavior for the ``Common.IsBoundaryZone`` /
+    ``Common.BoundaryCondition`` zone aux data pair: a zone marked a boundary is
+    deactivated (hidden) by default unless its boundary condition is exactly
+    ``"Wall"``. Only the default *initial* state is affected -- the zone still loads
+    as a block either way, and its checkbox in the ``Zones`` property can always be
+    re-enabled.
+    """
+    aux = zone.auxdata
+    is_boundary = aux.get("Common.IsBoundaryZone", "").strip().lower()
+    if is_boundary not in _BOUNDARY_ZONE_TRUE_VALUES:
+        return False
+    return aux.get("Common.BoundaryCondition", "") != "Wall"
 
 
 class _UnsupportedZoneError(Exception):
@@ -209,17 +245,59 @@ def _autodetect_axis(names: list[str], axis: str) -> str | None:
     return None
 
 
-def _add_string_field_data(
+def _resolve_common_var(reader: _TecioReader, key: str) -> str | None:
+    """Resolve a ``Common.<Something>Var`` dataset aux item to a variable name.
+
+    Per the Tecplot data format guide, items such as ``Common.XVar`` and
+    ``Common.UVar`` hold a 1-based dataset variable number when present. Returns
+    ``None`` if *key* is absent from the dataset aux data, isn't a valid integer, or
+    is out of range for the dataset -- the caller decides what to fall back to.
+    """
+    index = reader.auxdata.as_int(key)
+    if index is None:
+        return None
+    if not 1 <= index <= reader.num_vars:
+        print(
+            f"[TecplotTecioReader] {key} = {index} is out of range "
+            f"[1, {reader.num_vars}]; ignoring."
+        )
+        return None
+    return reader.variables[index - 1]
+
+
+def _coerce_aux_value(value: str) -> int | float | str:
+    """Best-effort convert an aux-data string to ``int`` or ``float``.
+
+    Tecplot itself treats aux data as usable scalars in its own equations, so a value
+    that parses cleanly as a number is returned as that type; anything else is left as
+    the original string. ``int()`` is tried before ``float()`` so an integer-looking
+    value (e.g. the variable number in ``Common.XVar``) becomes a integer rather than a
+    ``1.0``-style float.
+    """
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        return value
+
+
+def _add_aux_field_data(
     field_data: vtkFieldData,
     items: Any,
     key_fn: Any = None,
 ) -> None:
     """Attach each ``(name, value)`` pair in *items* to *field_data*.
 
-    Each pair becomes a one-element :class:`vtkStringArray`, which is the closest
-    practical VTK equivalent to Tecplot's string-valued auxiliary data -- there is no
-    first-class "aux data" concept in VTK, but field data is visible in ParaView's
-    Information panel and Spreadsheet View.
+    Each pair becomes a one-element array on *field_data*: a numeric int64/float64
+    array (see :func:`_coerce_aux_value`) when the value parses cleanly as a number,
+    else a :class:`vtkStringArray`. This is the closest practical VTK equivalent to
+    Tecplot's auxiliary data -- there is no first-class "aux data" concept in VTK, but
+    field data is visible in ParaView's Information panel and Spreadsheet View, and a
+    numeric array additionally works directly with numeric-oriented tools such as the
+    Python Calculator and Annotate Attribute Data filter.
 
     Args:
         field_data: Target field data (root dataset, block, etc.).
@@ -229,10 +307,20 @@ def _add_string_field_data(
     """
     for key, value in items:
         name = key_fn(key) if key_fn is not None else key
-        arr = vtkStringArray()
-        arr.SetName(name)
-        arr.SetNumberOfValues(1)
-        arr.SetValue(0, value)
+        coerced = _coerce_aux_value(value)
+
+        if isinstance(coerced, str):
+            arr = vtkStringArray()
+            arr.SetName(name)
+            arr.SetNumberOfValues(1)
+            arr.SetValue(0, coerced)
+        else:
+            dtype = np.int64 if isinstance(coerced, int) else np.float64
+            arr = numpy_support.numpy_to_vtk(
+                np.array([coerced], dtype=dtype), deep=True
+            )
+            arr.SetName(name)
+
         field_data.AddArray(arr)
 
 
@@ -268,6 +356,9 @@ class TecplotReader(VTKPythonAlgorithmBase):
         self._x_override: str | None = None
         self._y_override: str | None = None
         self._z_override: str | None = None
+        self._u_override: str | None = None
+        self._v_override: str | None = None
+        self._w_override: str | None = None
 
         self._array_selection = vtkDataArraySelection()
         self._array_selection.AddObserver("ModifiedEvent", _modified_callback(self))
@@ -304,9 +395,7 @@ class TecplotReader(VTKPythonAlgorithmBase):
 
         Reopens only when the path or on-disk modification time changes, so the
         frequent, metadata-only pipeline callbacks ParaView issues (array lists, time
-        values, ...) don't repeatedly pay the cost of reopening the file -- which
-        matters most for ASCII DAT files, whose entire contents ``tecio`` parses eagerly
-        at open time.
+        values, ...) don't repeatedly pay the cost of reopening the file.
 
         Returns:
             An open ``tecio`` reader, or ``None`` if no file has been set.
@@ -359,7 +448,8 @@ class TecplotReader(VTKPythonAlgorithmBase):
             title = zone.title or f"Zone {zone.zone_index}"
             key = f"{zone.zone_index}: {title}"
             self._zone_keys[zone.zone_index] = key
-            self._zone_selection.AddArray(key)
+            default_enabled = not _is_deactivated_boundary_zone(zone)
+            self._zone_selection.AddArray(key, default_enabled)
 
     # -- FileName --------------------------------------------------------------------
 
@@ -453,17 +543,60 @@ class TecplotReader(VTKPythonAlgorithmBase):
         """Override auto-detection of the Z-coordinate variable (else 2-D: Z=0)."""
         self._set_axis_override("z", value)
 
-    def _resolve_coordinate_names(
+    @smproperty.stringvector(
+        name="UArray", number_of_elements="1", default_values=["(auto)"]
+    )
+    @smdomain.xml("""
+        <StringListDomain name="list">
+          <RequiredProperties>
+            <Property name="VariableInfo" function="StringInfo"/>
+          </RequiredProperties>
+        </StringListDomain>
+    """)
+    def SetUArray(self, value: str) -> None:
+        """Override the vector-array U component (else ``Common.UVar``, if set)."""
+        self._set_axis_override("u", value)
+
+    @smproperty.stringvector(
+        name="VArray", number_of_elements="1", default_values=["(auto)"]
+    )
+    @smdomain.xml("""
+        <StringListDomain name="list">
+          <RequiredProperties>
+            <Property name="VariableInfo" function="StringInfo"/>
+          </RequiredProperties>
+        </StringListDomain>
+    """)
+    def SetVArray(self, value: str) -> None:
+        """Override the vector-array V component (else ``Common.VVar``, if set)."""
+        self._set_axis_override("v", value)
+
+    @smproperty.stringvector(
+        name="WArray", number_of_elements="1", default_values=["(auto)"]
+    )
+    @smdomain.xml("""
+        <StringListDomain name="list">
+          <RequiredProperties>
+            <Property name="VariableInfo" function="StringInfo"/>
+          </RequiredProperties>
+        </StringListDomain>
+    """)
+    def SetWArray(self, value: str) -> None:
+        """Override the vector-array W component (else ``Common.WVar``, if set)."""
+        self._set_axis_override("w", value)
+
+    def _resolve_vector_component_names(
         self, reader: _TecioReader
     ) -> tuple[str | None, str | None, str | None]:
-        """Pick the dataset variables to use as X, Y, and Z point coordinates.
+        """Pick the dataset variables to use as the U, V, W vector components.
 
-        A manual override wins when set and still names a real dataset
-        variable. Otherwise each axis is matched by name (see :func:`_autodetect_axis`);
-        X and Y additionally fall back to the first and second dataset variables, since
-        almost every Tecplot CFD file leads with its coordinates. Z has no positional
-        fallback beyond the third variable and defaults to all-zero (2-D data) when
-        nothing is found.
+        Unlike coordinates, there's no name-based or positional fallback here. Tecplot
+        vector-variable names (velocity or momentum components) vary too much across
+        solvers to guess reliably. A component resolves only via a manual override
+        (``UArray``/``VArray``/``WArray``) or the file's own
+        ``Common.UVar``/``Common.VVar``/``Common.WVar`` dataset aux data; anything left
+        unresolved stays ``None`` and is treated as zero when the vector is assembled,
+        so a 2-D (U, V only) flow still gets a valid, glyph-able vector.
         """
         names = list(reader.variables)
 
@@ -471,9 +604,55 @@ class TecplotReader(VTKPythonAlgorithmBase):
             value = getattr(self, f"_{axis}_override")
             return value if value in names else None
 
-        x = override("x") or _autodetect_axis(names, "x")
-        y = override("y") or _autodetect_axis(names, "y")
-        z = override("z") or _autodetect_axis(names, "z")
+        u = override("u") or _resolve_common_var(reader, "Common.UVar")
+        v = override("v") or _resolve_common_var(reader, "Common.VVar")
+        w = override("w") or _resolve_common_var(reader, "Common.WVar")
+        return u, v, w
+
+    @staticmethod
+    def _resolve_vector_array_name(reader: _TecioReader) -> str:
+        """Return "Velocity" or "Momentum" per Common.VectorVarsAreVelocity.
+
+        Per the Tecplot data format guide: if that dataset aux item is truthy, the
+        U/V/W vector is velocity; otherwise Tecplot's own documented default is to
+        assume momentum, which this mirrors.
+        """
+        is_velocity = reader.auxdata.as_bool("Common.VectorVarsAreVelocity")
+        return "Velocity" if is_velocity else "Momentum"
+
+    def _resolve_coordinate_names(
+        self, reader: _TecioReader
+    ) -> tuple[str | None, str | None, str | None]:
+        """Pick the dataset variables to use as X, Y, and Z point coordinates.
+
+        Priority order: manual override, then the ``Common.XVar``/``YVar``/``ZVar``
+        dataset aux items if the file specifies them, then a name match (see
+        :func:`_autodetect_axis`), then -- for X and Y only -- positional fallback to
+        the first and second dataset variables, since almost every Tecplot CFD file
+        leads with its coordinates. Z has no positional fallback beyond the third
+        variable and defaults to all-zero (2-D data) when nothing is found.
+        """
+        names = list(reader.variables)
+
+        def override(axis: str) -> str | None:
+            value = getattr(self, f"_{axis}_override")
+            return value if value in names else None
+
+        x = (
+            override("x")
+            or _resolve_common_var(reader, "Common.XVar")
+            or _autodetect_axis(names, "x")
+        )
+        y = (
+            override("y")
+            or _resolve_common_var(reader, "Common.YVar")
+            or _autodetect_axis(names, "y")
+        )
+        z = (
+            override("z")
+            or _resolve_common_var(reader, "Common.ZVar")
+            or _autodetect_axis(names, "z")
+        )
 
         if x is None and names:
             x = names[0]
@@ -569,8 +748,10 @@ class TecplotReader(VTKPythonAlgorithmBase):
 
         requested_time = self._get_update_time(outInfoVec.GetInformationObject(0))
         x_name, y_name, z_name = self._resolve_coordinate_names(reader)
+        u_name, v_name, w_name = self._resolve_vector_component_names(reader)
+        vector_array_name = self._resolve_vector_array_name(reader)
 
-        _add_string_field_data(output.GetFieldData(), reader.auxdata.items())
+        _add_aux_field_data(output.GetFieldData(), reader.auxdata.items())
         self._add_variable_aux_field_data(output.GetFieldData(), reader)
 
         block_index = 0
@@ -586,7 +767,16 @@ class TecplotReader(VTKPythonAlgorithmBase):
                 continue
 
             try:
-                dataset = self._build_zone_dataset(zone, x_name, y_name, z_name)
+                dataset = self._build_zone_dataset(
+                    zone,
+                    x_name,
+                    y_name,
+                    z_name,
+                    u_name,
+                    v_name,
+                    w_name,
+                    vector_array_name,
+                )
             except _UnsupportedZoneError as exc:
                 print(
                     f"[TecplotTecioReader] Skipping zone {zone.zone_index} "
@@ -619,7 +809,7 @@ class TecplotReader(VTKPythonAlgorithmBase):
             if not len(aux):
                 continue
             var_name = names[i - 1]
-            _add_string_field_data(
+            _add_aux_field_data(
                 field_data, aux.items(), key_fn=lambda k, v=var_name: f"{v}::{k}"
             )
 
@@ -631,6 +821,10 @@ class TecplotReader(VTKPythonAlgorithmBase):
         x_name: str | None,
         y_name: str | None,
         z_name: str | None,
+        u_name: str | None,
+        v_name: str | None,
+        w_name: str | None,
+        vector_array_name: str,
     ) -> vtkStructuredGrid | vtkUnstructuredGrid:
         """Convert one Tecplot zone into a VTK type.
 
@@ -654,8 +848,11 @@ class TecplotReader(VTKPythonAlgorithmBase):
                 zone, cell_type, x_name, y_name, z_name
             )
 
-        _add_string_field_data(dataset.GetFieldData(), zone.auxdata.items())
+        _add_aux_field_data(dataset.GetFieldData(), zone.auxdata.items())
         self._add_variable_arrays(dataset, zone)
+        self._add_vector_array(
+            dataset, zone, vector_array_name, u_name, v_name, w_name
+        )
         return dataset
 
     def _build_structured_grid(
@@ -796,3 +993,80 @@ class TecplotReader(VTKPythonAlgorithmBase):
                 if flat.size != n_cells:
                     continue
                 dataset.GetCellData().AddArray(vtk_array)
+
+    def _add_vector_array(
+        self,
+        dataset: vtkStructuredGrid | vtkUnstructuredGrid,
+        zone: Any,
+        array_name: str,
+        u_name: str | None,
+        v_name: str | None,
+        w_name: str | None,
+    ) -> None:
+        """Assemble the U/V/W components into one 3-component vector array.
+
+        Skipped entirely if none of U/V/W resolved for the dataset. A component that did
+        resolve for the dataset but is passive or absent in *this specific* zone is
+        treated as zero for that zone, same as an axis that never resolved at all. All
+        contributing components must share one value location (``NODAL`` or
+        ``CELL_CENTERED``) and array length; a mismatch skips vector assembly for this
+        zone with a printed warning, since the rest of the zone is still good.
+        """
+        if u_name is None and v_name is None and w_name is None:
+            return
+
+        location: ValueLocation | None = None
+        flat_components: list[npt.NDArray[np.float64] | None] = []
+        for name in (u_name, v_name, w_name):
+            if name is None:
+                flat_components.append(None)
+                continue
+            var = zone.variable[name]
+            values = var.values
+            if values is None:  # passive, or absent in this specific zone
+                flat_components.append(None)
+                continue
+
+            flat = values.ravel(order="F") if values.ndim == 3 else np.ravel(values)
+            if location is None:
+                location = var.value_location
+            elif var.value_location != location:
+                print(
+                    f"[TecplotTecioReader] Zone {zone.zone_index} ({zone.title!r}): "
+                    f"'{name}' has a different value location than the other "
+                    "vector components; skipping the vector for this zone."
+                )
+                return
+            flat_components.append(flat)
+
+        if location is None:
+            return  # every resolved component was passive/absent in this zone
+
+        n_tuples = (
+            dataset.GetNumberOfPoints()
+            if location == ValueLocation.NODAL
+            else dataset.GetNumberOfCells()
+        )
+        zeros = np.zeros(n_tuples, dtype=np.float64)
+        columns = []
+        for flat in flat_components:
+            if flat is None:
+                columns.append(zeros)
+            elif flat.size != n_tuples:
+                print(
+                    f"[TecplotTecioReader] Zone {zone.zone_index} ({zone.title!r}): "
+                    f"a vector component has {flat.size} values, expected "
+                    f"{n_tuples}; skipping the vector for this zone."
+                )
+                return
+            else:
+                columns.append(flat.astype(np.float64, copy=False))
+
+        vector = np.ascontiguousarray(np.column_stack(columns))
+        vtk_array = numpy_support.numpy_to_vtk(vector, deep=True)
+        vtk_array.SetName(array_name)
+
+        if location == ValueLocation.NODAL:
+            dataset.GetPointData().AddArray(vtk_array)
+        else:
+            dataset.GetCellData().AddArray(vtk_array)
