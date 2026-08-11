@@ -17,6 +17,7 @@ from typing import Any, overload
 
 import numpy as np
 import numpy.typing as npt
+from typing_extensions import Self
 
 from .._containers import VariableList, ZoneList, select_variable_arrays
 from ..libtecio import (
@@ -137,6 +138,10 @@ _STR_TO_DATATYPE: dict[str, DataType] = {
 #: Values per line for Write data blocks.
 _VALUES_PER_LINE: int = 5
 
+# Safety cap on the number of grow-and-reparse iterations the vectorized block readers
+# will attempt before giving up and falling back to the tolerant token-by-token parser
+_MAX_FAST_BLOCK_ITERATIONS: int = 64
+
 
 # ======================================================================================
 # Shared internal helpers
@@ -172,6 +177,42 @@ def _strip_comment(line: str) -> str:
     """
     idx = line.find("#")
     return line[:idx].rstrip() if idx >= 0 else line.rstrip()
+
+
+def _is_float_block_boundary(line: str) -> bool:
+    r"""Return ``True`` if a stripped *line* ends a float data block early.
+
+    Shared by :meth:`Read._read_float_block_slow` (line-by-line) and
+    :meth:`Read._read_float_block_fast` (bulk, on parse failure) so the two readers
+    agree on exactly where a block stops.
+
+    Example:
+        >>> _is_float_block_boundary("ZONE T=\\"next\\"")
+        True
+    """
+    upper = line.lstrip().upper()
+    if not upper:
+        return False
+    if upper.split("=")[0].split()[0] == "ZONE":
+        return True
+    return (
+        upper.startswith(("DATASETAUXDATA", "VARAUXDATA"))
+        or upper.startswith("TITLE")
+        and "=" in upper
+        or upper.startswith("VARIABLES")
+        and "=" in upper
+    )
+
+
+def _is_int_block_boundary(line: str) -> bool:
+    r"""Return ``True`` if a stripped *line* ends an int (connectivity) block.
+
+    Example:
+        >>> _is_int_block_boundary("DATASETAUXDATA foo=\\"bar\\"")
+        True
+    """
+    upper = line.lstrip().upper()
+    return upper.startswith(("ZONE", "DATASETAUXDATA"))
 
 
 def _infer_data_type(arr: npt.NDArray) -> DataType:
@@ -569,38 +610,99 @@ def _apply_varauxdata(line: str, var_auxdata_list: list) -> None:
 class _LineBuffer:
     """Peekable iterator over stripped, comment-free text lines.
 
+    Also exposes a small *raw* interface (:meth:`take_raw`, :meth:`position`,
+    :meth:`seek`) used only by the vectorized numeric-block readers
+    (:meth:`Read._read_float_block_fast`/:meth:`Read._read_int_block_fast`).  Those
+    readers bypass per-line comment-stripping for speed and instead detect the rare line
+    that *isn't* plain numeric data (a comment, a header keyword) by letting NumPy's
+    parser fail on it, then falling back to this class's ordinary stripped-line
+    interface. Keeping both interfaces on one object means the fast path can hand back
+    an exact resume position for that fallback via :meth:`position`/:meth:`seek`.
+
     Example:
         >>> buf = _LineBuffer(lines)
     """
 
+    __slots__ = ("_lines", "_peeked", "_peeked_pos", "_pos")
+
     def __init__(self, lines: list[str]) -> None:
         self._lines: list[str] = lines
         self._pos: int = 0
+        # One-line lookahead cache so a peek_stripped() immediately followed by
+        # next_stripped() strips comments/whitespace only once instead of twice.
+        self._peeked: str | None = None
+        self._peeked_pos: int = -1
 
     def has_more(self) -> bool:
         """Return ``True`` if there are unconsumed lines."""
-        return self._pos < len(self._lines)
+        return self._peeked is not None or self._pos < len(self._lines)
 
     def peek_stripped(self) -> str:
         """Return the next non-blank stripped line without consuming it."""
+        if self._peeked is not None:
+            return self._peeked
         pos = self._pos
-        while pos < len(self._lines):
-            raw = _strip_comment(self._lines[pos])
-            stripped = raw.strip()
-            if stripped:
-                return stripped
+        n = len(self._lines)
+        while pos < n:
+            stripped = _strip_comment(self._lines[pos]).strip()
             pos += 1
+            if stripped:
+                self._peeked = stripped
+                self._peeked_pos = pos
+                return stripped
+        self._peeked = ""
+        self._peeked_pos = pos
         return ""
 
     def next_stripped(self) -> str:
         """Consume and return the next non-blank stripped line."""
-        while self._pos < len(self._lines):
-            raw = _strip_comment(self._lines[self._pos])
-            self._pos += 1
-            stripped = raw.strip()
-            if stripped:
-                return stripped
-        return ""
+        if self._peeked is None:
+            self.peek_stripped()
+        value = self._peeked or ""
+        self._pos = self._peeked_pos
+        self._peeked = None
+        self._peeked_pos = -1
+        return value
+
+    def take_raw(self, count: int) -> list[str]:
+        """Consume and return up to *count* **unprocessed** source lines.
+
+        Unlike :meth:`next_stripped`, this does not strip comments, skip blank lines, or
+        strip whitespace -- it is a raw slice of the underlying line list, advancing the
+        position by exactly how many lines were returned (fewer than *count* at end of
+        file). Any pending :meth:`peek_stripped` lookahead is discarded first, since
+        this call always resumes from the true unconsumed position.
+
+        Intended only for the numeric fast-path readers, which feed the result straight
+        to a whitespace-tolerant NumPy parser and don't need per-line preprocessing.
+
+        Example:
+            >>> lines = buf.take_raw(64)
+        """
+        self._peeked = None
+        self._peeked_pos = -1
+        end = min(self._pos + count, len(self._lines))
+        out = self._lines[self._pos : end]
+        self._pos = end
+        return out
+
+    def position(self) -> int:
+        """Return an opaque marker for the current position.
+
+        Example:
+            >>> marker = buf.position()
+        """
+        return self._pos
+
+    def seek(self, marker: int) -> None:
+        """Restore the position to a marker previously returned by :meth:`position`.
+
+        Example:
+            >>> buf.seek(marker)
+        """
+        self._pos = marker
+        self._peeked = None
+        self._peeked_pos = -1
 
 
 # ======================================================================================
@@ -865,7 +967,7 @@ class ReadZone:
         zone_index: int,
         title: str,
         zone_type: ZoneType,
-        I: int,  # noqa: E741
+        I: int,  # noqa E741
         J: int,
         K: int,
         solution_time: float,
@@ -1047,7 +1149,7 @@ class Read:
         except Exception:
             return f"{cls}(path={name!r}, <unavailable>)"
 
-    def __enter__(self) -> Read:
+    def __enter__(self) -> Self:
         """Context manager for Read class."""
         return self
 
@@ -1058,7 +1160,6 @@ class Read:
         release on exit. Provided for API consistency with the Write classes and to
         support the ``with tecio.open(...) as r:`` pattern.
         """
-        pass
 
     # -- Properties --------------------------------------------------------------------
 
@@ -1270,9 +1371,7 @@ class Read:
             # Stop at a new zone, top-level keyword, or the first data line.
             if nxt_upper.split("=")[0].split()[0] == "ZONE":
                 break
-            if nxt_upper.startswith("DATASETAUXDATA") or nxt_upper.startswith(
-                "VARAUXDATA"
-            ):
+            if nxt_upper.startswith(("DATASETAUXDATA", "VARAUXDATA")):
                 break
             first_ch = nxt.lstrip()[0] if nxt.lstrip() else ""
             # A data line begins with a numeric token (covers leading-dot values
@@ -1338,7 +1437,7 @@ class Read:
             )
 
         if zone_type == ZoneType.ORDERED:
-            I = int(kv.get("I", "1") or "1")  # noqa: E741
+            I = int(kv.get("I", "1") or "1")  # noqa E741
             J = int(kv.get("J", "1") or "1")
             K = int(kv.get("K", "1") or "1")
             num_nodes = I * J * K
@@ -1348,7 +1447,7 @@ class Read:
             # spellings for the node and element counts.
             num_nodes = int(kv.get("NODES", kv.get("N", "0")) or "0")
             num_cells = int(kv.get("ELEMENTS", kv.get("E", "0")) or "0")
-            I, J, K = num_nodes, num_cells, 0  # noqa: E741
+            I, J, K = num_nodes, num_cells, 0  # noqa E741
 
         # Packing: DATAPACKING wins, then legacy F, else BLOCK (Tecplot default).
         if "DATAPACKING" in kv:
@@ -1509,8 +1608,17 @@ class Read:
         """Read *n_values* floats from *tokens* into an intermediate float64 array.
 
         This is a pure text-parsing primitive. Callers cast the result to each
-        variable's real dtype  afterward, once individual per-variable arrays have been
+        variable's real dtype afterward, once individual per-variable arrays have been
         split out.
+
+        Dispatches to :meth:`_read_float_block_fast`, a vectorized NumPy parser that
+        handles the overwhelming majority of (well-formed) input in a handful of C-level
+        calls regardless of block size, and falls back to :meth:`_read_float_block_slow`
+        -- a tolerant, token-by-token parser -- only if the fast path can't make sense
+        of what it read (a stray comment or non-numeric token inside the block, or a
+        boundary reached before *n_values* values were collected). The fallback re-reads
+        from *tokens* at the position the fast path started from, so the two never
+        disagree about what was consumed.
 
         See Also:
             :meth:`_read_block_var_data`/:meth:`_read_point_var_data`.
@@ -1518,17 +1626,80 @@ class Read:
         Examples:
             >>> arr = Read._read_float_block(tokens, 100)
         """
+        if n_values <= 0:
+            return np.empty(0, dtype=np.float64)
+
+        marker = tokens.position()
+        try:
+            arr = Read._read_float_block_fast(tokens, n_values)
+        except ValueError:
+            arr = None
+        if arr is not None:
+            return arr
+
+        tokens.seek(marker)
+        return Read._read_float_block_slow(tokens, n_values)
+
+    @staticmethod
+    def _read_float_block_fast(
+        tokens: _LineBuffer, n_values: int
+    ) -> npt.NDArray | None:
+        """Vectorized fast path for :meth:`_read_float_block`.
+
+        Reads raw (unprocessed) lines in a handful of growing bulk grabs (sized from a
+        one-line width probe, so a multi-million-value block costs a small constant
+        number of Python-level calls). Passing ``sep`` here is the (fully supported)
+        text-parsing mode of that function, not its deprecated binary-decoding mode.
+
+        Returns ``None`` (never a short array) if a block boundary is hit before
+        *n_values* values are collected, so the caller can unambiguously fall back to
+        the slow, boundary-aware parser. A ``ValueError`` from ``numpy.fromstring`` is
+        allowed to propagate to the caller for the same reason.
+
+        Example:
+            >>> arr = Read._read_float_block_fast(tokens, 100)
+
+        """
+        pieces: list[npt.NDArray] = []
+        have = 0
+        per_line: int | None = None
+        for _ in range(_MAX_FAST_BLOCK_ITERATIONS):
+            remaining = n_values - have
+            if remaining <= 0:
+                break
+            # First grab is a single-line probe to measure the block's (typically
+            # constant) values-per-line width
+            n_lines = 1 if per_line is None else -(-remaining // per_line)
+            batch = tokens.take_raw(n_lines)
+            if not batch:
+                return None  # ran out of input before reaching n_values
+            piece = np.fromstring("".join(batch), dtype=np.float64, sep=" ")
+            if per_line is None:
+                per_line = max(piece.size, 1)
+            pieces.append(piece)
+            have += piece.size
+        else:
+            return None  # didn't converge; let the slow path sort it out
+        arr = pieces[0] if len(pieces) == 1 else np.concatenate(pieces)
+        return arr[:n_values] if arr.size >= n_values else None
+
+    @staticmethod
+    def _read_float_block_slow(tokens: _LineBuffer, n_values: int) -> npt.NDArray:
+        """Tolerant, token-by-token fallback for :meth:`_read_float_block`.
+
+        Reads one stripped line at a time, converting tokens one at a time and silently
+        skipping any that aren't valid floats, stopping at a block boundary (see
+        :func:`_is_float_block_boundary`) even if *n_values* hasn't been reached
+        yet. Slow by design, but guarantees a result either way.
+
+        Example:
+            >>> arr = Read._read_float_block_slow(tokens, 100)
+
+        """
         values: list[float] = []
         while len(values) < n_values and tokens.has_more():
             nxt = tokens.peek_stripped()
-            upper = nxt.lstrip().upper()
-            if (
-                upper.split("=")[0].split()[0] == "ZONE"
-                or upper.startswith("DATASETAUXDATA")
-                or upper.startswith("VARAUXDATA")
-                or (upper.startswith("TITLE") and "=" in upper)
-                or (upper.startswith("VARIABLES") and "=" in upper)
-            ):
+            if _is_float_block_boundary(nxt):
                 break
             line = tokens.next_stripped()
             for tok in line.split():
@@ -1558,6 +1729,10 @@ class Read:
         (``_read_float_block`` doesn't know or care about per-variable types), then cast
         to that variable's actual declared dtype (from ``DT=``, or the spec's documented
         SINGLE default) right here, where each variable's array is finalized.
+
+        Reading one variable at a time (rather than all of them in a single combined
+        call) is deliberate: :meth:`_read_float_block`'s vectorized fast path already
+        costs only a handful of C-level calls per block regardless of size.
 
         Note:
             Passive and shared variables contribute a ``None`` placeholder to the
@@ -1661,14 +1836,70 @@ class Read:
     def _read_int_block(tokens: _LineBuffer, n_values: int) -> npt.NDArray:
         """Read exactly *n_values* integers from *tokens* into an int64 array.
 
+        Used for connectivity (node-map) data, which can run to tens of millions of
+        entries for large volume meshes. Follows the same vectorized-fast-path /
+        tolerant-slow-path split as :meth:`_read_float_block`; see that method's
+        docstring for the rationale.
+
         Examples:
             >>> arr = Read._read_int_block(tokens, 24)
+        """
+        if n_values <= 0:
+            return np.empty(0, dtype=np.int64)
+
+        marker = tokens.position()
+        try:
+            arr = Read._read_int_block_fast(tokens, n_values)
+        except ValueError:
+            arr = None
+        if arr is not None:
+            return arr
+
+        tokens.seek(marker)
+        return Read._read_int_block_slow(tokens, n_values)
+
+    @staticmethod
+    def _read_int_block_fast(tokens: _LineBuffer, n_values: int) -> npt.NDArray | None:
+        """Vectorized fast path for :meth:`_read_int_block`.
+
+        See :meth:`_read_float_block_fast`, which this mirrors exactly except for the
+        target dtype.
+
+        Example:
+            >>> arr = Read._read_int_block_fast(tokens, 24)
+        """
+        pieces: list[npt.NDArray] = []
+        have = 0
+        per_line: int | None = None
+        for _ in range(_MAX_FAST_BLOCK_ITERATIONS):
+            remaining = n_values - have
+            if remaining <= 0:
+                break
+            n_lines = 1 if per_line is None else -(-remaining // per_line)
+            batch = tokens.take_raw(n_lines)
+            if not batch:
+                return None
+            piece = np.fromstring("".join(batch), dtype=np.int64, sep=" ")
+            if per_line is None:
+                per_line = max(piece.size, 1)
+            pieces.append(piece)
+            have += piece.size
+        else:
+            return None
+        arr = pieces[0] if len(pieces) == 1 else np.concatenate(pieces)
+        return arr[:n_values] if arr.size >= n_values else None
+
+    @staticmethod
+    def _read_int_block_slow(tokens: _LineBuffer, n_values: int) -> npt.NDArray:
+        """Tolerant, token-by-token fallback for :meth:`_read_int_block`.
+
+        Example:
+            >>> arr = Read._read_int_block_slow(tokens, 24)
         """
         values: list[int] = []
         while len(values) < n_values and tokens.has_more():
             nxt = tokens.peek_stripped()
-            upper = nxt.lstrip().upper()
-            if upper.startswith("ZONE") or upper.startswith("DATASETAUXDATA"):
+            if _is_int_block_boundary(nxt):
                 break
             line = tokens.next_stripped()
             for tok in line.split():
