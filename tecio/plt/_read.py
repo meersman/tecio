@@ -552,7 +552,7 @@ class ReadVariable:
 
         # Byte-swap if needed so the result is always native-endian
         if data.dtype.byteorder not in ("=", "|", np.dtype(dt).str[0]):
-            data = data.byteswap().newbyteorder()
+            data = data.byteswap().view(data.dtype.newbyteorder())
 
         # Reshape for full reads of ordered zones, using the owning zone's dimensions
         # and value location (they describe the on-disk layout including cell-centered

@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tecio-python"
-version = "0.2.2"
+version = "0.2.3"
 description = "Python interface for reading and writing Tecplot data files"
 
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "numpy",
 ]
@@ -101,8 +101,18 @@ ignore = ["D203", "D213", "SIM105"]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ty.environment]
+root = ["."]
+python-version = "3.11"
+
 [tool.ty.terminal]
 output-format = "concise"
+
+[[tool.ty.overrides]]
+include = ["tecio/plugins/**"]
+
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
 
 [tool.pytest.ini_options]
 pythonpath = ["tecio"]

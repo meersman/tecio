@@ -706,20 +706,23 @@ class ReadAuxData:
 class ReadVariable:
     """Variable metadata and data for one zone parsed from an ASCII DAT file.
 
-    Interface matches :class:`szl.ReadVariable`.
-
-    Example:
-        >>> var = ReadVariable(name, data, value_location, ...)
+    Args:
+        zone_index: 1-based index of the zone this variable belongs to.
+        var_index:  1-based dataset variable index.
     """
 
     def __init__(
         self,
+        zone_index: int,
+        var_index: int,
         name: str,
         data: npt.NDArray | None,
         value_location: ValueLocation = ValueLocation.NODAL,
         is_passive: bool = False,
         shared_zone: int | None = None,
     ) -> None:
+        self.zone_index: int = zone_index
+        self.var_index: int = var_index
         self._name: str = name
         self._data: npt.NDArray | None = data
         self._value_location: ValueLocation = value_location
@@ -844,6 +847,7 @@ class ReadZone:
     """Zone data parsed from a Tecplot ASCII DAT file.
 
     Attributes:
+        zone_index: 1-based dataset zone index.
         datapacking: :class:`~tecio.libtecio.DataPacking` member reflecting the
             ``DATAPACKING`` keyword found in the zone header (``BLOCK`` or
             ``POINT``). The data arrays are identical either way; this attribute
@@ -853,11 +857,12 @@ class ReadZone:
             automatically resolves to the source zone's array.
 
     Example:
-        >>> zone = ReadZone(title, zone_type, I, J, K, ...)
+        >>> zone = ReadZone(zone_index, title, zone_type, I, J, K, ...)
     """
 
     def __init__(
         self,
+        zone_index: int,
         title: str,
         zone_type: ZoneType,
         I: int,  # noqa: E741
@@ -871,6 +876,7 @@ class ReadZone:
         datapacking: DataPacking = DataPacking.BLOCK,
         shared_connectivity: int | None = None,
     ) -> None:
+        self.zone_index: int = zone_index
         self.title: str = title
         self.zone_type: ZoneType = zone_type
         self.I: int = I
@@ -1459,8 +1465,13 @@ class Read:
                     self._zones[src_zone_1based - 1].variable[var_idx].values
                 )
 
+        # This zone's own 1-based index
+        zone_index = len(self._zones) + 1
+
         read_vars = [
             ReadVariable(
+                zone_index=zone_index,
+                var_index=idx + 1,
                 name=name,
                 data=_shaped(
                     var_arrays[idx],
@@ -1475,6 +1486,7 @@ class Read:
 
         self._zones.append(
             ReadZone(
+                zone_index=zone_index,
                 title=zone_title,
                 zone_type=zone_type,
                 I=I,

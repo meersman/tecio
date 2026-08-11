@@ -123,8 +123,8 @@ try:
 
     _TECIO_IMPORT_ERROR: Exception | None = None
 except Exception as exc:  # pragma: no cover - environment-dependent  # noqa: BLE001
-    tecio = None  # type: ignore[assignment]
-    ValueLocation = ZoneType = None  # type: ignore[assignment]
+    tecio = None  # ty: ignore[invalid-assignment]
+    ValueLocation = ZoneType = None  # ty: ignore[invalid-assignment]
     _TECIO_IMPORT_ERROR = exc
 
 if TYPE_CHECKING:
@@ -456,7 +456,7 @@ class TecplotReader(VTKPythonAlgorithmBase):
     @smproperty.stringvector(name="FileName")
     @smdomain.filelist()
     @smhint.filechooser(extensions=_EXTENSIONS, file_description=_FILE_DESCRIPTION)
-    def SetFileName(self, name: str) -> None:
+    def SetFileName(self, name: str | None) -> None:
         """Set the path to the Tecplot file.
 
         Accepts ``.szplt``/``.plt``/``.bin``/``.dat``/``.tec``.
@@ -850,9 +850,7 @@ class TecplotReader(VTKPythonAlgorithmBase):
 
         _add_aux_field_data(dataset.GetFieldData(), zone.auxdata.items())
         self._add_variable_arrays(dataset, zone)
-        self._add_vector_array(
-            dataset, zone, vector_array_name, u_name, v_name, w_name
-        )
+        self._add_vector_array(dataset, zone, vector_array_name, u_name, v_name, w_name)
         return dataset
 
     def _build_structured_grid(
