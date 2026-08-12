@@ -17,7 +17,6 @@ from typing import Any, overload
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import Self
 
 from .._containers import VariableList, ZoneList, select_variable_arrays
 from ..libtecio import (
@@ -1149,7 +1148,7 @@ class Read:
         except Exception:
             return f"{cls}(path={name!r}, <unavailable>)"
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> Read:
         """Context manager for Read class."""
         return self
 
