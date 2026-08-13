@@ -9,11 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+---
 
-- First pass at higher performance ascii file read using numpy from file. Way
-  faster for well-formatted files where data chunk sizes can be estimated from
-  reading the first 1-2 lines.
+```{include} changelog/v0.2.4.md
+```
 
 ---
 
@@ -47,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/meersman/tecio/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/meersman/tecio/compare/v0.2.4...HEAD
 
 ```{toctree}
 :hidden:
