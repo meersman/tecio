@@ -9,7 +9,7 @@ from importlib import metadata
 try:
     __version__ = metadata.version("tecio")
 except metadata.PackageNotFoundError:
-    __version__ = "0.2.3"
+    __version__ = "0.2.4"
 
 from . import cli, dat, libtecio, plt, szl
 from ._containers import VariableList, ZoneList
