@@ -1,10 +1,11 @@
 """Read Tecplot SZL (``.szplt``) files via the TecIO C library.
 
-Small scalar zone metadata (title, type, dimensions, solution time, strand ID,
-shared connectivity) is queried once, at zone construction, and frozen by
-:class:`~tecio._reader.TecplotZoneReader`. Variable metadata is queried live, on
-each access, it's a single cheap C call either way. Variable data arrays and node
-maps are read lazily, on first access, straight from the C library.
+Small scalar zone metadata (title, type, dimensions or node/element counts,
+solution time, strand ID, shared connectivity) is queried once, at zone
+construction, and frozen by :class:`~tecio._reader.TecplotOrderedZoneReader` /
+:class:`~tecio._reader.TecplotFEZoneReader`. Variable metadata is queried live,
+on each access, it's a single cheap C call either way. Variable data arrays and
+node maps are read lazily, on first access, straight from the C library.
 """
 
 from __future__ import annotations
@@ -20,6 +21,8 @@ from . import libtecio
 from ._containers import ZoneList
 from ._reader import (
     TecplotAuxDataReader,
+    TecplotFEZoneReader,
+    TecplotOrderedZoneReader,
     TecplotReader,
     TecplotVariableReader,
     TecplotZoneReader,
@@ -265,12 +268,68 @@ class TecplotSzlVariableReader(TecplotVariableReader):
 
 
 # ======================================================================================
-# TecplotSzlZoneReader
+# TecplotSzlOrderedZoneReader / TecplotSzlFEZoneReader
 # ======================================================================================
 
 
-class TecplotSzlZoneReader(TecplotZoneReader):
-    """Zone reader for SZL files.
+def _load_szl_variables(
+    handle: ctypes.c_void_p, zone_index: int, num_vars: int
+) -> list[TecplotVariableReader]:
+    """Build this zone's variable readers. Shared by both SZL zone classes."""
+    return [
+        TecplotSzlVariableReader(handle, zone_index, i + 1) for i in range(num_vars)
+    ]
+
+
+def _szl_zone_is_enabled(handle: ctypes.c_void_p, zone_index: int) -> bool:
+    """Query the C library's per-zone enabled flag. Shared by both SZL zone classes."""
+    return libtecio.tec_zone_is_enabled(handle, zone_index)
+
+
+class TecplotSzlOrderedZoneReader(TecplotOrderedZoneReader):
+    """Ordered (IJK) zone reader for SZL files.
+
+    Scalar metadata is queried from the C library once, at construction, and
+    frozen by the base class. The variable list and aux data stay lazily
+    loaded on first access.
+    """
+
+    __slots__ = ("_handle", "num_vars")
+    _handle: ctypes.c_void_p
+    num_vars: int
+
+    def __init__(self, handle: ctypes.c_void_p, zone_index: int, num_vars: int) -> None:
+        i, j, k = libtecio.tec_zone_get_ijk(handle, zone_index)
+        super().__init__(
+            zone_index=zone_index,
+            title=libtecio.tec_zone_get_title(handle, zone_index),
+            solution_time=libtecio.tec_zone_get_solution_time(handle, zone_index),
+            strand_id=libtecio.tec_zone_get_strand_id(handle, zone_index),
+            datapacking=DataPacking.BLOCK,
+            i=i,
+            j=j,
+            k=k,
+        )
+        object.__setattr__(self, "_handle", handle)
+        object.__setattr__(self, "num_vars", num_vars)
+
+    def is_enabled(self) -> bool:
+        """True if the zone is enabled (queried live).
+
+        SZL is the only format with a genuine per-zone enabled flag; PLT and
+        DAT use the base class default of always True.
+        """
+        return _szl_zone_is_enabled(self._handle, self.zone_index)
+
+    def _load_variables(self) -> list[TecplotVariableReader]:
+        return _load_szl_variables(self._handle, self.zone_index, self.num_vars)
+
+    def _load_auxdata(self) -> TecplotAuxDataReader:
+        return TecplotSzlZoneAuxDataReader(self._handle, self.zone_index)
+
+
+class TecplotSzlFEZoneReader(TecplotFEZoneReader):
+    """Finite-element zone reader for SZL files.
 
     Scalar metadata is queried from the C library once, at construction, and
     frozen by the base class. The variable list, node map, and aux data stay
@@ -283,22 +342,19 @@ class TecplotSzlZoneReader(TecplotZoneReader):
 
     def __init__(self, handle: ctypes.c_void_p, zone_index: int, num_vars: int) -> None:
         zone_type = ZoneType(libtecio.tec_zone_get_type(handle, zone_index))
-        i, j, k = libtecio.tec_zone_get_ijk(handle, zone_index)
-        shared_connectivity = (
-            None
-            if zone_type == ZoneType.ORDERED
-            else libtecio.tec_zone_connectivity_get_shared_zone(handle, zone_index)
+        num_nodes, num_elements, _ = libtecio.tec_zone_get_ijk(handle, zone_index)
+        shared_connectivity = libtecio.tec_zone_connectivity_get_shared_zone(
+            handle, zone_index
         )
         super().__init__(
             zone_index=zone_index,
             title=libtecio.tec_zone_get_title(handle, zone_index),
             zone_type=zone_type,
-            i=i,
-            j=j,
-            k=k,
             solution_time=libtecio.tec_zone_get_solution_time(handle, zone_index),
             strand_id=libtecio.tec_zone_get_strand_id(handle, zone_index),
             datapacking=DataPacking.BLOCK,
+            num_nodes=num_nodes,
+            num_elements=num_elements,
             shared_connectivity=shared_connectivity,
         )
         object.__setattr__(self, "_handle", handle)
@@ -310,13 +366,10 @@ class TecplotSzlZoneReader(TecplotZoneReader):
         SZL is the only format with a genuine per-zone enabled flag; PLT and
         DAT use the base class default of always True.
         """
-        return libtecio.tec_zone_is_enabled(self._handle, self.zone_index)
+        return _szl_zone_is_enabled(self._handle, self.zone_index)
 
     def _load_variables(self) -> list[TecplotVariableReader]:
-        return [
-            TecplotSzlVariableReader(self._handle, self.zone_index, i + 1)
-            for i in range(self.num_vars)
-        ]
+        return _load_szl_variables(self._handle, self.zone_index, self.num_vars)
 
     def _connectivity_zone(self) -> int:
         """Return the zone index that actually holds this zone's connectivity."""
@@ -341,6 +394,21 @@ class TecplotSzlZoneReader(TecplotZoneReader):
 
     def _load_auxdata(self) -> TecplotAuxDataReader:
         return TecplotSzlZoneAuxDataReader(self._handle, self.zone_index)
+
+
+def _build_szl_zone(
+    handle: ctypes.c_void_p, zone_index: int, num_vars: int
+) -> TecplotZoneReader:
+    """Construct the right concrete zone reader for zone *zone_index*.
+
+    A single ``.szplt`` file commonly holds a mix of ORDERED and FE zones, so
+    this queries the C library for the zone type first, cheap, one call, then
+    dispatches to the matching class.
+    """
+    zone_type = ZoneType(libtecio.tec_zone_get_type(handle, zone_index))
+    if zone_type == ZoneType.ORDERED:
+        return TecplotSzlOrderedZoneReader(handle, zone_index, num_vars)
+    return TecplotSzlFEZoneReader(handle, zone_index, num_vars)
 
 
 # ======================================================================================
@@ -428,7 +496,7 @@ class TecplotSzlReader(TecplotReader):
         if self._zone_list is None:
             handle = self._check_handle()
             self._zone_list = ZoneList([
-                TecplotSzlZoneReader(handle, i + 1, self.num_vars)
+                _build_szl_zone(handle, i + 1, self.num_vars)
                 for i in range(self.num_zones)
             ])
         return self._zone_list

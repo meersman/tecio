@@ -18,6 +18,8 @@ from ._io import AppendReadWrite, AppendWrite, open
 from ._plt_read import TecplotPltReader
 from ._reader import (
     TecplotAuxDataReader,
+    TecplotFEZoneReader,
+    TecplotOrderedZoneReader,
     TecplotReader,
     TecplotVariableReader,
     TecplotZoneReader,
@@ -34,6 +36,8 @@ VariableList.__module__ = "tecio"
 for _cls in (
     TecplotReader,
     TecplotZoneReader,
+    TecplotOrderedZoneReader,
+    TecplotFEZoneReader,
     TecplotVariableReader,
     TecplotAuxDataReader,
     TecplotSzlReader,
@@ -56,6 +60,8 @@ __all__ = [
     "VariableList",
     "TecplotReader",
     "TecplotZoneReader",
+    "TecplotOrderedZoneReader",
+    "TecplotFEZoneReader",
     "TecplotVariableReader",
     "TecplotAuxDataReader",
     "TecplotSzlReader",

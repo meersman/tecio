@@ -119,15 +119,19 @@ if _TECIO_FALLBACK_PATH and _TECIO_FALLBACK_PATH not in sys.path:
 
 try:
     import tecio
+    from tecio import TecplotFEZoneReader, TecplotOrderedZoneReader
     from tecio.libtecio import ValueLocation, ZoneType
 
     _TECIO_IMPORT_ERROR: Exception | None = None
 except Exception as exc:  # pragma: no cover - environment-dependent  # noqa: BLE001
     tecio = None  # ty: ignore[invalid-assignment]
+    TecplotFEZoneReader = TecplotOrderedZoneReader = None  # ty: ignore[invalid-assignment]
     ValueLocation = ZoneType = None  # ty: ignore[invalid-assignment]
     _TECIO_IMPORT_ERROR = exc
 
 if TYPE_CHECKING:
+    from tecio import TecplotFEZoneReader as _TecioFEZone
+    from tecio import TecplotOrderedZoneReader as _TecioOrderedZone
     from tecio import TecplotReader as _TecioReader
     from tecio import TecplotZoneReader as _TecioZone
 
@@ -828,11 +832,18 @@ class TecplotReader(VTKPythonAlgorithmBase):
         Structured/Unstructured correspond to``vtkStructuredGrid``/
         ``vtkUnstructuredGrid`` respectively.
         """
-        if zone.zone_type == ZoneType.ORDERED:
+        # By the time any zone is being converted, RequestData has already gone
+        # through _get_reader(), which raises RuntimeError if tecio failed to
+        # import, so these are never actually None here. Asserted rather than
+        # re-raised so ty can narrow the isinstance checks below.
+        assert TecplotOrderedZoneReader is not None
+        assert TecplotFEZoneReader is not None
+
+        if isinstance(zone, TecplotOrderedZoneReader):
             dataset: vtkStructuredGrid | vtkUnstructuredGrid = (
                 self._build_structured_grid(zone, x_name, y_name, z_name)
             )
-        else:
+        elif isinstance(zone, TecplotFEZoneReader):
             cell_type = _VTK_CELL_TYPE.get(zone.zone_type)
             if cell_type is None:
                 raise _UnsupportedZoneError(
@@ -844,6 +855,10 @@ class TecplotReader(VTKPythonAlgorithmBase):
             dataset = self._build_unstructured_grid(
                 zone, cell_type, x_name, y_name, z_name
             )
+        else:
+            raise _UnsupportedZoneError(
+                "zone is neither an ordered nor a classic FE zone"
+            )
 
         _add_aux_field_data(dataset.GetFieldData(), zone.auxdata.items())
         self._add_variable_arrays(dataset, zone)
@@ -852,7 +867,7 @@ class TecplotReader(VTKPythonAlgorithmBase):
 
     def _build_structured_grid(
         self,
-        zone: _TecioZone,
+        zone: _TecioOrderedZone,
         x_name: str | None,
         y_name: str | None,
         z_name: str | None,
@@ -882,7 +897,7 @@ class TecplotReader(VTKPythonAlgorithmBase):
 
     @staticmethod
     def _fetch_ordered_coordinate(
-        zone: _TecioZone, name: str | None, shape: tuple[int, int, int]
+        zone: _TecioOrderedZone, name: str | None, shape: tuple[int, int, int]
     ) -> npt.NDArray[np.float64]:
         """Return an ``(I, J, K)`` nodal coordinate array for *name*, or zeros."""
         if name is None:
@@ -901,7 +916,7 @@ class TecplotReader(VTKPythonAlgorithmBase):
 
     def _build_unstructured_grid(
         self,
-        zone: _TecioZone,
+        zone: _TecioFEZone,
         cell_type: int,
         x_name: str | None,
         y_name: str | None,
@@ -941,7 +956,7 @@ class TecplotReader(VTKPythonAlgorithmBase):
 
     @staticmethod
     def _fetch_flat_coordinate(
-        zone: _TecioZone, name: str | None, n_nodes: int
+        zone: _TecioFEZone, name: str | None, n_nodes: int
     ) -> npt.NDArray[np.float64]:
         """Return a flat, length-``n_nodes`` coordinate array for *name*, or zeros."""
         if name is None:

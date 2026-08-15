@@ -23,6 +23,8 @@ import numpy.typing as npt
 from ._containers import ZoneList
 from ._reader import (
     TecplotAuxDataReader,
+    TecplotFEZoneReader,
+    TecplotOrderedZoneReader,
     TecplotReader,
     TecplotVariableReader,
     TecplotZoneReader,
@@ -867,12 +869,60 @@ class TecplotDatVariableReader(TecplotVariableReader):
 
 
 # ======================================================================================
-# TecplotDatZoneReader
+# TecplotDatOrderedZoneReader / TecplotDatFEZoneReader
 # ======================================================================================
 
 
-class TecplotDatZoneReader(TecplotZoneReader):
-    """Zone reader for ASCII DAT files.
+class TecplotDatOrderedZoneReader(TecplotOrderedZoneReader):
+    """Ordered (IJK) zone reader for ASCII DAT files.
+
+    The entire zone (variable arrays, aux data) is already fully parsed and
+    held in memory by the time this is constructed, so the base class's
+    lazy-loading hooks below do no real work, they just wrap already-computed
+    values on first access, for interface consistency with SZL and PLT.
+    ``is_enabled`` is not overridden here, DAT has no concept of a disabled
+    zone, so the base class default (always True) applies.
+    """
+
+    __slots__ = ("_variables", "_aux_raw")
+    _variables: list[TecplotVariableReader]
+    _aux_raw: dict[str, str]
+
+    def __init__(
+        self,
+        zone_index: int,
+        title: str,
+        I: int,  # noqa: E741 - matches Tecplot's own IJK convention
+        J: int,
+        K: int,
+        solution_time: float,
+        strand_id: int,
+        variables: list[TecplotVariableReader],
+        auxdata: dict[str, str],
+        datapacking: DataPacking = DataPacking.BLOCK,
+    ) -> None:
+        super().__init__(
+            zone_index=zone_index,
+            title=title,
+            solution_time=solution_time,
+            strand_id=strand_id,
+            datapacking=datapacking,
+            i=I,
+            j=J,
+            k=K,
+        )
+        object.__setattr__(self, "_variables", variables)
+        object.__setattr__(self, "_aux_raw", auxdata)
+
+    def _load_variables(self) -> list[TecplotVariableReader]:
+        return self._variables
+
+    def _load_auxdata(self) -> TecplotAuxDataReader:
+        return TecplotDatAuxDataReader(self._aux_raw)
+
+
+class TecplotDatFEZoneReader(TecplotFEZoneReader):
+    """Finite-element zone reader for ASCII DAT files.
 
     The entire zone (variable arrays, node map, aux data) is already fully
     parsed and held in memory by the time this is constructed, so the base
@@ -880,6 +930,11 @@ class TecplotDatZoneReader(TecplotZoneReader):
     already-computed values on first access, for interface consistency with
     SZL and PLT. ``is_enabled`` is not overridden here, DAT has no concept of
     a disabled zone, so the base class default (always True) applies.
+
+    FEPOLYGON/FEPOLYHEDRON are not constructed as this class, or at all,
+    the parser rejects them with :exc:`ValueError` before reaching here (see
+    ``_parse_zone``), so unlike PLT there's no partial-metadata-only case to
+    handle for those types in the ASCII reader.
     """
 
     __slots__ = ("_variables", "_node_map", "_aux_raw")
@@ -892,9 +947,8 @@ class TecplotDatZoneReader(TecplotZoneReader):
         zone_index: int,
         title: str,
         zone_type: ZoneType,
-        I: int,  # noqa: E741 - matches Tecplot's own IJK convention
-        J: int,
-        K: int,
+        num_nodes: int,
+        num_elements: int,
         solution_time: float,
         strand_id: int,
         variables: list[TecplotVariableReader],
@@ -907,12 +961,11 @@ class TecplotDatZoneReader(TecplotZoneReader):
             zone_index=zone_index,
             title=title,
             zone_type=zone_type,
-            i=I,
-            j=J,
-            k=K,
             solution_time=solution_time,
             strand_id=strand_id,
             datapacking=datapacking,
+            num_nodes=num_nodes,
+            num_elements=num_elements,
             shared_connectivity=shared_connectivity,
         )
         object.__setattr__(self, "_variables", variables)
@@ -1315,7 +1368,12 @@ class TecplotDatReader(TecplotReader):
 
         if zone_type != ZoneType.ORDERED:
             if con_share_zone and self._zones:
-                node_map = self._zones[con_share_zone - 1].node_map
+                source_zone = self._zones[con_share_zone - 1]
+                if isinstance(source_zone, TecplotFEZoneReader):
+                    node_map = source_zone.node_map
+                # else: malformed file referencing a non-FE zone for shared
+                # connectivity; leave node_map as None rather than crashing on
+                # an otherwise-recoverable read.
             else:
                 nodes_per_cell = _NODES_PER_ELEM[zone_type]
                 flat = self._read_int_block(tokens, num_cells * nodes_per_cell)
@@ -1368,7 +1426,7 @@ class TecplotDatReader(TecplotReader):
         ]
 
         self._zones.append(
-            TecplotDatZoneReader(
+            self._build_zone(
                 zone_index=zone_index,
                 title=zone_title,
                 zone_type=zone_type,
@@ -1383,6 +1441,51 @@ class TecplotDatReader(TecplotReader):
                 datapacking=packing,
                 shared_connectivity=con_share_zone if con_share_zone else None,
             )
+        )
+
+    @staticmethod
+    def _build_zone(
+        zone_index: int,
+        title: str,
+        zone_type: ZoneType,
+        I: int,  # noqa: E741 - matches Tecplot's own IJK convention
+        J: int,
+        K: int,
+        solution_time: float,
+        strand_id: int,
+        variables: list[TecplotVariableReader],
+        auxdata: dict[str, str],
+        node_map: npt.NDArray[Any] | None,
+        datapacking: DataPacking,
+        shared_connectivity: int | None,
+    ) -> TecplotZoneReader:
+        """Construct the right concrete zone reader for one parsed zone."""
+        if zone_type == ZoneType.ORDERED:
+            return TecplotDatOrderedZoneReader(
+                zone_index=zone_index,
+                title=title,
+                I=I,
+                J=J,
+                K=K,
+                solution_time=solution_time,
+                strand_id=strand_id,
+                variables=variables,
+                auxdata=auxdata,
+                datapacking=datapacking,
+            )
+        return TecplotDatFEZoneReader(
+            zone_index=zone_index,
+            title=title,
+            zone_type=zone_type,
+            num_nodes=I,
+            num_elements=J,
+            solution_time=solution_time,
+            strand_id=strand_id,
+            variables=variables,
+            auxdata=auxdata,
+            node_map=node_map,
+            datapacking=datapacking,
+            shared_connectivity=shared_connectivity,
         )
 
     # -- Block readers -------------------------------------------------------

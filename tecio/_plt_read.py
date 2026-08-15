@@ -43,6 +43,8 @@ import numpy.typing as npt
 from ._containers import ZoneList
 from ._reader import (
     TecplotAuxDataReader,
+    TecplotFEZoneReader,
+    TecplotOrderedZoneReader,
     TecplotReader,
     TecplotVariableReader,
     TecplotZoneReader,
@@ -844,7 +846,7 @@ class TecplotPltVariableReader(TecplotVariableReader):
         For a shared variable, the chain of per-variable ``shared_zone``
         references is followed to the owning zone (with a cycle/range guard
         against malformed files), the variable-level analogue of
-        :meth:`TecplotPltZoneReader._resolve_connectivity_meta`. Returns None
+        :meth:`TecplotPltFEZoneReader._resolve_connectivity_meta`. Returns None
         when the share cannot be resolved, e.g. when ``all_metas`` was not
         supplied at construction.
         """
@@ -996,24 +998,40 @@ class TecplotPltVariableReader(TecplotVariableReader):
 
 
 # ======================================================================================
-# TecplotPltZoneReader
+# TecplotPltOrderedZoneReader / TecplotPltFEZoneReader
 # ======================================================================================
 
 
-class TecplotPltZoneReader(TecplotZoneReader):
-    """Zone reader for PLT files.
+def _load_plt_variables(
+    file_path: str | os.PathLike,
+    meta: _ZoneMeta,
+    zone_index: int,
+    num_vars: int,
+    var_names: list[str],
+    byte_order: str,
+    all_metas: list[_ZoneMeta] | None,
+) -> list[TecplotVariableReader]:
+    """Build this zone's variable readers. Shared by both PLT zone classes."""
+    return [
+        TecplotPltVariableReader(
+            file_path=file_path,
+            zone_meta=meta,
+            zone_index=zone_index,
+            var_index=i + 1,
+            var_names=var_names,
+            byte_order=byte_order,
+            all_metas=all_metas,
+        )
+        for i in range(num_vars)
+    ]
+
+
+class TecplotPltOrderedZoneReader(TecplotOrderedZoneReader):
+    """Ordered (IJK) zone reader for PLT files.
 
     All metadata comes from the pre-parsed :class:`_ZoneMeta`, no disk I/O
-    beyond what :class:`_PltParser` already did. The variable list, node map,
-    and aux data stay lazily loaded on first access.
-
-    Note:
-        PLT's parser tracks ORDERED dimensions (``i_max``/``j_max``/``k_max``)
-        and FE node/element counts (``num_nodes``/``num_elements``) as
-        separate ``_ZoneMeta`` fields. The base class's ``(I, J, K)`` always
-        mean node count / element count / unused for FE zones (matching SZL,
-        where the C library returns exactly that), so an FE zone's node and
-        element counts are passed as I and J here, not ``i_max``/``j_max``.
+    beyond what :class:`_PltParser` already did. The variable list and aux
+    data stay lazily loaded on first access.
     """
 
     __slots__ = (
@@ -1041,28 +1059,84 @@ class TecplotPltZoneReader(TecplotZoneReader):
         byte_order: str,
         all_metas: list[_ZoneMeta] | None = None,
     ) -> None:
-        if meta.zone_type == ZoneType.ORDERED:
-            i, j, k = meta.i_max, meta.j_max, meta.k_max
-        else:
-            i, j, k = meta.num_nodes, meta.num_elements, 0
+        super().__init__(
+            zone_index=zone_index,
+            title=meta.title,
+            solution_time=meta.solution_time,
+            strand_id=max(meta.strand_id + 1, 0),
+            datapacking=DataPacking.BLOCK,
+            i=meta.i_max,
+            j=meta.j_max,
+            k=meta.k_max,
+        )
+        object.__setattr__(self, "_file_path", file_path)
+        object.__setattr__(self, "_meta", meta)
+        object.__setattr__(self, "num_vars", num_vars)
+        object.__setattr__(self, "_var_names", var_names)
+        object.__setattr__(self, "_byte_order", byte_order)
+        object.__setattr__(self, "_all_metas", all_metas)
+
+    def _load_variables(self) -> list[TecplotVariableReader]:
+        return _load_plt_variables(
+            self._file_path,
+            self._meta,
+            self.zone_index,
+            self.num_vars,
+            self._var_names,
+            self._byte_order,
+            self._all_metas,
+        )
+
+    def _load_auxdata(self) -> TecplotAuxDataReader:
+        return TecplotPltAuxDataReader(self._meta.auxdata)
+
+
+class TecplotPltFEZoneReader(TecplotFEZoneReader):
+    """Finite-element zone reader for PLT files.
+
+    All metadata comes from the pre-parsed :class:`_ZoneMeta`, no disk I/O
+    beyond what :class:`_PltParser` already did. The variable list, node map,
+    and aux data stay lazily loaded on first access.
+    """
+
+    __slots__ = (
+        "_file_path",
+        "_meta",
+        "num_vars",
+        "_var_names",
+        "_byte_order",
+        "_all_metas",
+    )
+    _file_path: str | os.PathLike
+    _meta: _ZoneMeta
+    num_vars: int
+    _var_names: list[str]
+    _byte_order: str
+    _all_metas: list[_ZoneMeta] | None
+
+    def __init__(
+        self,
+        file_path: str | os.PathLike,
+        meta: _ZoneMeta,
+        zone_index: int,
+        num_vars: int,
+        var_names: list[str],
+        byte_order: str,
+        all_metas: list[_ZoneMeta] | None = None,
+    ) -> None:
         super().__init__(
             zone_index=zone_index,
             title=meta.title,
             zone_type=meta.zone_type,
-            i=i,
-            j=j,
-            k=k,
             solution_time=meta.solution_time,
             strand_id=max(meta.strand_id + 1, 0),
             datapacking=DataPacking.BLOCK,
+            num_nodes=meta.num_nodes,
+            num_elements=meta.num_elements,
             shared_connectivity=(
-                None
-                if meta.zone_type == ZoneType.ORDERED
-                else (
-                    meta.connectivity_shared_zone + 1
-                    if meta.connectivity_shared_zone >= 0
-                    else None
-                )
+                meta.connectivity_shared_zone + 1
+                if meta.connectivity_shared_zone >= 0
+                else None
             ),
         )
         object.__setattr__(self, "_file_path", file_path)
@@ -1073,18 +1147,15 @@ class TecplotPltZoneReader(TecplotZoneReader):
         object.__setattr__(self, "_all_metas", all_metas)
 
     def _load_variables(self) -> list[TecplotVariableReader]:
-        return [
-            TecplotPltVariableReader(
-                file_path=self._file_path,
-                zone_meta=self._meta,
-                zone_index=self.zone_index,
-                var_index=i + 1,
-                var_names=self._var_names,
-                byte_order=self._byte_order,
-                all_metas=self._all_metas,
-            )
-            for i in range(self.num_vars)
-        ]
+        return _load_plt_variables(
+            self._file_path,
+            self._meta,
+            self.zone_index,
+            self.num_vars,
+            self._var_names,
+            self._byte_order,
+            self._all_metas,
+        )
 
     def _resolve_connectivity_meta(self) -> _ZoneMeta | None:
         """Return the :class:`_ZoneMeta` that owns this zone's connectivity.
@@ -1134,6 +1205,25 @@ class TecplotPltZoneReader(TecplotZoneReader):
 
     def _load_auxdata(self) -> TecplotAuxDataReader:
         return TecplotPltAuxDataReader(self._meta.auxdata)
+
+
+def _build_plt_zone(
+    file_path: str | os.PathLike,
+    meta: _ZoneMeta,
+    zone_index: int,
+    num_vars: int,
+    var_names: list[str],
+    byte_order: str,
+    all_metas: list[_ZoneMeta] | None,
+) -> TecplotZoneReader:
+    """Construct the right concrete zone reader for one parsed zone."""
+    if meta.zone_type == ZoneType.ORDERED:
+        return TecplotPltOrderedZoneReader(
+            file_path, meta, zone_index, num_vars, var_names, byte_order, all_metas
+        )
+    return TecplotPltFEZoneReader(
+        file_path, meta, zone_index, num_vars, var_names, byte_order, all_metas
+    )
 
 
 # ======================================================================================
@@ -1223,7 +1313,7 @@ class TecplotPltReader(TecplotReader):
         """Zones in this file, by 0-based index or slice."""
         if self._zone_list is None:
             self._zone_list = ZoneList([
-                TecplotPltZoneReader(
+                _build_plt_zone(
                     file_path=self._path,
                     meta=meta,
                     zone_index=i + 1,

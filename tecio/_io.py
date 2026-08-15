@@ -49,7 +49,13 @@ from . import dat, plt, szl
 from ._containers import ZoneList
 from ._dat_read import TecplotDatReader
 from ._plt_read import TecplotPltReader
-from ._reader import TecplotAuxDataReader, TecplotReader, TecplotZoneReader
+from ._reader import (
+    TecplotAuxDataReader,
+    TecplotFEZoneReader,
+    TecplotOrderedZoneReader,
+    TecplotReader,
+    TecplotZoneReader,
+)
 from ._szl_read import TecplotSzlReader
 from .libtecio import FileType, ValueLocation, ZoneType
 
@@ -140,12 +146,13 @@ def _copy_zones(
 
     """
     for zone in reader.zone:
-        zt = zone.zone_type
-
-        if zt in (ZoneType.FEPOLYGON, ZoneType.FEPOLYHEDRON):
+        if isinstance(zone, TecplotFEZoneReader) and zone.zone_type in (
+            ZoneType.FEPOLYGON,
+            ZoneType.FEPOLYHEDRON,
+        ):
             raise NotImplementedError(
-                f"Zone '{zone.title}' is {zt.name} — poly zone copying is not "
-                "supported by the Write API yet."
+                f"Zone '{zone.title}' is {zone.zone_type.name} — poly zone "
+                "copying is not supported by the Write API yet."
             )
 
         # Collect per-variable metadata and data arrays.
@@ -192,20 +199,25 @@ def _copy_zones(
             aux=dict(zone.auxdata.items()) or None,
         )
 
-        if zt == ZoneType.ORDERED:
+        if isinstance(zone, TecplotOrderedZoneReader):
             writer.write_ijk_zone(data=active_data, **common_kw)
-        else:
+        elif isinstance(zone, TecplotFEZoneReader):
             # Forward connectivity sharing: when shared, pass ``con_sharing`` and omit
             # the node map so the writer derives the node/cell counts from the source
             # zone; otherwise write this zone's own node map.
             cv = zone.shared_connectivity  # None, or 1-based source-zone index
             con_sharing = cv if cv is not None else 0
             writer.write_fe_zone(
-                zone_type=zt,
+                zone_type=zone.zone_type,
                 data=active_data,
                 node_map=None if con_sharing else zone.node_map,
                 con_sharing=con_sharing,
                 **common_kw,
+            )
+        else:
+            raise NotImplementedError(
+                f"Zone '{zone.title}' is neither an ordered nor a classic FE "
+                "zone, copying it is not supported by the Write API yet."
             )
 
 

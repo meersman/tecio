@@ -1,8 +1,13 @@
 """Shared, format-independent base classes for Tecplot readers.
 
-Every format's reader (SZL, PLT, DAT) exposes the same four-level interface:
+Every format's reader (SZL, PLT, DAT) exposes the same interface:
 :class:`TecplotReader` (the open file/dataset), :class:`TecplotZoneReader` (one
-zone), :class:`TecplotVariableReader` (one variable within a zone), and
+zone, split into :class:`TecplotOrderedZoneReader` and
+:class:`TecplotFEZoneReader` since the two topologies don't share properties
+like dimensions or connectivity), :class:`TecplotVariableReader` (one variable
+within a zone, not split by value location or zone topology, neither changes
+which properties exist, only the shape ``get_values()`` returns, which the
+method already computes from ``zone_type``/``value_location``), and
 :class:`TecplotAuxDataReader` (a read-only auxiliary-data mapping). This module
 defines that interface once so the three formats can no longer drift apart, and so
 downstream code (the ParaView plugin, in particular) can be written against
@@ -16,13 +21,14 @@ Design notes:
       already uses via ``frozen=True`` dataclasses, applied by hand here because
       these classes also need lazy loading, which a plain frozen dataclass can't
       combine with ``__slots__``.
-    * :class:`TecplotZoneReader` splits its fields into two groups. Small, cheap
-      scalar metadata (title, zone type, dimensions, solution time, strand ID) is
-      resolved once at construction and frozen, since even a per-value C call is
-      cheap and doing it once beats re-querying on every access. Data that can be
-      large (the variable list, an FE node map that may hold millions of entries)
-      or that a caller may never touch (aux data) stays lazily loaded on first
-      access, exactly matching each format's existing behaviour.
+    * :class:`TecplotZoneReader` and its subclasses split fields into two groups.
+      Small, cheap scalar metadata (title, zone type, dimensions or node/element
+      counts, solution time, strand ID) is resolved once at construction and
+      frozen, since even a per-value C call is cheap and doing it once beats
+      re-querying on every access. Data that can be large (the variable list, an
+      FE node map that may hold millions of entries) or that a caller may never
+      touch (aux data) stays lazily loaded on first access, exactly matching each
+      format's existing behaviour.
     * Unlike :mod:`~tecio._meta`, this module imports :mod:`~tecio.libtecio`
       at runtime rather than only under ``TYPE_CHECKING``. ``_meta`` only ever
       needs the enums as type annotations (erased at runtime by ``from __future__
@@ -283,58 +289,47 @@ class TecplotVariableReader(ABC):
 class TecplotZoneReader(ABC):
     """Read-only handle to one zone's metadata in an open Tecplot file.
 
-    Scalar metadata (title, zone type, dimensions, solution time, strand ID,
-    datapacking, connectivity sharing) is resolved once at construction and
-    frozen. The variable list, node map, and aux data stay lazily loaded on first
-    access, since any of the three can be large enough that eagerly building them
-    for every zone in a file would be wasteful.
+    This is the common base for :class:`TecplotOrderedZoneReader` and
+    :class:`TecplotFEZoneReader`. Only properties that mean the same thing for
+    every zone topology live here, dimensions, node maps, and everything else
+    that's specific to one topology live on the corresponding subclass instead,
+    so accessing e.g. ``.node_map`` on an ordered zone is a plain
+    :exc:`AttributeError` rather than a silent ``None``.
+
+    Scalar metadata (title, zone type, solution time, strand ID, datapacking)
+    is resolved once at construction and frozen. The variable list and aux
+    data stay lazily loaded on first access, since either can be large enough
+    that eagerly building them for every zone in a file would be wasteful.
 
     Args:
         zone_index: 1-based zone index within the dataset.
         title: Zone title.
         zone_type: The zone's :class:`~tecio.libtecio.ZoneType`.
-        i: Nodal I dimension (ORDERED), or node count (FE).
-        j: Nodal J dimension (ORDERED), or element count (FE).
-        k: Nodal K dimension (ORDERED, unused for FE).
         solution_time: Solution time, 0.0 for static data.
         strand_id: Strand ID, 0 for static data.
         datapacking: On-disk value layout. SZL always supplies
             :attr:`~tecio.libtecio.DataPacking.BLOCK`, binary files have no
             packing distinction on disk; the field exists purely so code can
             treat every zone uniformly regardless of source format.
-        shared_connectivity: 1-based source zone index if this zone's
-            connectivity is shared, else None.
     """
 
     __slots__ = (
         "_zone_index",
         "_title",
         "_zone_type",
-        "_i",
-        "_j",
-        "_k",
         "_solution_time",
         "_strand_id",
         "_datapacking",
-        "_shared_connectivity",
         "_variable_cache",
-        "_node_map_cache",
-        "_node_map_loaded",
         "_auxdata_cache",
     )
     _zone_index: int
     _title: str
     _zone_type: ZoneType
-    _i: int
-    _j: int
-    _k: int
     _solution_time: float
     _strand_id: int
     _datapacking: DataPacking
-    _shared_connectivity: int | None
     _variable_cache: VariableList[TecplotVariableReader] | None
-    _node_map_cache: npt.NDArray[np.int64] | None
-    _node_map_loaded: bool
     _auxdata_cache: TecplotAuxDataReader | None
 
     def __init__(
@@ -342,27 +337,17 @@ class TecplotZoneReader(ABC):
         zone_index: int,
         title: str,
         zone_type: ZoneType,
-        i: int,
-        j: int,
-        k: int,
         solution_time: float,
         strand_id: int,
         datapacking: DataPacking,
-        shared_connectivity: int | None,
     ) -> None:
         object.__setattr__(self, "_zone_index", zone_index)
         object.__setattr__(self, "_title", title)
         object.__setattr__(self, "_zone_type", zone_type)
-        object.__setattr__(self, "_i", i)
-        object.__setattr__(self, "_j", j)
-        object.__setattr__(self, "_k", k)
         object.__setattr__(self, "_solution_time", solution_time)
         object.__setattr__(self, "_strand_id", strand_id)
         object.__setattr__(self, "_datapacking", datapacking)
-        object.__setattr__(self, "_shared_connectivity", shared_connectivity)
         object.__setattr__(self, "_variable_cache", None)
-        object.__setattr__(self, "_node_map_cache", None)
-        object.__setattr__(self, "_node_map_loaded", False)
         object.__setattr__(self, "_auxdata_cache", None)
 
     __setattr__ = _immutable_setattr
@@ -372,12 +357,13 @@ class TecplotZoneReader(ABC):
         title = self.title
         if len(title) > 30:
             title = title[:29] + "\u2026"
-        if self.zone_type == ZoneType.ORDERED:
-            size = f"I={self.I}, J={self.J}, K={self.K}"
-        else:
-            size = f"N={self.num_nodes}, E={self.num_elements}"
         extra = f", aux={len(self.auxdata)}" if len(self.auxdata) else ""
-        return f"{type(self).__name__}({title!r}, {self.zone_type.name}, {size}{extra})"
+        cls = type(self).__name__
+        return f"{cls}({title!r}, {self.zone_type.name}, {self._repr_size()}{extra})"
+
+    @abstractmethod
+    def _repr_size(self) -> str:
+        """Return the shape portion of __repr__, e.g. ``'I=4, J=3, K=1'``."""
 
     # -- Frozen scalar metadata --------------------------------------------------------
 
@@ -397,26 +383,6 @@ class TecplotZoneReader(ABC):
         return self._zone_type
 
     @property
-    def I(self) -> int:  # noqa: E743 - matches Tecplot's own IJK convention
-        """Nodal I dimension (ORDERED), or node count (FE)."""
-        return self._i
-
-    @property
-    def J(self) -> int:
-        """Nodal J dimension (ORDERED), or element count (FE)."""
-        return self._j
-
-    @property
-    def K(self) -> int:
-        """Nodal K dimension (ORDERED, unused for FE)."""
-        return self._k
-
-    @property
-    def dimensions(self) -> tuple[int, int, int]:
-        """``(I, J, K)`` dimensions."""
-        return (self._i, self._j, self._k)
-
-    @property
     def solution_time(self) -> float:
         """Solution time, 0.0 for static data."""
         return self._solution_time
@@ -431,11 +397,6 @@ class TecplotZoneReader(ABC):
         """On-disk value layout for this zone."""
         return self._datapacking
 
-    @property
-    def shared_connectivity(self) -> int | None:
-        """1-based source zone index if connectivity is shared, else None."""
-        return self._shared_connectivity
-
     def is_enabled(self) -> bool:
         """True unless the zone reports itself disabled.
 
@@ -443,39 +404,7 @@ class TecplotZoneReader(ABC):
         """
         return True
 
-    # -- Derived from frozen fields, cheap, no caching needed --------------------------
-
-    @property
-    def num_nodes(self) -> int:
-        """Number of nodes/points. Equals num_elements for ORDERED zones."""
-        if self.zone_type == ZoneType.ORDERED:
-            return self._i * self._j * self._k
-        return self._i
-
-    @property
-    def num_elements(self) -> int:
-        """Number of elements/cells. Equals num_nodes for ORDERED zones."""
-        if self.zone_type == ZoneType.ORDERED:
-            return self._i * self._j * self._k
-        return self._j
-
-    @property
-    def nodes_per_cell(self) -> int:
-        """Nodes per cell based on zone type.
-
-        Raises:
-            ValueError: For a zone type without a fixed nodes-per-cell count
-                (FEPOLYGON, FEPOLYHEDRON).
-        """
-        zt = self.zone_type
-        if zt in _NODES_PER_ELEM:
-            return _NODES_PER_ELEM[zt]
-        if zt == ZoneType.ORDERED:
-            dims = sum(1 for n in (self._i, self._j, self._k) if n > 1)
-            return 2**dims
-        raise ValueError(f"ZoneType {zt} does not have a fixed nodes-per-cell count.")
-
-    # -- Lazy: variable list, node map, aux data ---------------------------------------
+    # -- Lazy: variable list, aux data ------------------------------------------------
 
     @property
     def variable(self) -> VariableList[TecplotVariableReader]:
@@ -489,31 +418,6 @@ class TecplotZoneReader(ABC):
     @abstractmethod
     def _load_variables(self) -> list[TecplotVariableReader]:
         """Construct this zone's variable readers. Called at most once, lazily."""
-
-    @property
-    def node_map(self) -> npt.NDArray[np.int64] | None:
-        """Node connectivity array ``(num_elements, nodes_per_cell)``.
-
-        None for ORDERED zones, which have no explicit connectivity, and for any
-        zone type a format cannot yet resolve a node map for (e.g. PLT's
-        FEPOLYGON/FEPOLYHEDRON, face-map reading not yet implemented there).
-        """
-        if self.zone_type == ZoneType.ORDERED:
-            return None
-        if not self._node_map_loaded:
-            node_map = self._load_node_map()
-            object.__setattr__(self, "_node_map_cache", node_map)
-            object.__setattr__(self, "_node_map_loaded", True)
-            return node_map
-        return self._node_map_cache
-
-    @abstractmethod
-    def _load_node_map(self) -> npt.NDArray[np.int64] | None:
-        """Read this zone's node connectivity. Called at most once, lazily.
-
-        Not called for ORDERED zones, :attr:`node_map` short-circuits first. May
-        return None for a zone type whose connectivity a format cannot resolve.
-        """
 
     @property
     def auxdata(self) -> TecplotAuxDataReader:
@@ -555,6 +459,220 @@ class TecplotZoneReader(ABC):
             IndexError: If an index is out of range.
         """
         return select_variable_arrays(self.variable, key)
+
+
+# ======================================================================================
+# TecplotOrderedZoneReader
+# ======================================================================================
+
+
+class TecplotOrderedZoneReader(TecplotZoneReader):
+    """Read-only handle to one ORDERED (IJK-structured) zone.
+
+    Args:
+        zone_index: 1-based zone index within the dataset.
+        title: Zone title.
+        solution_time: Solution time, 0.0 for static data.
+        strand_id: Strand ID, 0 for static data.
+        datapacking: On-disk value layout.
+        i: Nodal I dimension.
+        j: Nodal J dimension.
+        k: Nodal K dimension.
+    """
+
+    __slots__ = ("_i", "_j", "_k")
+    _i: int
+    _j: int
+    _k: int
+
+    def __init__(
+        self,
+        zone_index: int,
+        title: str,
+        solution_time: float,
+        strand_id: int,
+        datapacking: DataPacking,
+        i: int,
+        j: int,
+        k: int,
+    ) -> None:
+        super().__init__(
+            zone_index=zone_index,
+            title=title,
+            zone_type=ZoneType.ORDERED,
+            solution_time=solution_time,
+            strand_id=strand_id,
+            datapacking=datapacking,
+        )
+        object.__setattr__(self, "_i", i)
+        object.__setattr__(self, "_j", j)
+        object.__setattr__(self, "_k", k)
+
+    def _repr_size(self) -> str:
+        return f"I={self._i}, J={self._j}, K={self._k}"
+
+    @property
+    def I(self) -> int:  # noqa: E743 - matches Tecplot's own IJK convention
+        """Nodal I dimension."""
+        return self._i
+
+    @property
+    def J(self) -> int:
+        """Nodal J dimension."""
+        return self._j
+
+    @property
+    def K(self) -> int:
+        """Nodal K dimension."""
+        return self._k
+
+    @property
+    def dimensions(self) -> tuple[int, int, int]:
+        """``(I, J, K)`` dimensions."""
+        return (self._i, self._j, self._k)
+
+    @property
+    def num_nodes(self) -> int:
+        """Number of nodes/points, ``I * J * K``."""
+        return self._i * self._j * self._k
+
+    @property
+    def num_elements(self) -> int:
+        """Number of cells.
+
+        Currently ``I * J * K``, matching every existing format reader.
+        Note this counts *nodes*, not the ``(I-1)(J-1)(K-1)`` cells a grid of
+        that many nodes actually forms; flagged here rather than silently
+        changed, since it's a semantic question separate from this split.
+        """
+        return self._i * self._j * self._k
+
+
+# ======================================================================================
+# TecplotFEZoneReader
+# ======================================================================================
+
+
+class TecplotFEZoneReader(TecplotZoneReader):
+    """Read-only handle to one finite-element zone.
+
+    Covers every non-ORDERED zone type, including FEPOLYGON, FEPOLYHEDRON,
+    and FEMIXED: :attr:`num_nodes`/:attr:`num_elements`/:attr:`variable`/
+    :attr:`auxdata` are meaningful for all of them today. :attr:`nodes_per_cell`
+    only has a fixed answer for the classic types (FELINESEG through FEBRICK)
+    and raises for the rest, and :attr:`node_map` may legitimately be None for
+    a zone type whose connectivity a format can't yet resolve (e.g. PLT's
+    FEPOLYGON/FEPOLYHEDRON, face-map reading isn't implemented there), the
+    same contract this class already had before the Ordered/FE split. A
+    dedicated poly reader with real face-map support (a `facemap` property,
+    variable-length per-face connectivity) is a reasonable future split once
+    some format actually implements it, informed by a real implementation
+    rather than a guess, not before.
+
+    Args:
+        zone_index: 1-based zone index within the dataset.
+        title: Zone title.
+        zone_type: The zone's :class:`~tecio.libtecio.ZoneType`.
+        solution_time: Solution time, 0.0 for static data.
+        strand_id: Strand ID, 0 for static data.
+        datapacking: On-disk value layout.
+        num_nodes: Number of nodes/points.
+        num_elements: Number of elements/cells.
+        shared_connectivity: 1-based source zone index if this zone's
+            connectivity is shared, else None.
+    """
+
+    __slots__ = (
+        "_num_nodes",
+        "_num_elements",
+        "_shared_connectivity",
+        "_node_map_cache",
+        "_node_map_loaded",
+    )
+    _num_nodes: int
+    _num_elements: int
+    _shared_connectivity: int | None
+    _node_map_cache: npt.NDArray[np.int64] | None
+    _node_map_loaded: bool
+
+    def __init__(
+        self,
+        zone_index: int,
+        title: str,
+        zone_type: ZoneType,
+        solution_time: float,
+        strand_id: int,
+        datapacking: DataPacking,
+        num_nodes: int,
+        num_elements: int,
+        shared_connectivity: int | None,
+    ) -> None:
+        super().__init__(
+            zone_index=zone_index,
+            title=title,
+            zone_type=zone_type,
+            solution_time=solution_time,
+            strand_id=strand_id,
+            datapacking=datapacking,
+        )
+        object.__setattr__(self, "_num_nodes", num_nodes)
+        object.__setattr__(self, "_num_elements", num_elements)
+        object.__setattr__(self, "_shared_connectivity", shared_connectivity)
+        object.__setattr__(self, "_node_map_cache", None)
+        object.__setattr__(self, "_node_map_loaded", False)
+
+    def _repr_size(self) -> str:
+        return f"N={self._num_nodes}, E={self._num_elements}"
+
+    @property
+    def num_nodes(self) -> int:
+        """Number of nodes/points."""
+        return self._num_nodes
+
+    @property
+    def num_elements(self) -> int:
+        """Number of elements/cells."""
+        return self._num_elements
+
+    @property
+    def shared_connectivity(self) -> int | None:
+        """1-based source zone index if connectivity is shared, else None."""
+        return self._shared_connectivity
+
+    @property
+    def nodes_per_cell(self) -> int:
+        """Nodes per cell, fixed by zone type.
+
+        Raises:
+            ValueError: For a zone type without a fixed nodes-per-cell count
+                (not expected here, :class:`TecplotFEZoneReader` is only ever
+                constructed for the classic FE types, but kept as a defensive
+                check rather than an unchecked KeyError).
+        """
+        zt = self.zone_type
+        if zt in _NODES_PER_ELEM:
+            return _NODES_PER_ELEM[zt]
+        raise ValueError(f"ZoneType {zt} does not have a fixed nodes-per-cell count.")
+
+    @property
+    def node_map(self) -> npt.NDArray[np.int64] | None:
+        """Node connectivity array ``(num_elements, nodes_per_cell)``.
+
+        None only if a format cannot yet resolve connectivity for this zone's
+        type (e.g. PLT's FEPOLYGON/FEPOLYHEDRON, face-map reading not yet
+        implemented there; such zones would need a future, dedicated poly
+        reader, not this class, once that's built).
+        """
+        if not self._node_map_loaded:
+            node_map = self._load_node_map()
+            object.__setattr__(self, "_node_map_cache", node_map)
+            object.__setattr__(self, "_node_map_loaded", True)
+            return node_map
+        return self._node_map_cache
+
+    @abstractmethod
+    def _load_node_map(self) -> npt.NDArray[np.int64] | None:
+        """Read this zone's node connectivity. Called at most once, lazily."""
 
 
 # ======================================================================================
