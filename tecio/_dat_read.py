@@ -1,25 +1,33 @@
-r"""Tecplot ASCII DAT file reader API.
+r"""Read Tecplot ASCII DAT files.
 
 Supported ``DATAPACKING`` modes:
-    * ``BLOCK`` — one contiguous value block per variable (Tecplot default).
-    * ``POINT`` — one row of all variable values per node, followed by a separate
-      row-per-cell section for any cell-centred variables. This is the format most
-      commonly produced by third-party exporters and tools that treat the file like a
-      CSV with a header.
+    * ``BLOCK``, one contiguous value block per variable (Tecplot default).
+    * ``POINT``, one row of all variable values per node, followed by a
+      separate row-per-cell section for any cell-centered variables. This is
+      the format most commonly produced by third-party exporters and tools
+      that treat the file like a CSV with a header.
+
+The entire file is parsed into memory at construction, no lazy disk reads,
+unlike SZL and (for data values) PLT.
 """
 
 from __future__ import annotations
 
 import contextlib
 import re
-from collections.abc import ItemsView, Iterator, KeysView, ValuesView
-from typing import Any, overload
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 
-from .._containers import VariableList, ZoneList, select_variable_arrays
-from ..libtecio import (
+from ._containers import ZoneList
+from ._reader import (
+    TecplotAuxDataReader,
+    TecplotReader,
+    TecplotVariableReader,
+    TecplotZoneReader,
+)
+from .libtecio import (
     DataPacking,
     DataType,
     FileType,
@@ -181,9 +189,9 @@ def _strip_comment(line: str) -> str:
 def _is_float_block_boundary(line: str) -> bool:
     r"""Return ``True`` if a stripped *line* ends a float data block early.
 
-    Shared by :meth:`Read._read_float_block_slow` (line-by-line) and
-    :meth:`Read._read_float_block_fast` (bulk, on parse failure) so the two readers
-    agree on exactly where a block stops.
+    Shared by :meth:`TecplotDatReader._read_float_block_slow` (line-by-line) and
+    :meth:`TecplotDatReader._read_float_block_fast` (bulk, on parse failure) so the
+    two readers agree on exactly where a block stops.
 
     Example:
         >>> _is_float_block_boundary("ZONE T=\\"next\\"")
@@ -586,8 +594,12 @@ def _parse_auxdata_line(line: str) -> tuple[str, str]:
     return rest[:eq].strip(), _unquote(rest[eq + 1 :].strip())
 
 
-def _apply_varauxdata(line: str, var_auxdata_list: list) -> None:
+def _apply_varauxdata(line: str, var_auxdata_list: list[dict[str, str]]) -> None:
     """Parse ``VARAUXDATA 1-based-idx name="value"`` and store in list.
+
+    *var_auxdata_list* holds plain, mutable dicts, one per variable (index 0
+    is an unused placeholder), accumulated during parsing. Wrapped into an
+    immutable TecplotDatAuxDataReader lazily, only once parsing is complete.
 
     Example:
         >>> _apply_varauxdata(line, var_auxdata_list)
@@ -602,8 +614,8 @@ def _apply_varauxdata(line: str, var_auxdata_list: list) -> None:
         return
     name = rest[:eq].strip()
     value = _unquote(rest[eq + 1 :].strip())
-    if 1 <= var_idx < len(var_auxdata_list) and var_auxdata_list[var_idx] is not None:
-        var_auxdata_list[var_idx]._data[name] = value
+    if 1 <= var_idx < len(var_auxdata_list):
+        var_auxdata_list[var_idx][name] = value
 
 
 class _LineBuffer:
@@ -611,7 +623,8 @@ class _LineBuffer:
 
     Also exposes a small *raw* interface (:meth:`take_raw`, :meth:`position`,
     :meth:`seek`) used only by the vectorized numeric-block readers
-    (:meth:`Read._read_float_block_fast`/:meth:`Read._read_int_block_fast`).  Those
+    (:meth:`TecplotDatReader._read_float_block_fast`/
+    :meth:`TecplotDatReader._read_int_block_fast`). Those
     readers bypass per-line comment-stripping for speed and instead detect the rare line
     that *isn't* plain numeric data (a comment, a header keyword) by letting NumPy's
     parser fail on it, then falling back to this class's ordinary stripped-line
@@ -705,163 +718,95 @@ class _LineBuffer:
 
 
 # ======================================================================================
-# ReadAuxData
+# TecplotDatAuxDataReader
 # ======================================================================================
 
 
-class ReadAuxData:
-    """Dictionary-like container for Tecplot auxiliary data strings.
+class TecplotDatAuxDataReader(TecplotAuxDataReader):
+    """Auxiliary data for DAT files.
 
-    Interface matches :class:`szl.ReadAuxData` exactly.
-
-    Example:
-        >>> aux = ReadAuxData({"Solver": "MyCFD"})
+    Dataset-, zone-, and variable-level aux data are all accumulated into
+    plain dicts during parsing (see :class:`TecplotDatReader`), this just
+    wraps one of them.
     """
 
-    def __init__(self, data: dict[str, str] | None = None) -> None:
-        self._data: dict[str, str] = data if data is not None else {}
+    __slots__ = ("_raw",)
+    _raw: dict[str, str]
 
-    def __len__(self) -> int:
-        return len(self._data)
+    def __init__(self, data: dict[str, str]) -> None:
+        super().__init__()
+        object.__setattr__(self, "_raw", data)
 
-    def __getitem__(self, key: str) -> str:
-        return self._data[key]
-
-    def __contains__(self, key: str) -> bool:
-        return key in self._data
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._data)
-
-    def __repr__(self) -> str:
-        return f"ReadAuxData({self._data!r})"
-
-    def __str__(self) -> str:
-        return repr(self)
-
-    def get(self, key: str, default: Any = None) -> str | None:
-        """Return value for *key* or *default*."""
-        return self._data.get(key, default)
-
-    def keys(self) -> KeysView[str]:
-        """Return iterator over auxiliary data names."""
-        return self._data.keys()
-
-    def values(self) -> ValuesView[str]:
-        """Return iterator over auxiliary data values."""
-        return self._data.values()
-
-    def items(self) -> ItemsView[str, str]:
-        """Return iterator over (name, value) pairs."""
-        return self._data.items()
-
-    def as_int(self, key: str, default: int | None = None) -> int | None:
-        """Return value for *key* as :class:`int`, or *default* on failure.
-
-        :Call:
-            >>> n = aux.as_int("Iteration", default=0)
-        :Versions:
-            * 2025-01-01 ``@user``: Version 1.0
-        """
-        try:
-            return int(self._data[key])
-        except (KeyError, ValueError):
-            return default
-
-    def as_float(self, key: str, default: float | None = None) -> float | None:
-        """Return value for *key* as :class:`float`, or *default* on failure.
-
-        Example:
-            >>> t = aux.as_float("TimeValue", default=0.0)
-        """
-        try:
-            return float(self._data[key])
-        except (KeyError, ValueError):
-            return default
-
-    def as_bool(self, key: str, default: bool | None = None) -> bool | None:
-        """Return value for *key* as :class:`bool`, or *default* on failure.
-
-        Recognises ``"true"``/``"false"``, ``"yes"``/``"no"``,
-        ``"1"``/``"0"`` (case-insensitive).
-
-        Example:
-            >>> flag = aux.as_bool("IsBoundaryZone", default=False)
-        """
-        try:
-            v = self._data[key].lower().strip()
-            if v in ("true", "t", "yes", "y", "1"):
-                return True
-            if v in ("false", "f", "no", "n", "0"):
-                return False
-        except (KeyError, AttributeError):
-            pass
-        return default
+    def _load_data(self) -> dict[str, str]:
+        return self._raw
 
 
 # ======================================================================================
-# ReadVariable
+# TecplotDatVariableReader
 # ======================================================================================
 
 
-class ReadVariable:
-    """Variable metadata and data for one zone parsed from an ASCII DAT file.
+class TecplotDatVariableReader(TecplotVariableReader):
+    """Variable reader for ASCII DAT files.
 
-    Args:
-        zone_index: 1-based index of the zone this variable belongs to.
-        var_index:  1-based dataset variable index.
+    The entire file is parsed into memory up front, so every property here
+    is a plain stored value, no disk I/O happens after construction.
+    ``is_enabled`` is not overridden here, DAT has no dataset-level enabled
+    flag, so the base class default (``not is_passive()``) applies.
     """
+
+    __slots__ = (
+        "zone_index",
+        "var_index",
+        "_name",
+        "_array",
+        "_value_location",
+        "_passive",
+        "_shared_zone",
+    )
+    zone_index: int
+    var_index: int
+    _name: str
+    _array: npt.NDArray[Any] | None
+    _value_location: ValueLocation
+    _passive: bool
+    _shared_zone: int | None
 
     def __init__(
         self,
         zone_index: int,
         var_index: int,
         name: str,
-        data: npt.NDArray | None,
+        data: npt.NDArray[Any] | None,
         value_location: ValueLocation = ValueLocation.NODAL,
         is_passive: bool = False,
         shared_zone: int | None = None,
     ) -> None:
-        self.zone_index: int = zone_index
-        self.var_index: int = var_index
-        self._name: str = name
-        self._data: npt.NDArray | None = data
-        self._value_location: ValueLocation = value_location
-        self._is_passive: bool = is_passive
-        self._shared_zone: int | None = shared_zone
-
-    def __repr__(self) -> str:
-        """Set repr string with only relevant metadata."""
-        parts = [repr(self.name)]
-        if self.is_passive():
-            parts.append("passive")
-        elif self.shared_zone is not None:
-            parts.append(f"shared(zone={self.shared_zone})")
-        else:
-            parts.append(f"dtype={self.data_type.name}")
-            if self.values is not None:
-                parts.append(f"shape={self.values.shape}")
-            if self.value_location == ValueLocation.CELL_CENTERED:
-                parts.append("CELL_CENTERED")
-        return f"ReadVariable({', '.join(parts)})"
+        object.__setattr__(self, "zone_index", zone_index)
+        object.__setattr__(self, "var_index", var_index)
+        object.__setattr__(self, "_name", name)
+        object.__setattr__(self, "_array", data)
+        object.__setattr__(self, "_value_location", value_location)
+        object.__setattr__(self, "_passive", is_passive)
+        object.__setattr__(self, "_shared_zone", shared_zone)
 
     @property
     def name(self) -> str:
-        """Return variable name string."""
+        """Variable name string."""
         return self._name
 
     @property
     def data_type(self) -> DataType:
-        """Return :class:`DataType` inferred from the stored NumPy dtype.
+        """Data type inferred from the stored NumPy dtype.
 
-        A shared variable reports the source zone's actual dtype, since its data array
-        is resolved from that zone (see :attr:`shared_zone`). Only a passive variable
-        (which has no data array anywhere in the file) returns :attr:`DataType.FLOAT` as
-        a placeholder.
+        A shared variable reports the source zone's actual dtype, since its
+        data array is resolved from that zone. Only a passive variable
+        (which has no data array anywhere in the file) returns
+        DataType.FLOAT as a placeholder.
         """
-        if self._data is None:
+        if self._array is None:
             return DataType.FLOAT
-        dt = self._data.dtype
+        dt = self._array.dtype
         if dt == np.float64:
             return DataType.DOUBLE
         if dt == np.float32:
@@ -876,291 +821,168 @@ class ReadVariable:
 
     @property
     def value_location(self) -> ValueLocation:
-        """Return :class:`ValueLocation` for this variable."""
+        """Value location (NODAL or CELL_CENTERED)."""
         return self._value_location
 
-    def is_enabled(self) -> bool:
-        """Return ``True`` unless the variable is passive."""
-        return not self._is_passive
-
     def is_passive(self) -> bool:
-        """Return ``True`` if the variable is passive (no data in this zone)."""
-        return self._is_passive
+        """True if this variable is passive (no data in this zone)."""
+        return self._passive
 
     @property
     def shared_zone(self) -> int | None:
-        """Return 1-based source-zone index if shared, else ``None``."""
+        """1-based source zone index if shared, else None."""
         return self._shared_zone
 
     @property
     def num_values(self) -> int:
-        """Return number of values stored for this variable."""
-        return 0 if self._data is None else self._data.size
-
-    @property
-    def values(self) -> npt.NDArray | None:
-        """Return the data array.
-
-        Returns the source zone's array for a shared variable (see
-        :attr:`shared_zone`) exactly as if this zone owned the data itself.
-        ``None`` only for a passive variable, which has no data anywhere in
-        the file.
-        """
-        return self._data
+        """Number of values stored for this variable."""
+        return 0 if self._array is None else self._array.size
 
     def get_values(
         self,
         value_range: tuple[int | None, int | None] = (None, None),
-    ) -> npt.NDArray | None:
+    ) -> npt.NDArray[Any] | None:
         """Return a slice of the data array using a 1-based range.
 
-        Example:
-            >>> arr = var.get_values((1, 100))
-
         Args:
-            value_range ((None, None) | (start, end)):
-                1-based start (inclusive) and end (exclusive).
+            value_range: 1-based ``(start, end)``. ``(None, None)`` reads all
+                values.
 
         Returns:
-            The array (or a slice of it), or ``None`` for a passive variable.
-            A shared variable resolves to the source zone's array, per
+            The array (or a slice of it), or None for a passive variable. A
+            shared variable resolves to the source zone's array, per
             :attr:`values`.
 
         Raises:
             ValueError: If only one of start/end is given.
         """
-        if self._data is None:
+        if self._array is None:
             return None
         start, end = value_range
         if start is None and end is None:
-            return self._data
+            return self._array
         if start is None or end is None:
             raise ValueError("Both start and end indices must be specified.")
-        return self._data[start - 1 : end - 1]
+        return self._array[start - 1 : end - 1]
 
 
 # ======================================================================================
-# ReadZone
+# TecplotDatZoneReader
 # ======================================================================================
 
 
-class ReadZone:
-    """Zone data parsed from a Tecplot ASCII DAT file.
+class TecplotDatZoneReader(TecplotZoneReader):
+    """Zone reader for ASCII DAT files.
 
-    Attributes:
-        zone_index: 1-based dataset zone index.
-        datapacking: :class:`~tecio.libtecio.DataPacking` member reflecting the
-            ``DATAPACKING`` keyword found in the zone header (``BLOCK`` or
-            ``POINT``). The data arrays are identical either way; this attribute
-            records how the values were laid out on disk.
-        shared_connectivity: 1-based source zone index if this zone's connectivity is
-            shared via ``CONNECTIVITYSHAREZONE``, else ``None``.  :attr:`node_map`
-            automatically resolves to the source zone's array.
-
-    Example:
-        >>> zone = ReadZone(zone_index, title, zone_type, I, J, K, ...)
+    The entire zone (variable arrays, node map, aux data) is already fully
+    parsed and held in memory by the time this is constructed, so the base
+    class's lazy-loading hooks below do no real work, they just wrap
+    already-computed values on first access, for interface consistency with
+    SZL and PLT. ``is_enabled`` is not overridden here, DAT has no concept of
+    a disabled zone, so the base class default (always True) applies.
     """
+
+    __slots__ = ("_variables", "_node_map", "_aux_raw")
+    _variables: list[TecplotVariableReader]
+    _node_map: npt.NDArray[Any] | None
+    _aux_raw: dict[str, str]
 
     def __init__(
         self,
         zone_index: int,
         title: str,
         zone_type: ZoneType,
-        I: int,  # noqa E741
+        I: int,  # noqa: E741 - matches Tecplot's own IJK convention
         J: int,
         K: int,
         solution_time: float,
         strand_id: int,
-        variables: list[ReadVariable],
-        auxdata: ReadAuxData,
-        node_map: npt.NDArray | None = None,
+        variables: list[TecplotVariableReader],
+        auxdata: dict[str, str],
+        node_map: npt.NDArray[Any] | None = None,
         datapacking: DataPacking = DataPacking.BLOCK,
         shared_connectivity: int | None = None,
     ) -> None:
-        self.zone_index: int = zone_index
-        self.title: str = title
-        self.zone_type: ZoneType = zone_type
-        self.I: int = I
-        self.J: int = J
-        self.K: int = K
-        self.solution_time: float = solution_time
-        self.strand_id: int = strand_id
-        self._variable: VariableList[ReadVariable] = VariableList(variables)
-        self.auxdata: ReadAuxData = auxdata
-        self.node_map: npt.NDArray | None = node_map
-        self.datapacking: DataPacking = datapacking
-        self.shared_connectivity: int | None = shared_connectivity
+        super().__init__(
+            zone_index=zone_index,
+            title=title,
+            zone_type=zone_type,
+            i=I,
+            j=J,
+            k=K,
+            solution_time=solution_time,
+            strand_id=strand_id,
+            datapacking=datapacking,
+            shared_connectivity=shared_connectivity,
+        )
+        object.__setattr__(self, "_variables", variables)
+        object.__setattr__(self, "_node_map", node_map)
+        object.__setattr__(self, "_aux_raw", auxdata)
 
-    def __repr__(self) -> str:
-        """Set a more descriptive repr string for reading zones."""
-        title = self.title
-        if len(title) > 30:
-            title = title[:29] + "\u2026"
-        if self.zone_type == ZoneType.ORDERED:
-            size = f"I={self.I}, J={self.J}, K={self.K}"
-        else:
-            size = f"N={self.num_nodes}, E={self.num_elements}"
-        extra = f", aux={len(self.auxdata)}" if len(self.auxdata) else ""
-        return f"ReadZone({title!r}, {self.zone_type.name}, {size}{extra})"
+    def _load_variables(self) -> list[TecplotVariableReader]:
+        return self._variables
 
-    # -- Properties --------------------------------------------------------------------
+    def _load_node_map(self) -> npt.NDArray[Any] | None:
+        return self._node_map
 
-    @property
-    def dimensions(self) -> tuple[int, int, int]:
-        """Return ``(I, J, K)`` dimensions."""
-        return (self.I, self.J, self.K)
-
-    @property
-    def num_nodes(self) -> int:
-        """Return number of nodes/points."""
-        if self.zone_type == ZoneType.ORDERED:
-            return self.I * self.J * self.K
-        return self.I  # FE: I stores num_nodes
-
-    @property
-    def num_elements(self) -> int:
-        """Return number of elements (equals num_points for ORDERED)."""
-        if self.zone_type == ZoneType.ORDERED:
-            return self.I * self.J * self.K
-        return self.J  # FE: J stores num_cells
-
-    @property
-    def nodes_per_cell(self) -> int:
-        """Nodes per cell based on zone type.
-
-        Uses the module-level ``_NODES_PER_ELEM`` table for simple FE types. For
-        ORDERED zones the count is inferred from the number of active dimensions (1-D →
-        2, 2-D → 4, 3-D → 8).
-
-        Raises:
-            ValueError: For zone types without a fixed nodes-per-cell count.
-
-        """
-        zt = self.zone_type
-        if zt in _NODES_PER_ELEM:
-            return _NODES_PER_ELEM[zt]
-        if zt == ZoneType.ORDERED:
-            dims = sum(1 for x in (self.I, self.J, self.K) if x > 1)
-            return 2**dims
-        raise ValueError(f"ZoneType {zt} does not have a fixed nodes-per-cell count.")
-
-    @property
-    def variable(self) -> VariableList[ReadVariable]:
-        """Variables in this zone, by 0-based index or exact name."""
-        return self._variable
-
-    # -- Methods -----------------------------------------------------------------------
-
-    @overload
-    def get_array(self, key: int | str) -> npt.NDArray | None: ...
-    @overload
-    def get_array(self, key: list[str]) -> tuple[npt.NDArray | None, ...]: ...
-
-    def get_array(
-        self, key: int | str | list[str]
-    ) -> npt.NDArray | None | tuple[npt.NDArray | None, ...]:
-        """Return variable data array(s) for this zone.
-
-        A single key (0-based index or exact name) returns one array. A list of exact
-        names returns a tuple of arrays in the order given, suitable for unpacking::
-
-            p = zone.get_array("p")
-            x, y, z = zone.get_array(["x", "y", "z"])
-
-        Returns:
-            Array correcsponding to scalar key (or ``None`` only if the variable is
-            passive); a tuple of such arrays for a list of names. A single-element list
-            yields a 1-tuple, not a bare array. A shared variable resolves to its
-            source zone's array, per :attr:`ReadVariable.values`.
-
-        Raises:
-            KeyError:   If a name does not exist.
-            IndexError: If an index is out of range.
-
-        """
-        return select_variable_arrays(self.variable, key)
-
-    def is_enabled(self) -> bool:
-        """Always ``True`` for zones successfully parsed from a file."""
-        return True
+    def _load_auxdata(self) -> TecplotAuxDataReader:
+        return TecplotDatAuxDataReader(self._aux_raw)
 
 
-# ======================================================================================
-# Public Read API
-# ======================================================================================
+class TecplotDatReader(TecplotReader):
+    """Reader for Tecplot ASCII DAT files.
 
-
-class Read:
-    """Read a Tecplot ASCII DAT file into memory.
-
-    The entire file is parsed on construction. All data is then available through the
-    same attributes and methods as :class:`szl.Read`.
-
-    Example:
-        >>> dat = Read("Onera.dat")
-        >>> dat = tecio.open("Onera.dat", "r")
+    The entire file is parsed into memory at construction. Holds no open file
+    handle between accesses, :meth:`close` is a no-op (inherited from the
+    base class default), same as PLT.
 
     Args:
-        path (str):
-            Path to the ``.dat`` file.
+        path: Path to the ``.dat`` file.
 
     Raises:
         FileNotFoundError: If *path* does not exist.
         ValueError: On unsupported format features.
-
     """
+
+    __slots__ = (
+        "_path",
+        "_title",
+        "_file_type",
+        "_variable_names",
+        "_zones",
+        "_zone_list",
+        "_dataset_auxdata_raw",
+        "_dataset_auxdata",
+        "_var_auxdata_raw",
+        "_deferred_var_aux_lines",
+    )
 
     def __init__(self, path: str) -> None:
         self._path: str = str(path)
         self._title: str = ""
         self._file_type: FileType = FileType.FULL
         self._variable_names: list[str] = []
-        self._zones: list[ReadZone] = []
-        self._zone_list: ZoneList[ReadZone] | None = None
-        self._auxdata: ReadAuxData = ReadAuxData()
-        # Index 0 is a None placeholder so that 1-based indexing works directly
-        self._var_auxdata: list[ReadAuxData | None] = [None]
+        self._zones: list[TecplotZoneReader] = []
+        self._zone_list: ZoneList[TecplotZoneReader] | None = None
+        # Accumulated as plain dicts during parsing (aux lines can appear
+        # anywhere in the file, interleaved with zones), wrapped into an
+        # immutable TecplotDatAuxDataReader lazily, only once fully parsed.
+        self._dataset_auxdata_raw: dict[str, str] = {}
+        self._dataset_auxdata: TecplotAuxDataReader | None = None
+        # Index 0 is an unused placeholder so that 1-based indexing works
+        # directly; populated once num_vars is known, see _parse().
+        self._var_auxdata_raw: list[dict[str, str]] = [{}]
         # Raw VARAUXDATA lines seen before the first zone, buffered by
-        # _parse_file_header() and applied once _var_auxdata is allocated with the
-        # correct length (num_vars isn't known until the header finishes parsing)
+        # _parse_file_header() and applied once _var_auxdata_raw is allocated
+        # with the correct length (num_vars isn't known until the header
+        # finishes parsing).
         self._deferred_var_aux_lines: list[str] = []
         self._parse()
 
-    def __repr__(self) -> str:
-        """Set a nice repr string for the read object."""
-        cls = type(self).__name__
-        name = self._path.replace("\\", "/").rsplit("/", 1)[-1]
-        try:
-            parts = [f"path={name!r}"]
-            title = self.title
-            if title:
-                if len(title) > 40:
-                    title = title[:25] + "\u2026"
-                parts.append(f"title={title!r}")
-            parts += [
-                f"file_type={self.file_type.name}",
-                f"zones={self.num_zones}",
-                f"variables={self.num_vars}",
-            ]
-            if self.num_auxdata_items:
-                parts.append(f"aux={self.num_auxdata_items}")
-            return f"{cls}({', '.join(parts)})"
-        except Exception:
-            return f"{cls}(path={name!r}, <unavailable>)"
-
-    def __enter__(self) -> Read:
-        """Context manager for Read class."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Context manager protocol for read-only file interfaces.
-
-        Read classes hold no open file handle between accesses, so there is nothing to
-        release on exit. Provided for API consistency with the Write classes and to
-        support the ``with tecio.open(...) as r:`` pattern.
-        """
-
-    # -- Properties --------------------------------------------------------------------
+    @property
+    def path(self) -> str:
+        """Source file path."""
+        return self._path
 
     @property
     def file_type(self) -> FileType:
@@ -1188,58 +1010,21 @@ class Read:
         return len(self._zones)
 
     @property
-    def zone(self) -> ZoneList[ReadZone]:
+    def zone(self) -> ZoneList[TecplotZoneReader]:
         """Zones in this file, by index or slice."""
         if self._zone_list is None:
             self._zone_list = ZoneList(self._zones)
         return self._zone_list
 
     @property
-    def num_auxdata_items(self) -> int:
-        """Return the number of dataset-level auxiliary data items."""
-        return len(self._auxdata)
+    def auxdata(self) -> TecplotAuxDataReader:
+        """Return the dataset-level auxiliary data."""
+        if self._dataset_auxdata is None:
+            self._dataset_auxdata = TecplotDatAuxDataReader(self._dataset_auxdata_raw)
+        return self._dataset_auxdata
 
-    @property
-    def auxdata(self) -> ReadAuxData:
-        """Return the dataset-level :class:`ReadAuxData` container."""
-        return self._auxdata
-
-    @property
-    def var_auxdata(self) -> list[ReadAuxData | None]:
-        """Return the per-variable aux data list (index 0 is ``None``)."""
-        return self._var_auxdata
-
-    def get_var_auxdata(self, var_index: int) -> ReadAuxData:
-        """Return auxiliary data for variable ``var_index`` (1-based).
-
-        Example:
-            >>> aux = dat.get_var_auxdata(1)
-
-        Raises:
-            IndexError: If ``var_index`` is out of range.
-        """
-        if var_index < 1 or var_index > self.num_vars:
-            raise IndexError(
-                f"Variable index {var_index} out of range [1, {self.num_vars}]"
-            )
-        result = self._var_auxdata[var_index]
-        assert result is not None
-        return result
-
-    def get_zone_auxdata(self, zone_index: int) -> ReadAuxData:
-        """Return auxiliary data for zone ``zone_index`` (1-based).
-
-        Example:
-            >>> aux = dat.get_zone_auxdata(1)
-
-        Raises:
-            IndexError: If ``zone_index`` is out of range.
-        """
-        if zone_index < 1 or zone_index > self.num_zones:
-            raise IndexError(
-                f"Zone index {zone_index} out of range [1, {self.num_zones}]"
-            )
-        return self._zones[zone_index - 1].auxdata
+    def _var_auxdata_at(self, var_index: int) -> TecplotAuxDataReader:
+        return TecplotDatAuxDataReader(self._var_auxdata_raw[var_index])
 
     # -- parser ---------------------------------------------------------------
 
@@ -1256,12 +1041,12 @@ class Read:
         self._parse_file_header(tokens)
 
         # Build per-variable aux data slots now that num_vars is known.
-        self._var_auxdata = [None] + [ReadAuxData() for _ in range(self.num_vars)]
+        self._var_auxdata_raw = [{}] + [{} for _ in range(self.num_vars)]
 
         # Now that _var_auxdata exists, apply any VARAUXDATA lines that appeared before
         # the first zone
         for raw in self._deferred_var_aux_lines:
-            _apply_varauxdata(raw, self._var_auxdata)
+            _apply_varauxdata(raw, self._var_auxdata_raw)
         self._deferred_var_aux_lines.clear()
 
         while tokens.has_more():
@@ -1274,10 +1059,10 @@ class Read:
                 raw = tokens.next_stripped()
                 name, value = _parse_auxdata_line(raw)
                 if name:
-                    self._auxdata._data[name] = value
+                    self._dataset_auxdata_raw[name] = value
             elif upper.startswith("VARAUXDATA"):
                 raw = tokens.next_stripped()
-                _apply_varauxdata(raw, self._var_auxdata)
+                _apply_varauxdata(raw, self._var_auxdata_raw)
             else:
                 tokens.next_stripped()  # skip unrecognised lines
 
@@ -1343,7 +1128,7 @@ class Read:
             elif upper_key.startswith("DATASETAUXDATA"):
                 name, value = _parse_auxdata_line(line)
                 if name:
-                    self._auxdata._data[name] = value
+                    self._dataset_auxdata_raw[name] = value
 
             elif upper_key.startswith("VARAUXDATA"):
                 # Can't process this without num_vars, and therefore _var_auxdata, isn't
@@ -1566,8 +1351,8 @@ class Read:
         # This zone's own 1-based index
         zone_index = len(self._zones) + 1
 
-        read_vars = [
-            ReadVariable(
+        read_vars: list[TecplotVariableReader] = [
+            TecplotDatVariableReader(
                 zone_index=zone_index,
                 var_index=idx + 1,
                 name=name,
@@ -1583,7 +1368,7 @@ class Read:
         ]
 
         self._zones.append(
-            ReadZone(
+            TecplotDatZoneReader(
                 zone_index=zone_index,
                 title=zone_title,
                 zone_type=zone_type,
@@ -1593,7 +1378,7 @@ class Read:
                 solution_time=solution_time,
                 strand_id=strand_id,
                 variables=read_vars,
-                auxdata=ReadAuxData(zone_aux),
+                auxdata=zone_aux,
                 node_map=node_map,
                 datapacking=packing,
                 shared_connectivity=con_share_zone if con_share_zone else None,
@@ -1623,21 +1408,21 @@ class Read:
             :meth:`_read_block_var_data`/:meth:`_read_point_var_data`.
 
         Examples:
-            >>> arr = Read._read_float_block(tokens, 100)
+            >>> arr = TecplotDatReader._read_float_block(tokens, 100)
         """
         if n_values <= 0:
             return np.empty(0, dtype=np.float64)
 
         marker = tokens.position()
         try:
-            arr = Read._read_float_block_fast(tokens, n_values)
+            arr = TecplotDatReader._read_float_block_fast(tokens, n_values)
         except ValueError:
             arr = None
         if arr is not None:
             return arr
 
         tokens.seek(marker)
-        return Read._read_float_block_slow(tokens, n_values)
+        return TecplotDatReader._read_float_block_slow(tokens, n_values)
 
     @staticmethod
     def _read_float_block_fast(
@@ -1656,7 +1441,7 @@ class Read:
         allowed to propagate to the caller for the same reason.
 
         Example:
-            >>> arr = Read._read_float_block_fast(tokens, 100)
+            >>> arr = TecplotDatReader._read_float_block_fast(tokens, 100)
 
         """
         pieces: list[npt.NDArray] = []
@@ -1692,7 +1477,7 @@ class Read:
         yet. Slow by design, but guarantees a result either way.
 
         Example:
-            >>> arr = Read._read_float_block_slow(tokens, 100)
+            >>> arr = TecplotDatReader._read_float_block_slow(tokens, 100)
 
         """
         values: list[float] = []
@@ -1740,7 +1525,7 @@ class Read:
             zone list to resolve against.
 
         Example:
-            >>> arrays = Read._read_block_var_data(
+            >>> arrays = TecplotDatReader._read_block_var_data(
             ...     tokens, 3, 100, 80, {}, set(), {}, [DataType.FLOAT] * 3
             ... )
 
@@ -1751,7 +1536,7 @@ class Read:
                 continue  # no data block for passive/shared variables
             loc = var_locs.get(var_idx, ValueLocation.NODAL)
             n_vals = num_cells if loc == ValueLocation.CELL_CENTERED else num_nodes
-            raw = Read._read_float_block(tokens, n_vals)
+            raw = TecplotDatReader._read_float_block(tokens, n_vals)
             var_arrays[var_idx] = raw.astype(_DT_TO_DTYPE[var_types[var_idx]])
         return var_arrays
 
@@ -1785,7 +1570,7 @@ class Read:
             :meth:`_read_block_var_data`
 
         Example:
-            >>> arrays = Read._read_point_var_data(
+            >>> arrays = TecplotDatReader._read_point_var_data(
             ...     tokens, 3, 100, 80, {}, set(), {}, [DataType.FLOAT] * 3
             ... )
 
@@ -1811,7 +1596,7 @@ class Read:
         # Nodal section: num_nodes rows × len(nodal_active) columns.
         n_nodal = len(nodal_active)
         if n_nodal > 0 and num_nodes > 0:
-            flat = Read._read_float_block(tokens, num_nodes * n_nodal)
+            flat = TecplotDatReader._read_float_block(tokens, num_nodes * n_nodal)
             # Row-major: flat[node * n_nodal + col] = value for that variable.
             matrix = flat.reshape(num_nodes, n_nodal)
             for col, var_idx in enumerate(nodal_active):
@@ -1822,7 +1607,7 @@ class Read:
         # Cell-centred section: num_cells rows × len(cc_active) columns.
         n_cc = len(cc_active)
         if n_cc > 0 and num_cells > 0:
-            flat = Read._read_float_block(tokens, num_cells * n_cc)
+            flat = TecplotDatReader._read_float_block(tokens, num_cells * n_cc)
             matrix = flat.reshape(num_cells, n_cc)
             for col, var_idx in enumerate(cc_active):
                 var_arrays[var_idx] = np.ascontiguousarray(
@@ -1841,21 +1626,21 @@ class Read:
         docstring for the rationale.
 
         Examples:
-            >>> arr = Read._read_int_block(tokens, 24)
+            >>> arr = TecplotDatReader._read_int_block(tokens, 24)
         """
         if n_values <= 0:
             return np.empty(0, dtype=np.int64)
 
         marker = tokens.position()
         try:
-            arr = Read._read_int_block_fast(tokens, n_values)
+            arr = TecplotDatReader._read_int_block_fast(tokens, n_values)
         except ValueError:
             arr = None
         if arr is not None:
             return arr
 
         tokens.seek(marker)
-        return Read._read_int_block_slow(tokens, n_values)
+        return TecplotDatReader._read_int_block_slow(tokens, n_values)
 
     @staticmethod
     def _read_int_block_fast(tokens: _LineBuffer, n_values: int) -> npt.NDArray | None:
@@ -1865,7 +1650,7 @@ class Read:
         target dtype.
 
         Example:
-            >>> arr = Read._read_int_block_fast(tokens, 24)
+            >>> arr = TecplotDatReader._read_int_block_fast(tokens, 24)
         """
         pieces: list[npt.NDArray] = []
         have = 0
@@ -1893,7 +1678,7 @@ class Read:
         """Tolerant, token-by-token fallback for :meth:`_read_int_block`.
 
         Example:
-            >>> arr = Read._read_int_block_slow(tokens, 24)
+            >>> arr = TecplotDatReader._read_int_block_slow(tokens, 24)
         """
         values: list[int] = []
         while len(values) < n_values and tokens.has_more():

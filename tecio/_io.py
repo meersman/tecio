@@ -47,6 +47,10 @@ import numpy.typing as npt
 
 from . import dat, plt, szl
 from ._containers import ZoneList
+from ._dat_read import TecplotDatReader
+from ._plt_read import TecplotPltReader
+from ._reader import TecplotAuxDataReader, TecplotReader, TecplotZoneReader
+from ._szl_read import TecplotSzlReader
 from .libtecio import FileType, ValueLocation, ZoneType
 
 # --------------------------------------------------------------------------------------
@@ -55,35 +59,35 @@ from .libtecio import FileType, ValueLocation, ZoneType
 
 _HANDLERS: dict[str, dict[str, Any]] = {
     ".szplt": {
-        "r": szl.Read,
+        "r": TecplotSzlReader,
         "w": szl.Write,
         "x": None,  # filled below after class definitions
         "a": None,
         "a+": None,
     },
     ".plt": {
-        "r": plt.Read,
+        "r": TecplotPltReader,
         "w": plt.Write,
         "x": None,
         "a": None,
         "a+": None,
     },
     ".bin": {
-        "r": plt.Read,
+        "r": TecplotPltReader,
         "w": plt.Write,
         "x": None,
         "a": None,
         "a+": None,
     },
     ".dat": {
-        "r": dat.Read,
+        "r": TecplotDatReader,
         "w": dat.Write,
         "x": None,
         "a": None,
         "a+": None,
     },
     ".tec": {
-        "r": dat.Read,
+        "r": TecplotDatReader,
         "w": dat.Write,
         "x": None,
         "a": None,
@@ -106,7 +110,7 @@ _FE_SIMPLE: frozenset[ZoneType] = frozenset({
 # --------------------------------------------------------------------------------------
 
 
-def _reader_for_ext(ext: str) -> type:
+def _reader_for_ext(ext: str) -> type[TecplotReader]:
     """Return the Read class for *ext*."""
     return _HANDLERS[ext]["r"]
 
@@ -116,7 +120,9 @@ def _writer_for_ext(ext: str) -> type:
     return _HANDLERS[ext]["w"]
 
 
-def _copy_zones(reader: szl.Read | plt.Read, writer: szl.Write | plt.Write) -> None:
+def _copy_zones(
+    reader: TecplotReader, writer: szl.Write | plt.Write | dat.Write
+) -> None:
     """Stream all zones from *reader* into the open *writer*.
 
     Each zone is copied variable-by-variable at its original data type and value
@@ -245,7 +251,7 @@ class AppendWrite:
         self,
         original_path: str | os.PathLike,
         tmp_path: str | os.PathLike,
-        writer: szl.Write | plt.Write,
+        writer: szl.Write | plt.Write | dat.Write,
     ) -> None:
         self._original = Path(original_path)
         self._tmp = Path(tmp_path)
@@ -446,8 +452,8 @@ class AppendReadWrite(AppendWrite):
         self,
         original_path: str | os.PathLike,
         tmp_path: str | os.PathLike,
-        writer: szl.Write | plt.Write,
-        reader: szl.Read | plt.Read,
+        writer: szl.Write | plt.Write | dat.Write,
+        reader: TecplotReader,
     ) -> None:
         super().__init__(original_path, tmp_path, writer)
         self._reader = reader
@@ -470,12 +476,12 @@ class AppendReadWrite(AppendWrite):
         return self._reader.num_zones
 
     @property
-    def zone(self) -> ZoneList[Any]:
+    def zone(self) -> ZoneList[TecplotZoneReader]:
         """Zone list from the *original* file."""
         return self._reader.zone
 
     @property
-    def auxdata(self) -> Any:
+    def auxdata(self) -> TecplotAuxDataReader:
         """Dataset-level auxiliary data from the *original* file."""
         return self._reader.auxdata
 
@@ -485,15 +491,15 @@ class AppendReadWrite(AppendWrite):
         return self._reader.num_auxdata_items
 
     @property
-    def var_auxdata(self) -> list:
+    def var_auxdata(self) -> list[TecplotAuxDataReader | None]:
         """Per-variable auxiliary data list from the *original* file."""
         return self._reader.var_auxdata
 
-    def get_var_auxdata(self, var_index: int) -> Any:
+    def get_var_auxdata(self, var_index: int) -> TecplotAuxDataReader:
         """Return variable aux data for *var_index* (1-based)."""
         return self._reader.get_var_auxdata(var_index)
 
-    def get_zone_auxdata(self, zone_index: int) -> Any:
+    def get_zone_auxdata(self, zone_index: int) -> TecplotAuxDataReader:
         """Return zone aux data for *zone_index* (1-based)."""
         return self._reader.get_zone_auxdata(zone_index)
 
@@ -537,7 +543,7 @@ def _open_append(
     WriteCls = _writer_for_ext(ext)
 
     # Open the original file for reading.
-    reader: szl.Read | plt.Read = ReadCls(str(src))
+    reader: TecplotReader = ReadCls(str(src))
 
     # Resolve writer kwargs from the source file when not explicitly supplied.
     title: str = writer_kwargs.pop("title", reader.title)
@@ -633,7 +639,7 @@ def open(
     path: str | os.PathLike,
     mode: Literal["r"],
     **kwargs: Any,
-) -> szl.Read | plt.Read | dat.Read: ...
+) -> TecplotReader: ...
 @overload
 def open(
     path: str | os.PathLike,
@@ -659,16 +665,7 @@ def open(
     path: str | os.PathLike,
     mode: str = "r",
     **kwargs: Any,
-) -> (
-    szl.Read
-    | szl.Write
-    | plt.Read
-    | plt.Write
-    | dat.Read
-    | dat.Write
-    | AppendWrite
-    | AppendReadWrite
-):
+) -> TecplotReader | szl.Write | plt.Write | dat.Write | AppendWrite | AppendReadWrite:
     """Open a Tecplot file for reading, writing, or appending.
 
     Selects the correct format handler from the file extension and returns the
@@ -753,8 +750,9 @@ def open(
              - Override the file type. Rarely needed.
 
     Returns:
-        - ``'r'`` → :class:`tecio.szl.Read`, :class:`tecio.plt.Read`, or
-          :class:`tecio.dat.Read`
+        - ``'r'`` → :class:`~tecio.TecplotSzlReader`, :class:`~tecio.TecplotPltReader`,
+          or :class:`~tecio.TecplotDatReader` (all share the
+          :class:`~tecio.TecplotReader` interface)
         - ``'w'`` / ``'x'`` → :class:`tecio.szl.Write`, :class:`tecio.plt.Write`, or
           :class:`tecio.dat.Write`
         - ``'a'`` → :class:`~tecio.AppendWrite`
