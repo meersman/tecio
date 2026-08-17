@@ -89,7 +89,7 @@ from tecio.libtecio import (
     ValueLocation,
     ZoneType,
 )
-from tecio.szl._write import _infer_data_type
+from tecio._szl_write import _infer_data_type
 
 _RTOL_F32 = 1e-5
 _RTOL_F64 = 1e-10
