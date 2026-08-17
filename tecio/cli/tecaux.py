@@ -184,6 +184,13 @@ from typing import Any
 
 import numpy as np
 
+from .. import (
+    TecplotFEZoneReader,
+    TecplotOrderedZoneReader,
+    TecplotReader,
+    TecplotWriter,
+    TecplotZoneReader,
+)
 from .. import open as tecio_open
 from ..libtecio import ZoneType
 
@@ -513,7 +520,7 @@ def _load_json_aux(
     return dataset_aux, zone_groups, var_groups
 
 
-def _collect_all_aux(reader: Any) -> dict[str, Any]:
+def _collect_all_aux(reader: TecplotReader) -> dict[str, Any]:
     """Collect every dataset-, zone-, and variable-level aux entry from *reader*.
 
     The exact inverse of ``_load_json_aux``: produces the same
@@ -570,7 +577,7 @@ def _collect_all_aux(reader: Any) -> dict[str, Any]:
 
 
 def _process_zone(
-    zone: Any,
+    zone: TecplotZoneReader,
 ) -> tuple[list[np.ndarray], list[Any], list[bool], list[int], dict[str, str]]:
     """Copy one zone's variable data/metadata verbatim.
 
@@ -626,8 +633,8 @@ def _process_zone(
 
 
 def _write_zone_data(
-    writer: Any,
-    zone: Any,
+    writer: TecplotWriter,
+    zone: TecplotZoneReader,
     writer_data: list[np.ndarray],
     writer_locs: list[Any],
     passive_vars: list[bool],
@@ -644,8 +651,8 @@ def _write_zone_data(
     copies.
 
     Args:
-        writer:       Open ``Write`` instance for the destination file.
-        zone:         Source ``ReadZone`` being copied.
+        writer:       Open writer instance for the destination file.
+        zone:         Source zone reader being copied.
         writer_data:  Active, non-shared variable arrays (from ``_process_zone``).
         writer_locs:  Matching value locations (from ``_process_zone``).
         passive_vars: Per-variable passive flags, dataset order.
@@ -664,9 +671,9 @@ def _write_zone_data(
         aux=zone_aux,
     )
 
-    if zt == ZoneType.ORDERED:
+    if isinstance(zone, TecplotOrderedZoneReader):
         writer.write_ijk_zone(data=writer_data, **common_kw)
-    else:
+    elif isinstance(zone, TecplotFEZoneReader):
         con_sharing = zone.shared_connectivity
         writer.write_fe_zone(
             zone_type=zt,
@@ -674,6 +681,11 @@ def _write_zone_data(
             node_map=None if con_sharing else zone.node_map,
             con_sharing=con_sharing,
             **common_kw,
+        )
+    else:
+        raise NotImplementedError(
+            f"Zone '{zone.title}' is neither an ordered nor a classic FE "
+            "zone; writing is not supported for it."
         )
 
 

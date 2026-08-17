@@ -166,6 +166,12 @@ from typing import Any
 
 import numpy as np
 
+from .. import (
+    TecplotFEZoneReader,
+    TecplotOrderedZoneReader,
+    TecplotReader,
+    TecplotZoneReader,
+)
 from .. import open as tecio_open
 from ..libtecio import ZoneType
 
@@ -258,7 +264,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 # --------------------------------------------------------------------------------------
 
 
-def _build_info_dict(reader: Any) -> dict[str, Any]:
+def _build_info_dict(reader: TecplotReader) -> dict[str, Any]:
     """Build the dataset-level ``info`` struct for the output file.
 
     The returned dict is stored by :func:`scipy.io.savemat` as a MATLAB struct named
@@ -268,7 +274,7 @@ def _build_info_dict(reader: Any) -> dict[str, Any]:
     (e.g. ``"X [ft]"``); the per-zone arrays are addressed by 1-based index instead.
 
     Args:
-        reader: An open ``Read`` instance (SZL, PLT, or DAT).
+        reader: An open reader instance (SZL, PLT, or DAT).
 
     Returns:
         Mapping of field name to value for the ``info`` struct.
@@ -285,7 +291,7 @@ def _build_info_dict(reader: Any) -> dict[str, Any]:
     }
 
 
-def _zone_to_dict(zone: Any, num_vars: int) -> dict[str, Any]:
+def _zone_to_dict(zone: TecplotZoneReader, num_vars: int) -> dict[str, Any]:
     """Build one zone's struct for the output file.
 
     The returned dict becomes a MATLAB struct (named ``zone_<n>`` by the caller). It
@@ -307,7 +313,7 @@ def _zone_to_dict(zone: Any, num_vars: int) -> dict[str, Any]:
     there (see the module docstring for a helper).
 
     Args:
-        zone:     A ``ReadZone`` instance from any supported format.
+        zone:     A zone reader instance from any supported format.
         num_vars: Total number of variables in the dataset.
 
     Returns:
@@ -321,12 +327,12 @@ def _zone_to_dict(zone: Any, num_vars: int) -> dict[str, Any]:
         "strand_id": int(zone.strand_id),
     }
 
-    if zone.zone_type == ZoneType.ORDERED:
+    if isinstance(zone, TecplotOrderedZoneReader):
         ni, nj, nk = zone.dimensions
         d["I"] = int(ni)
         d["J"] = int(nj)
         d["K"] = int(nk)
-    else:
+    elif isinstance(zone, TecplotFEZoneReader):
         d["num_nodes"] = int(zone.num_nodes)
         d["num_elements"] = int(zone.num_elements)
 
@@ -384,7 +390,7 @@ def _zone_to_dict(zone: Any, num_vars: int) -> dict[str, Any]:
     # above: rather than duplicating the (potentially large) node map into every zone's
     # struct, store the 1-based source zone number so the MATLAB user can dereference
     # zone_<src>.node_map themselves.
-    if zone.zone_type != ZoneType.ORDERED and zone.zone_type not in _FE_POLY:
+    if isinstance(zone, TecplotFEZoneReader) and zone.zone_type not in _FE_POLY:
         con_src = zone.shared_connectivity
         if con_src is not None:
             d["node_map_shared_from"] = np.int32(con_src)

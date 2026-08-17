@@ -45,10 +45,11 @@ from typing import Any, Literal, overload
 import numpy as np
 import numpy.typing as npt
 
-from . import dat, plt, szl
 from ._containers import ZoneList
 from ._dat_read import TecplotDatReader
+from ._dat_write import TecplotDatWriter
 from ._plt_read import TecplotPltReader
+from ._plt_write import TecplotPltWriter
 from ._reader import (
     TecplotAuxDataReader,
     TecplotFEZoneReader,
@@ -57,6 +58,8 @@ from ._reader import (
     TecplotZoneReader,
 )
 from ._szl_read import TecplotSzlReader
+from ._szl_write import TecplotSzlWriter
+from ._writer import TecplotWriter
 from .libtecio import FileType, ValueLocation, ZoneType
 
 # --------------------------------------------------------------------------------------
@@ -66,35 +69,35 @@ from .libtecio import FileType, ValueLocation, ZoneType
 _HANDLERS: dict[str, dict[str, Any]] = {
     ".szplt": {
         "r": TecplotSzlReader,
-        "w": szl.Write,
+        "w": TecplotSzlWriter,
         "x": None,  # filled below after class definitions
         "a": None,
         "a+": None,
     },
     ".plt": {
         "r": TecplotPltReader,
-        "w": plt.Write,
+        "w": TecplotPltWriter,
         "x": None,
         "a": None,
         "a+": None,
     },
     ".bin": {
         "r": TecplotPltReader,
-        "w": plt.Write,
+        "w": TecplotPltWriter,
         "x": None,
         "a": None,
         "a+": None,
     },
     ".dat": {
         "r": TecplotDatReader,
-        "w": dat.Write,
+        "w": TecplotDatWriter,
         "x": None,
         "a": None,
         "a+": None,
     },
     ".tec": {
         "r": TecplotDatReader,
-        "w": dat.Write,
+        "w": TecplotDatWriter,
         "x": None,
         "a": None,
         "a+": None,
@@ -126,9 +129,7 @@ def _writer_for_ext(ext: str) -> type:
     return _HANDLERS[ext]["w"]
 
 
-def _copy_zones(
-    reader: TecplotReader, writer: szl.Write | plt.Write | dat.Write
-) -> None:
+def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
     """Stream all zones from *reader* into the open *writer*.
 
     Each zone is copied variable-by-variable at its original data type and value
@@ -263,7 +264,7 @@ class AppendWrite:
         self,
         original_path: str | os.PathLike,
         tmp_path: str | os.PathLike,
-        writer: szl.Write | plt.Write | dat.Write,
+        writer: TecplotWriter,
     ) -> None:
         self._original = Path(original_path)
         self._tmp = Path(tmp_path)
@@ -288,9 +289,9 @@ class AppendWrite:
         """Append a structured IJK-ordered zone.
 
         Delegates to the underlying format writer's ``write_ijk_zone``
-        (e.g. :meth:`tecio.szl.Write.write_ijk_zone`). All parameters from that method
-        are accepted here with one exception: ``variables`` is not meaningful because
-        the variable list is fixed at open time from the existing file.
+        (e.g. :meth:`tecio.TecplotWriter.write_ijk_zone`). All parameters from that
+        method are accepted here with one exception: ``variables`` is not meaningful
+        because the variable list is fixed at open time from the existing file.
 
         Args:
             data (Sequence[ndarray]): One NumPy array per **active** variable
@@ -334,7 +335,7 @@ class AppendWrite:
         """Append an unstructured finite-element zone.
 
         Delegates to the underlying format writer's ``write_fe_zone``
-        (e.g. :meth:`tecio.szl.Write.write_fe_zone`). The ``variables`` parameter is
+        (e.g. :meth:`tecio.TecplotWriter.write_fe_zone`). The ``variables`` parameter is
         not meaningful here — the variable list is fixed from the existing file.
         FEPOLYGON and FEPOLYHEDRON are not supported.
 
@@ -464,7 +465,7 @@ class AppendReadWrite(AppendWrite):
         self,
         original_path: str | os.PathLike,
         tmp_path: str | os.PathLike,
-        writer: szl.Write | plt.Write | dat.Write,
+        writer: TecplotWriter,
         reader: TecplotReader,
     ) -> None:
         super().__init__(original_path, tmp_path, writer)
@@ -616,7 +617,7 @@ def _open_exclusive(
     path: str | os.PathLike,
     ext: str,
     **writer_kwargs: Any,
-) -> szl.Write | plt.Write:
+) -> TecplotWriter:
     """Open *path* for writing only if it does not already exist.
 
     Args:
@@ -657,7 +658,7 @@ def open(
     path: str | os.PathLike,
     mode: Literal["w"] | Literal["x"],
     **kwargs: Any,
-) -> szl.Write | plt.Write | dat.Write: ...
+) -> TecplotWriter: ...
 @overload
 def open(
     path: str | os.PathLike,
@@ -677,7 +678,7 @@ def open(
     path: str | os.PathLike,
     mode: str = "r",
     **kwargs: Any,
-) -> TecplotReader | szl.Write | plt.Write | dat.Write | AppendWrite | AppendReadWrite:
+) -> TecplotReader | TecplotWriter | AppendWrite | AppendReadWrite:
     """Open a Tecplot file for reading, writing, or appending.
 
     Selects the correct format handler from the file extension and returns the
@@ -727,9 +728,9 @@ def open(
            * - ``variables``
              - ``None``
              - Variable name list. For SZL and PLT this may be deferred to the first
-               :meth:`~tecio.szl.Write.write_ijk_zone` or
-               :meth:`~tecio.szl.Write.write_fe_zone` call. Required at open time for
-               DAT.
+               :meth:`~tecio.TecplotWriter.write_ijk_zone` or
+               :meth:`~tecio.TecplotWriter.write_fe_zone` call. Required at open time
+               for DAT.
            * - ``file_type``
              - ``FileType.FULL``
              - One of :attr:`~tecio.libtecio.FileType.FULL`,
@@ -765,8 +766,9 @@ def open(
         - ``'r'`` → :class:`~tecio.TecplotSzlReader`, :class:`~tecio.TecplotPltReader`,
           or :class:`~tecio.TecplotDatReader` (all share the
           :class:`~tecio.TecplotReader` interface)
-        - ``'w'`` / ``'x'`` → :class:`tecio.szl.Write`, :class:`tecio.plt.Write`, or
-          :class:`tecio.dat.Write`
+        - ``'w'`` / ``'x'`` → :class:`~tecio.TecplotSzlWriter`,
+          :class:`~tecio.TecplotPltWriter`, or :class:`~tecio.TecplotDatWriter` (all
+          share the :class:`~tecio.TecplotWriter` interface)
         - ``'a'`` → :class:`~tecio.AppendWrite`
         - ``'a+'`` → :class:`~tecio.AppendReadWrite`
 

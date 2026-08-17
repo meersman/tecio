@@ -79,8 +79,8 @@ from collections.abc import Sequence
 
 import numpy as np
 
+from .. import TecplotFEZoneReader, TecplotOrderedZoneReader
 from .. import open as tecio_open
-from ..libtecio import ZoneType
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -195,9 +195,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     print(f"\nZone {i + 1:3}")
                     print(f"  Title                : {zone.title}")
                     print(f"  Zone Type            : {zone.zone_type}")
-                    if zone.zone_type == ZoneType.ORDERED:
+                    if isinstance(zone, TecplotOrderedZoneReader):
                         print(f"  I,J,K                : {zone.dimensions}")
-                    else:
+                    elif isinstance(zone, TecplotFEZoneReader):
                         print(f"  Num Nodes            : {zone.num_nodes}")
                         print(f"  Num Elements         : {zone.num_elements}")
                     print(f"  Is Enabled           : {zone.is_enabled()}")
@@ -211,9 +211,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                             print(f"  {name:>20} : {value}")
 
                     # Show node map for FE zones
-                    if zone.zone_type != ZoneType.ORDERED:
+                    if isinstance(zone, TecplotFEZoneReader):
                         print(f"  Shared Connectivity  : {zone.shared_connectivity}")
-                        print(f"  Nodes Per Cell       : {zone.nodes_per_cell}")
+                        try:
+                            print(f"  Nodes Per Cell       : {zone.nodes_per_cell}")
+                        except ValueError:
+                            # FEPOLYGON/FEPOLYHEDRON/FEMIXED have no fixed count.
+                            print("  Nodes Per Cell       : N/A (variable per cell)")
                         if zone.node_map is not None:
                             print(f"  Node Map Shape       : {zone.node_map.shape}")
                             value_str = np.array2string(

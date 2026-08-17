@@ -90,6 +90,7 @@ from typing import Any
 
 import numpy as np
 
+from .. import TecplotFEZoneReader, TecplotOrderedZoneReader
 from .. import open as tecio_open
 from ..libtecio import ZoneType
 
@@ -373,9 +374,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                         aux=zone_aux,
                     )
 
-                    if zt == ZoneType.ORDERED:
+                    if isinstance(zone, TecplotOrderedZoneReader):
                         writer.write_ijk_zone(data=writer_data, **common_kw)
-                    else:
+                    elif isinstance(zone, TecplotFEZoneReader):
                         con_src = zone.shared_connectivity
                         con_remapped = (
                             zone_index_map.get(con_src) if con_src is not None else None
@@ -386,6 +387,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                             node_map=None if con_remapped else zone.node_map,
                             con_sharing=con_remapped,
                             **common_kw,
+                        )
+                    else:
+                        raise NotImplementedError(
+                            f"Zone '{zone.title}' is neither an ordered nor a "
+                            "classic FE zone; extraction is not supported for it."
                         )
 
                     # Record where this source zone landed in the output, so a later

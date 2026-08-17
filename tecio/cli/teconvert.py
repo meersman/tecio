@@ -85,6 +85,12 @@ from typing import Any
 
 import numpy as np
 
+from .. import (
+    TecplotFEZoneReader,
+    TecplotOrderedZoneReader,
+    TecplotReader,
+    TecplotWriter,
+)
 from .. import open as tecio_open
 from ..libtecio import ZoneType
 
@@ -194,7 +200,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 # --------------------------------------------------------------------------------------
 
 
-def _copy_zones(reader: Any, writer: Any) -> None:
+def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
     """Stream all zones from *reader* into the open *writer*.
 
     Each zone is reproduced at its original data type and value location.
@@ -202,12 +208,12 @@ def _copy_zones(reader: Any, writer: Any) -> None:
     auxiliary data is forwarded as well.
 
     Args:
-        reader: An open ``Read`` instance (szl, plt, or dat).
-        writer: An open ``Write`` instance for the target format.
+        reader: An open reader instance (SZL, PLT, or DAT).
+        writer: An open writer instance for the target format.
 
     Raises:
         NotImplementedError: If a FEPOLYGON or FEPOLYHEDRON zone is
-            encountered, because the ``Write`` API does not yet support them.
+            encountered, because the writer API does not yet support them.
 
     """
     for zone in reader.zone:
@@ -235,7 +241,7 @@ def _copy_zones(reader: Any, writer: Any) -> None:
             if var.is_passive() or sv is not None:
                 data.append(np.array([], dtype=np.float32))
             else:
-                data.append(var.values)
+                data.append(var.values)  # ty: ignore[invalid-argument-type]
 
         # Only pass arrays for active, non-shared variables.
         active_data = [
@@ -266,9 +272,9 @@ def _copy_zones(reader: Any, writer: Any) -> None:
             aux=zone_aux,
         )
 
-        if zt == ZoneType.ORDERED:
+        if isinstance(zone, TecplotOrderedZoneReader):
             writer.write_ijk_zone(data=active_data, **common_kw)
-        else:
+        elif isinstance(zone, TecplotFEZoneReader):
             con_sharing = zone.shared_connectivity
             writer.write_fe_zone(
                 zone_type=zt,
@@ -276,6 +282,11 @@ def _copy_zones(reader: Any, writer: Any) -> None:
                 node_map=None if con_sharing else zone.node_map,
                 con_sharing=con_sharing,
                 **common_kw,
+            )
+        else:
+            raise NotImplementedError(
+                f"Zone '{zone.title}' is neither an ordered nor a classic FE "
+                "zone; conversion is not supported for it."
             )
 
 

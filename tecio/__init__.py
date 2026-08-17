@@ -11,11 +11,13 @@ try:
 except metadata.PackageNotFoundError:
     __version__ = "0.2.3"
 
-from . import cli, dat, libtecio, plt, szl
+from . import cli, libtecio
 from ._containers import VariableList, ZoneList
 from ._dat_read import TecplotDatReader
+from ._dat_write import TecplotDatWriter
 from ._io import AppendReadWrite, AppendWrite, open
 from ._plt_read import TecplotPltReader
+from ._plt_write import TecplotPltWriter
 from ._reader import (
     TecplotAuxDataReader,
     TecplotFEZoneReader,
@@ -25,6 +27,8 @@ from ._reader import (
     TecplotZoneReader,
 )
 from ._szl_read import TecplotSzlReader
+from ._szl_write import TecplotSzlWriter
+from ._writer import TecplotWriter
 
 # Ensure these display as their canonical public name in docs and help(),
 # rather than the private module they're actually defined in.
@@ -43,6 +47,10 @@ for _cls in (
     TecplotSzlReader,
     TecplotPltReader,
     TecplotDatReader,
+    TecplotWriter,
+    TecplotSzlWriter,
+    TecplotPltWriter,
+    TecplotDatWriter,
 ):
     _cls.__module__ = "tecio"
 del _cls
@@ -50,9 +58,6 @@ del _cls
 __all__ = [
     "libtecio",
     "open",
-    "dat",
-    "plt",
-    "szl",
     "cli",
     "AppendWrite",
     "AppendReadWrite",
@@ -67,5 +72,9 @@ __all__ = [
     "TecplotSzlReader",
     "TecplotPltReader",
     "TecplotDatReader",
+    "TecplotWriter",
+    "TecplotSzlWriter",
+    "TecplotPltWriter",
+    "TecplotDatWriter",
     "__version__",
 ]
