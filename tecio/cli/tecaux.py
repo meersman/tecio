@@ -2,7 +2,7 @@ r"""Add, remove, or export dataset, zone, or variable level auxiliary data.
 
 Tecplot's auxiliary data mechanism attaches arbitrary ``name=value`` metadata to a
 dataset, a zone, or a variable (solver name, run date, units, a description, or any
-other annotation that doesn't belong in the numerical data itself_). Managing this
+other annotation that doesn't belong in the numerical data itself). Managing this
 after the fact ordinarily means writing a one-off script against the TecIO API.
 ``tecaux`` does this from the command line, in a single read/write pass, in three
 mutually exclusive modes:

@@ -75,7 +75,7 @@ test:
 
 # Run coverage report
 coverage:
-	pytest -q --cov=$(PACKAGE) --cov-report=xml  --cov-report=term; EXIT=$$?; \
+	pytest -q --cov=$(PACKAGE)  --cov-report=term; EXIT=$$?; \
 	exit $$EXIT
 	@echo "✓ Tests complete"
 
