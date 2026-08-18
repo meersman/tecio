@@ -101,6 +101,13 @@ from typing import Any
 
 import numpy as np
 
+from .. import (
+    TecplotFEZoneReader,
+    TecplotOrderedZoneReader,
+    TecplotReader,
+    TecplotWriter,
+    TecplotZoneReader,
+)
 from .. import open as tecio_open
 from ..libtecio import ZoneType
 
@@ -264,12 +271,12 @@ def _expand_inputs(patterns: list[str]) -> list[Path]:
 
 
 def _build_var_union(
-    readers: list[Any],
+    readers: list[TecplotReader],
 ) -> tuple[list[str], list[list[int | None]]]:
     """Compute the union variable list and per-reader index maps.
 
     Args:
-        readers: List of open ``Read`` instances.
+        readers: List of open reader instances.
 
     Returns:
         A 2-tuple of:
@@ -301,8 +308,8 @@ def _build_var_union(
 
 
 def _write_zone(
-    writer: Any,
-    zone: Any,
+    writer: TecplotWriter,
+    zone: TecplotZoneReader,
     union_vars: list[str],
     local_index_map: list[int | None],
     solution_time: float | None,
@@ -315,8 +322,8 @@ def _write_zone(
     *zone* (``None`` entries in *local_index_map*) are written as passive.
 
     Args:
-        writer:           Open ``Write`` instance.
-        zone:             Source ``ReadZone``.
+        writer:           Open writer instance.
+        zone:             Source zone reader.
         union_vars:       Full union variable name list.
         local_index_map:  Map from union index -> local 0-based var index
                           (``None`` = not present in this file).
@@ -397,9 +404,9 @@ def _write_zone(
         aux=zone_aux,
     )
 
-    if zt == ZoneType.ORDERED:
+    if isinstance(zone, TecplotOrderedZoneReader):
         writer.write_ijk_zone(data=writer_data, **common_kw)
-    else:
+    elif isinstance(zone, TecplotFEZoneReader):
         con_src = zone.shared_connectivity
         con_remapped = zone_index_map.get(con_src) if con_src is not None else None
         writer.write_fe_zone(
@@ -408,6 +415,11 @@ def _write_zone(
             node_map=None if con_remapped else zone.node_map,
             con_sharing=con_remapped,
             **common_kw,
+        )
+    else:
+        raise NotImplementedError(
+            f"Zone '{zone.title}' is neither an ordered nor a classic FE "
+            "zone; merging is not supported for it."
         )
 
 
@@ -477,7 +489,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         # Open all readers
-        readers: list[Any] = [tecio_open(str(p), "r") for p in input_paths]
+        readers: list[TecplotReader] = [tecio_open(str(p), "r") for p in input_paths]
 
         # Build union variable list
         union_vars, index_maps = _build_var_union(readers)

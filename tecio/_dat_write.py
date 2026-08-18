@@ -1,11 +1,11 @@
-r"""Tecplot ASCII DAT file writer API.
+r"""Write Tecplot ASCII DAT (``.dat`` / ``.tec``) files.
 
 Supported ``DATAPACKING`` modes for writing:
-    * ``BLOCK`` — one contiguous value block per variable (default).
-    * ``POINT`` — one row of all active nodal variable values per node,
+    * ``BLOCK`` -- one contiguous value block per variable (default).
+    * ``POINT`` -- one row of all active nodal variable values per node,
       followed by a separate row-per-cell section for cell-centred variables.
-      Pass ``datapacking="POINT"`` to :meth:`~Write.write_ijk_zone` or
-      :meth:`~Write.write_fe_zone`.
+      Pass ``datapacking="POINT"`` to :meth:`~TecplotDatWriter.write_ijk_zone`
+      or :meth:`~TecplotDatWriter.write_fe_zone`.
 """
 
 from __future__ import annotations
@@ -16,14 +16,15 @@ import contextlib
 import io
 import os
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 # Third-party
 import numpy as np
 import numpy.typing as npt
 
-from .._meta import WriterMeta, ZoneMeta
-from ..libtecio import (
+from ._meta import ZoneMeta
+from ._writer import TecplotWriter, normalize_precision
+from .libtecio import (
     DataPacking,
     DataType,
     FaceNeighborMode,
@@ -183,32 +184,6 @@ def _infer_data_type(arr: npt.NDArray) -> DataType:
     return DataType.FLOAT
 
 
-def _normalize_precision(precision: DataType | str) -> DataType:
-    """Return the :class:`DataType` for *precision*, accepting a string alias.
-
-    Accepts the :class:`DataType` enum directly, or a case-insensitive string.
-
-    Raises:
-        ValueError: If *precision* isn't FLOAT/DOUBLE (or a recognized
-                    string alias for one of them).
-    """
-    if isinstance(precision, str):
-        try:
-            precision = _STR_TO_DATATYPE[precision.strip().lower()]
-        except KeyError:
-            raise ValueError(
-                f"precision={precision!r} is not recognized; use 'single' or "
-                "'double' (or DataType.FLOAT / DataType.DOUBLE)."
-            ) from None
-    if precision not in (DataType.FLOAT, DataType.DOUBLE):
-        raise ValueError(
-            f"precision={precision!r} is not supported; precision only "
-            "applies to floating-point variables -- use DataType.FLOAT or "
-            "DataType.DOUBLE."
-        )
-    return precision
-
-
 def _resolve_written_type(inferred: DataType, precision: DataType) -> DataType:
     """Return the :class:`DataType` actually written for one variable.
 
@@ -273,64 +248,51 @@ def _stage_connectivity_row(buf: io.StringIO, row: npt.NDArray) -> None:
     buf.write(_DATA_INDENT + " ".join(str(int(n)) for n in row) + "\n")
 
 
-# =====================================================================================
-# Write class
-# =====================================================================================
+# ======================================================================================
+# TecplotDatWriter
+# ======================================================================================
 
 
-class Write:
-    r"""Context-manager writer for Tecplot 360 ASCII (``.dat``) files.
+class TecplotDatWriter(TecplotWriter):
+    r"""Write Tecplot ASCII (``.dat``/``.tec``) files.
 
-    The public interface is identical to :class:`szl.Write` and
-    :class:`plt.Write`.
+    The public interface matches :class:`~tecio.TecplotSzlWriter` and
+    :class:`~tecio.TecplotPltWriter`.
 
-    Parameters:
-        path:
-            Destination file path.
-        title:
-            Dataset title. Defaults to ``"untitled"``.
-        variables:
-            Variable name list.  ``None`` defers file creation until the first
-            zone-writing call (lazy open).
-        file_type:
-            :class:`FileType` enum. Defaults to :attr:`FileType.FULL`.
-        precision:
-            Uniform floating point precision for the whole file.  :attr:`DataType.FLOAT`
-            (default; ``"single"``) or :attr:`DataType.DOUBLE` (``"double"``). Also
-            accepts those strings directly (``"single"``/``"double"``, or ``"float"``
-            for the enum's own name). Applies only to floating-point variables: a
-            ``float64`` array is downcast to ``SINGLE`` under the default, but integer
-            variables (LONGINT/ SHORTINT/BYTE) always keep their own inferred type in
-            the zone's ``DT=`` declaration regardless of *precision*. Also sets the
-            significant digit count used for every variable uniformly (9 for FLOAT, 17
-            for DOUBLE).
+    Args:
+        path:         Destination file path.
+        title:        Dataset title. Defaults to ``"untitled"``.
+        variables:    Variable name list. ``None`` defers file creation until the first
+                      zone-writing call (lazy open).
+        file_type:    :class:`~libtecio.FileType` enum. Defaults to
+                      :attr:`~libtecio.FileType.FULL`.
+        precision:    Uniform floating point precision for the whole file.
+                      :attr:`DataType.FLOAT` (default; ``"single"``) or
+                      :attr:`DataType.DOUBLE` (``"double"``). Also accepts those
+                      strings directly (``"single"``/``"double"``, or ``"float"`` for
+                      the enum's own name). Applies only to floating-point variables: a
+                      ``float64`` array is downcast to ``SINGLE`` under the default, but
+                      integer variables (LONGINT/SHORTINT/BYTE) always keep their own
+                      inferred type in the zone's ``DT=`` declaration regardless of
+                      *precision*. Also sets the significant digit count used for every
+                      variable uniformly (9 for FLOAT, 17 for DOUBLE).
 
     Attributes:
-        auxdataset : dict[str, str]
-            Dataset-level auxiliary data buffer.
-        auxvar : dict[int | str, dict[str, str]]
-            Variable-level auxiliary data buffer.
-        current_zone : int
-            Count of successfully written zones.
+        precision:    Uniform floating-point precision for the file. Governs the
+                      ASCII significant-digit count and which of FLOAT/DOUBLE is
+                      declared for float-inferred variables; integer-inferred
+                      variables keep their own type regardless (see *precision*
+                      above).
+        _fp:          The open text file handle, or ``None`` before the file has
+                      been opened (or after :meth:`close`).
+        _opened:      True once the file has been opened (eagerly or lazily) and
+                      its header written, False before that and after
+                      :meth:`close`.
+        _float_fmt:   ``format()``-compatible scientific-notation format string
+                      derived from *precision* (9 significant digits for FLOAT, 17
+                      for DOUBLE), used to print every floating-point value in the
+                      file.
     """
-
-    path: str
-    """Output file path."""
-
-    title: str
-    """Dataset title string."""
-
-    variables: list[str] | None
-    """Variable name list, or ``None`` if the file has not been opened yet."""
-
-    file_type: FileType
-    """File type (FULL, GRID, or SOLUTION)."""
-
-    precision: DataType
-    """Uniform floating-point precision for the file."""
-
-    current_zone: int
-    """Count of successfully written zones."""
 
     def __init__(
         self,
@@ -348,69 +310,29 @@ class Write:
                         :attr:`DataType.DOUBLE` (or a recognized string alias for one of
                         them).
         """
-        self.path: str = str(path)
-        self.title: str = title
-        self.variables: list[str] | None = variables
-        self.file_type: FileType = file_type
-        self.precision: DataType = _normalize_precision(precision)
-        self.current_zone: int = 0
-        self.auxdataset: dict[str, str] = {}
-        self.auxvar: dict[int, dict[str, str]] = {}
-
+        # Set before super().__init__(), which calls self._open() when
+        # variables is already known (eager open), and _open() needs these.
+        self.precision: DataType = cast(
+            DataType, normalize_precision(precision, allow_none=False)
+        )
         self._fp: io.TextIOWrapper | None = None
         self._opened: bool = False
         self._float_fmt: str = _make_float_fmt(
             _SIG_DIGITS_FOR_PRECISION[self.precision]
         )
+        super().__init__(path, title, variables, file_type)
 
-        # Running record of everything committed to the file so far (header, aux counts,
-        # per-zone dimensions/sharing). Used to validate var_sharing / con_sharing on
-        # subsequent zones against an earlier zone.
-        self._meta = WriterMeta(
-            path=self.path,
-            title=self.title,
-            file_type=self.file_type,
-            file_format="dat",
-        )
+    @property
+    def _file_format(self) -> str:
+        return "dat"
 
-        if self.variables is not None:
-            self._open(self.variables)
-
-    # -- Context manager --------------------------------------------------------------
-
-    def __enter__(self) -> Write:
-        """Support ``with`` statement."""
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        """Close the file on context-manager exit."""
-        try:
-            self.close()
-        except Exception:
-            if exc_type is None:
-                raise
-
-    # -- Validation checks and errror handling ----------------------------------------
+    # -- Validation checks and errror handling -----------------------------------------
 
     def _check_handle(self) -> io.TextIOWrapper:
         """Return the file handle, raising if the file has been closed."""
         if self._fp is None:
             raise ValueError(f"I/O operation on closed file: '{self.path}'")
         return self._fp
-
-    def _check_variables(self) -> list[str]:
-        """Return the variable list, raising if the file has not been opened yet."""
-        if self.variables is None:
-            raise RuntimeError(
-                "Attempted to access variable name list before they were set. "
-                "Ensure variables are set on initialization or zone write."
-            )
-        return self.variables
-
-    @property
-    def meta(self) -> WriterMeta:
-        """Read-only record of everything written to this file so far."""
-        return self._meta
 
     # -- File lifecycle ---------------------------------------------------------------
 
@@ -436,57 +358,17 @@ class Write:
             self._fp = None
             self._opened = False
 
-    def flush_aux(self) -> None:
-        """Write buffered dataset- and variable-level aux data to the file.
+    # -- Aux data: only the per-item write differs from the shared base ----------------
 
-        Called automatically before the first zone.
+    def _write_dataset_aux_item(self, name: str, value: str) -> None:
+        self._check_handle().write(f"DATASETAUXDATA {name}={_quote(value)}\n")
 
-        Raises:
-            IOError: If the file has not been opened yet.
-        """
-        if self._fp is None:
-            raise OSError("flush_aux() called before the file was opened.")
-
-        for name, value in self.auxdataset.items():
-            self._check_handle().write(f"DATASETAUXDATA {name}={_quote(value)}\n")
-
-        for key, subdict in self.auxvar.items():
-            if isinstance(key, int):
-                var_idx = key - 1
-                if var_idx not in range(len(self._check_variables())):
-                    raise IndexError(
-                        f"Variable index {key} out of bounds "
-                        f"[1, {len(self._check_variables())}]"
-                    )
-            elif isinstance(key, str):
-                try:
-                    var_idx = self._check_variables().index(key)
-                except ValueError as exc:
-                    raise KeyError(
-                        f"Variable aux data key {key!r} not found in "
-                        f"variable list ({self._check_variables()})"
-                    ) from exc
-            else:
-                raise TypeError(f"Aux data key must be str or 1-based int, got {key!r}")
-
-            one_based = var_idx + 1
-            for name, value in subdict.items():
-                self._check_handle().write(
-                    f"VARAUXDATA {one_based} {name}={_quote(value)}\n"
-                )
-
-        self._meta.note_dataset_aux(len(self.auxdataset))
-        self._meta.note_var_aux(sum(len(subdict) for subdict in self.auxvar.values()))
-        self.auxdataset.clear()
-        self.auxvar.clear()
-
-    def add_auxdataset_dict(self, auxdict: dict[str, Any]) -> None:
-        """Buffer dataset-level auxiliary data from input dictionary."""
-        self.auxdataset.update(auxdict)
-
-    def add_auxvar_dict(self, auxdict: dict[int, dict[str, Any]]) -> None:
-        """Buffer variable-level auxiliary data from input dictionary."""
-        self.auxvar.update(auxdict)
+    def _write_var_aux_item(
+        self, one_based_var_index: int, name: str, value: str
+    ) -> None:
+        self._check_handle().write(
+            f"VARAUXDATA {one_based_var_index} {name}={_quote(value)}\n"
+        )
 
     # -- Structured zone writer --------------------------------------------------------
 
@@ -557,8 +439,13 @@ class Write:
         if variables is None:
             variables = [f"V{i}" for i in range(1, len(data) + 1)]
 
+        # Open the file if lazily loaded; flush buffered aux data before the
+        # first zone regardless of whether the file was opened eagerly (in
+        # __init__) or lazily (just now), since add_auxdataset_dict()/
+        # add_auxvar_dict() are normally called after construction, not before.
         if not self._opened:
             self._open(variables)
+        if self.current_zone == 0:
             self.flush_aux()
 
         variable_types = [
@@ -878,8 +765,13 @@ class Write:
         if variables is None:
             variables = [f"V{i}" for i in range(1, len(data) + 1)]
 
+        # Open the file if lazily loaded; flush buffered aux data before the
+        # first zone regardless of whether the file was opened eagerly (in
+        # __init__) or lazily (just now), since add_auxdataset_dict()/
+        # add_auxvar_dict() are normally called after construction, not before.
         if not self._opened:
             self._open(variables)
+        if self.current_zone == 0:
             self.flush_aux()
 
         variable_types = [

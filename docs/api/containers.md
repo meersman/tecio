@@ -1,9 +1,10 @@
 # Data Access Containers
 
 {class}`~tecio.ZoneList` and {class}`~tecio.VariableList` are the
-format-agnostic container types returned by ``Read.zone`` and
-``ReadZone.variable`` for every supported format ({mod}`tecio.szl`,
-{mod}`tecio.plt`, and {mod}`tecio.dat`). 
+format-agnostic container types returned by ``TecplotReader.zone`` and
+``TecplotZoneReader.variable`` for every supported format
+({class}`~tecio.TecplotSzlReader`, {class}`~tecio.TecplotPltReader`, and
+{class}`~tecio.TecplotDatReader`).
 
 ```{eval-rst}
 .. currentmodule:: tecio

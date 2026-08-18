@@ -2,10 +2,15 @@
 
 {mod}`tecio` is designed around a single entry point, {func}`tecio.open`,
 which opens a Tecplot file for reading, writing, or appending and returns the
-appropriate handler based on the file extension. In most cases you will not
-need to instantiate {class}`tecio.szl.Read`, {class}`tecio.szl.Write`, or any
-other class directly; {func}`tecio.open` selects and returns the correct one
-for you.
+appropriate reader or writer based on the file extension. In most cases you
+will not need to instantiate {class}`~tecio.TecplotSzlReader`,
+{class}`~tecio.TecplotSzlWriter`, or any other class directly;
+{func}`tecio.open` selects and returns the correct one for you.
+
+Every reader and every writer, regardless of format, implements the same
+interface. That shared interface, defined by a small set of base classes, is
+what most of this reference documents; the concrete per-format classes
+mostly add a constructor and a handful of format-specific quirks on top.
 
 ## Importing
 
@@ -25,18 +30,70 @@ from tecio.libtecio import ZoneType, DataType, ValueLocation
 ZoneType.ORDERED
 ```
 
-The submodules {mod}`tecio.szl`, {mod}`tecio.plt`, {mod}`tecio.dat`, and
-{mod}`tecio.libtecio` are all part of the public API and are documented in
-full below, but for typical use cases you should not need to import them
-directly.
+Every other class documented here, readers, writers, zones, variables,
+containers, is imported directly from {mod}`tecio`:
+
+```python
+from tecio import TecplotZoneReader, TecplotOrderedZoneReader
+
+isinstance(zone, TecplotOrderedZoneReader)
+```
 
 ---
 
 (api-open)=
 ## `tecio.open`
 
+The single entry point for reading, writing, and appending. See {doc}`open`
+for the full signature and documentation.
+
+---
+
+## Core Classes
+
+These five classes define the interface every reader and writer shares,
+regardless of which of the three file formats produced or is producing the
+data. This is the part of the API worth understanding first.
+
 ```{eval-rst}
-.. autofunction:: tecio.open
+.. currentmodule:: tecio
+
+.. autosummary::
+   :nosignatures:
+
+   TecplotReader
+   TecplotZoneReader
+   TecplotOrderedZoneReader
+   TecplotFEZoneReader
+   TecplotVariableReader
+   TecplotAuxDataReader
+   TecplotWriter
+```
+
+{class}`~tecio.TecplotZoneReader` splits into
+{class}`~tecio.TecplotOrderedZoneReader` and
+{class}`~tecio.TecplotFEZoneReader` because the two zone topologies don't
+share properties like dimensions or connectivity; a property that only makes
+sense for one topology (``node_map`` on an FE zone, ``dimensions`` on an
+ordered zone) exists only on that subclass. Accessing it on the other raises
+``AttributeError`` rather than returning ``None``, so
+``isinstance(zone, TecplotOrderedZoneReader)`` (or the FE equivalent) is the
+way to branch on zone topology.
+
+{class}`~tecio.TecplotVariableReader` and {class}`~tecio.TecplotAuxDataReader`
+are not split this way, nodal vs. cell-centered data and dataset- vs.
+zone-level auxiliary data don't remove any properties, they only change the
+behavior of one already-existing method, so a single class covers every
+case.
+
+```{toctree}
+:hidden:
+
+reader
+zone
+variable
+auxdata
+writer
 ```
 
 ## Accessing Variable Data
@@ -48,18 +105,18 @@ name-based and slice-based access:
 
 ```python
 with tecio.open("flow.szplt") as r:
-    r.zone[0]  # -> ReadZone
+    r.zone[0]  # -> TecplotOrderedZoneReader or TecplotFEZoneReader
     r.zone[1:4]  # -> ZoneList (sub-range, same kind)
     r.zone[0].variable  # -> VariableList
-    r.zone[0].variable["x"]  # -> ReadVariable, by exact name
-    r.zone[0].variable[2]  # -> ReadVariable, by 0-based index
+    r.zone[0].variable["x"]  # -> TecplotVariableReader, by exact name
+    r.zone[0].variable[2]  # -> TecplotVariableReader, by 0-based index
 ```
 
 Indexing a {class}`~tecio.ZoneList` or {class}`~tecio.VariableList` always
 returns an element or a sub-collection of the *same* kind — never a raw
 array. To pull the underlying NumPy data for one or more variables in a
-single zone, use ``ReadZone.get_array``, available on every format's zone
-object:
+single zone, use ``TecplotZoneReader.get_array``, shared by every zone type
+and every format:
 
 ```python
 p = r.zone[0].get_array("p")  # ndarray | None
@@ -83,8 +140,49 @@ stack = np.stack(seq)  # only if every zone matches
 
 | Class | Returned by | Description |
 |---|---|---|
-| {class}`~tecio.ZoneList` | ``Read.zone`` | Sequence of zones; integer index, slice, or iterate |
-| {class}`~tecio.VariableList` | ``ReadZone.variable`` | Sequence of variables; index by position or exact name |
+| {class}`~tecio.ZoneList` | ``TecplotReader.zone`` | Sequence of zones; integer index, slice, or iterate |
+| {class}`~tecio.VariableList` | ``TecplotZoneReader.variable`` | Sequence of variables; index by position or exact name |
+
+See {doc}`containers` for the full container API.
+
+```{toctree}
+:hidden:
+
+containers
+```
+
+---
+
+## Format-Specific Classes
+
+{func}`tecio.open` constructs one of these six classes for you, based on the
+file extension. Construct one directly only if you want to bypass the
+extension-based dispatch, e.g. to force a specific format regardless of file
+name.
+
+```{eval-rst}
+.. currentmodule:: tecio
+
+.. autosummary::
+   :nosignatures:
+
+   TecplotSzlReader
+   TecplotPltReader
+   TecplotDatReader
+   TecplotSzlWriter
+   TecplotPltWriter
+   TecplotDatWriter
+```
+
+See {doc}`formats` for the full list with links to each class's own page.
+
+```{toctree}
+:hidden:
+
+formats
+```
+
+---
 
 ## Append Handles
 
@@ -99,9 +197,7 @@ Returned by {func}`tecio.open` when using ``'a'`` or ``'a+'`` mode.
 
 | Module | Description |
 |---|---|
-| {mod}`tecio.szl` | Read and write Tecplot SZL (``.szplt``) files |
-| {mod}`tecio.plt` | Read and write Tecplot PLT (``.plt``) files |
-| {mod}`tecio.dat` | Read and write Tecplot ASCII (``.dat``) files |
+| {mod}`tecio.cli` | Command-line tools built on the public reader/writer API |
 | {mod}`tecio.libtecio` | Low-level C library bindings and enums |
 
 ```{toctree}
@@ -110,8 +206,5 @@ Returned by {func}`tecio.open` when using ``'a'`` or ``'a+'`` mode.
 open
 append_write
 append_read_write
-szl
-plt
-dat
 libtecio
 ```

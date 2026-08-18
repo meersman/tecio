@@ -1,24 +1,25 @@
-"""Higher level API for writing PLT binary files using the classic TecIO API.
+"""Write Tecplot PLT (``.plt``) binary files using the classic TecIO API.
 
 Note:
     PLT's classic API sets output precision once for the *entire file* via ``VIsDouble``
     at ``tecini142`` time.  ``tecdat142``'s own ``IsDouble`` argument does not control
     per-variable output precision, and there is no per-variable type array in
     ``teczne142`` either. Every variable in a PLT file is written at the single,
-    file-wide precision set by :attr:`Write.precision`.
+    file-wide precision set by :attr:`TecplotPltWriter.precision`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
 
-from .. import libtecio
-from .._meta import WriterMeta, ZoneMeta
-from ..libtecio import (
+from . import libtecio
+from ._meta import ZoneMeta
+from ._writer import TecplotWriter, normalize_precision
+from .libtecio import (
     DataPacking,
     DataType,
     FaceNeighborMode,
@@ -40,40 +41,6 @@ _FE_SIMPLE: frozenset[ZoneType] = frozenset({
     ZoneType.FETETRAHEDRON,
     ZoneType.FEBRICK,
 })
-
-# ASCII/enum-name aliases for the two precision options
-_STR_TO_PRECISION: dict[str, DataType] = {
-    "single": DataType.FLOAT,
-    "float": DataType.FLOAT,
-    "double": DataType.DOUBLE,
-}
-
-
-def _normalize_precision(precision: DataType | str) -> DataType:
-    """Return the :class:`DataType` for *precision*, accepting a string alias.
-
-    Accepts the enum directly, or a case-insensitive string.
-
-    Raises:
-        ValueError: If *precision* isn't FLOAT/DOUBLE (or a recognized string alias for
-                    one of them).
-    """
-    if isinstance(precision, str):
-        try:
-            precision = _STR_TO_PRECISION[precision.strip().lower()]
-        except KeyError:
-            raise ValueError(
-                f"precision={precision!r} is not recognized; use 'single' or "
-                "'double' (or DataType.FLOAT / DataType.DOUBLE)."
-            ) from None
-    if precision not in (DataType.FLOAT, DataType.DOUBLE):
-        raise ValueError(
-            f"precision={precision!r} is not supported; PLT's VIsDouble only "
-            "accepts DataType.FLOAT or DataType.DOUBLE."
-        )
-    return precision
-
-
 # =====================================================================================
 # Helpers
 # =====================================================================================
@@ -194,21 +161,26 @@ def _write_connectivity(
 # =====================================================================================
 
 
-class Write:
+# ======================================================================================
+# TecplotPltWriter
+# ======================================================================================
+
+
+class TecplotPltWriter(TecplotWriter):
     """Write Tecplot PLT (``.plt``) files using the classic TecIO API.
 
     The classic TecIO API maintains a single implicit global file context;
     only one PLT file may be open at a time. This class wraps that
-    procedural API behind the same interface as :class:`szl.Write`.
+    procedural API behind the same interface as :class:`~tecio.TecplotSzlWriter`.
 
     Dataset- and variable-level auxiliary data can be set at any time before
     the first zone is written. They are buffered and flushed automatically
     when the first zone header is created. Zone-level auxiliary data is
     passed directly to each zone-writing method.
 
-    Like :class:`szl.Write`, the file can be opened *eagerly* (when
-    ``variables`` is supplied to ``__init__``) or *lazily* (deferred until
-    the first :meth:`write_ijk_zone` or :meth:`write_fe_zone` call, at
+    Like :class:`~tecio.TecplotSzlWriter`, the file can be opened *eagerly*
+    (when ``variables`` is supplied to ``__init__``) or *lazily* (deferred
+    until the first :meth:`write_ijk_zone` or :meth:`write_fe_zone` call, at
     which point ``variables`` must be provided to that call).
 
     Args:
@@ -219,22 +191,20 @@ class Write:
                       zone write.
         file_type:    :class:`~libtecio.FileType` enum. Defaults to
                       :attr:`~libtecio.FileType.FULL`.
+        precision:    Whole-file storage precision (:attr:`DataType.FLOAT`/``"single"``
+                      or :attr:`DataType.DOUBLE`/``"double"``). Unlike SZL, PLT has no
+                      per-variable type, so this always resolves to a concrete value;
+                      ``None`` is not accepted. Defaults to :attr:`DataType.DOUBLE`.
 
     Attributes:
-        path:         Output file path.
-        title:        Dataset title string.
-        variables:    Variable name list, or ``None`` if the file has not been opened
-                      yet.
-        file_type:    File type (FULL, GRID, or SOLUTION).
-        current_zone: The index of the most recently written zone. Before any zones
-                      have been written, ``current_zone`` is ``0``. During a call to a
-                      zone writing method, ``current_zone`` still refers to the
-                      previously written zone.  ``current_zone`` is incremented only
-                      after a zone writing method successfully completes.
-        auxdataset:   Buffered dataset-level auxiliary data, flushed before the first
-                      zone.
-        auxvar:       Buffered variable-level auxiliary data, flushed before the first
-                      zone.
+        precision:    Whole-file storage precision (:attr:`DataType.FLOAT` or
+                      :attr:`DataType.DOUBLE`). Maps directly to ``VIsDouble`` in
+                      ``tecini142``.
+        _opened:      True once ``tecini142`` has been called (the file has been
+                      opened, eagerly or lazily), False before that and after
+                      :meth:`close`. Governs whether :meth:`close` calls
+                      ``tecend142``, and whether the next zone write needs to open
+                      the file first.
 
     Caution:
         Unlike the SZL writer, zone data must be written strictly in order: header →
@@ -243,53 +213,19 @@ class Write:
     Examples:
         Define file header fields on open.
 
-        >>> with plt.Write("out.plt", variables=["X", "Y", "P"]) as w:
+        >>> with tecio.TecplotPltWriter("out.plt", variables=["X", "Y", "P"]) as w:
         ...     w.write_ijk_zone(data=[x, y, p], title="Zone 1")
 
         If writer handle is opened with just the file name, the variable name list can
         be provided with the first zone written.
 
-        >>> with plt.Write("out.plt") as w:
+        >>> with tecio.TecplotPltWriter("out.plt") as w:
         ...     w.write_ijk_zone(
         ...         data=[x, y, p],
         ...         variables=["X", "Y", "P"],
         ...         title="Zone 1",
         ...     )
     """
-
-    path: str
-    """Output file path."""
-
-    title: str
-    """Dataset title string."""
-
-    variables: list[str] | None
-    """Variable name list, or ``None`` if the file has not been opened yet."""
-
-    file_type: FileType
-    """File type (FULL, GRID, or SOLUTION)."""
-
-    precision: DataType
-    """Whole-file storage precision (:attr:`DataType.FLOAT` or :attr:`DataType.DOUBLE`).
-    Maps directly to ``VIsDouble`` in ``tecini142``. PLT's classic API has no
-    per-variable or per-zone type. Defaults to :attr:`DataType.DOUBLE`.
-    """
-
-    current_zone: int
-    """The index of the most recently written zone.
-
-    * Before any zones have been written, ``current_zone`` is ``0``.
-    * During a call to a zone writing method, ``current_zone`` still refers to the
-      previously written zone.
-    * ``current_zone`` is incremented only after a zone writing method successfully
-      completes.
-    """
-
-    auxdataset: dict[str, Any]
-    """Buffered dataset-level auxiliary data, flushed before the first zone."""
-
-    auxvar: dict[int, dict[str, Any]]
-    """Buffered variable-level auxiliary data, flushed before the first zone."""
 
     def __init__(
         self,
@@ -307,73 +243,19 @@ class Write:
                         :attr:`DataType.DOUBLE` (or a recognized string alias for one of
                         them).
         """
-        self.path = path
-        self.title = title
-        self.variables: list[str] | None = variables
-        self.file_type = file_type
-        self.precision: DataType = _normalize_precision(precision)
-        self.current_zone: int = 0
-
-        # Buffered aux data — flushed to disk before the first zone is created.
-        # Dataset-level: {name: value}
-        self.auxdataset: dict[str, str] = {}
-        # Variable-level: {var_name_or_1based_index: {name: value}}
-        self.auxvar: dict[int, dict[str, str]] = {}
-
+        # Set before super().__init__(), which calls self._open() when
+        # variables is already known (eager open), and _open() needs this.
+        self.precision: DataType = cast(
+            DataType, normalize_precision(precision, allow_none=False)
+        )
         # Track whether the file has been opened so we know whether to call
         # tecini142 inside open().
         self._opened: bool = False
-
-        # Running record of everything committed to the file so far (header,
-        # aux counts, per-zone dimensions/sharing). Used to validate
-        # var_sharing / con_sharing on later zones against what an earlier
-        # zone actually wrote, rather than trusting the caller's arrays
-        # alone.
-        self._meta = WriterMeta(
-            path=self.path,
-            title=self.title,
-            file_type=self.file_type,
-            file_format="plt",
-        )
-
-        if self.variables is not None:
-            self._open(self.variables)
-
-    # -- Context manager --------------------------------------------------------------
-
-    def __enter__(self) -> Write:
-        """Support ``with`` statement — returns *self*."""
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        """Close the file on context-manager exit.
-
-        The file is closed regardless of whether an exception was raised in
-        the ``with`` block. If closing itself raises, that secondary
-        exception is only re-raised when the ``with`` block completed without
-        error; otherwise the original exception takes precedence.
-        """
-        try:
-            self.close()
-        except Exception:
-            if exc_type is None:
-                raise
-
-    # -- Validation checks and errror handling ----------------------------------------
-
-    def _check_variables(self) -> list[str]:
-        """Return the variable list, raising if the file has not been opened yet."""
-        if self.variables is None:
-            raise RuntimeError(
-                "Attempted to access variable name list before they were set. "
-                "Ensure variables are set on initialization or zone write."
-            )
-        return self.variables
+        super().__init__(path, title, variables, file_type)
 
     @property
-    def meta(self) -> WriterMeta:
-        """Read-only record of everything written to this file so far."""
-        return self._meta
+    def _file_format(self) -> str:
+        return "plt"
 
     # -- File lifecycle ---------------------------------------------------------------
 
@@ -407,63 +289,15 @@ class Write:
             libtecio.tecend142()
             self._opened = False
 
-    def add_auxdataset_dict(self, auxdict: dict[str, Any]) -> None:
-        """Create buffered auxdataset items from input dictionary."""
-        self.auxdataset.update(auxdict)
+    # -- Aux data: only the per-item write differs from the shared base ----------------
 
-    def add_auxvar_dict(self, auxdict: dict[int, dict[str, Any]]) -> None:
-        """Create buffered auxvar items from input dictionary."""
-        self.auxvar.update(auxdict)
+    def _write_dataset_aux_item(self, name: str, value: str) -> None:
+        libtecio.tecauxstr142(name, value)
 
-    def flush_aux(self) -> None:
-        """Write buffered dataset- and variable-level aux data to the file.
-
-        Must be called *after* ``tecini142`` and *before* the first
-        ``teczne142``. The zone-writing methods call this automatically;
-        users need not call it directly unless flushing explicitly.
-
-        In the classic API:
-
-        * Dataset aux data is written via ``tecauxstr142``.
-        * Variable aux data is written via ``tecvauxstr142``.
-
-        Both must appear before the first zone header.
-        """
-        # Dataset-level aux data
-        for name, value in self.auxdataset.items():
-            libtecio.tecauxstr142(str(name), str(value))
-
-        # Variable-level aux data. Keys may be 1-based int indices or names.
-        for key, subdict in self.auxvar.items():
-            if isinstance(key, int):
-                var_idx = key - 1  # Convert to 0-based
-                if var_idx < 1 not in range(len(self._check_variables())):
-                    raise IndexError(
-                        f"Variable index {var_idx} out of bounds "
-                        f"[1, {len(self._check_variables())}]"
-                    )
-            elif isinstance(key, str):
-                try:
-                    var_idx = self.variables.index(key)
-                except ValueError as exc:
-                    raise KeyError(
-                        f"Variable aux data key '{key}' not found in "
-                        f"variable list ({self.variables})"
-                    ) from exc
-            else:
-                raise TypeError(
-                    f"Aux data key must be a variable name (str) or 1-based "
-                    f"index (int), got {key!r}"
-                )
-
-            for name, value in subdict.items():
-                libtecio.tecvauxstr142(var_idx + 1, str(name), str(value))
-
-        # Record counts, then clear buffers — each item is written exactly once.
-        self._meta.note_dataset_aux(len(self.auxdataset))
-        self._meta.note_var_aux(sum(len(subdict) for subdict in self.auxvar.values()))
-        self.auxdataset.clear()
-        self.auxvar.clear()
+    def _write_var_aux_item(
+        self, one_based_var_index: int, name: str, value: str
+    ) -> None:
+        libtecio.tecvauxstr142(one_based_var_index, name, value)
 
     # -- Structured zone writer --------------------------------------------------------
 
@@ -555,9 +389,13 @@ class Write:
         if variables is None:
             variables = [f"V{i}" for i in range(1, len(arrays) + 1)]
 
-        # Lazy open and flush buffered aux data before the first zone
+        # Open the file if lazily loaded; flush buffered aux data before the
+        # first zone regardless of whether the file was opened eagerly (in
+        # __init__) or lazily (just now), since add_auxdataset_dict()/
+        # add_auxvar_dict() are normally called after construction, not before.
         if not self._opened:
             self._open(variables)
+        if self.current_zone == 0:
             self.flush_aux()
 
         # Per-active-variable data types inferred from array dtypes (currently overrided
@@ -884,9 +722,13 @@ class Write:
         if variables is None:
             variables = [f"V{i}" for i in range(1, len(arrays) + 1)]
 
-        # Lazy open and flush buffered aux data before the first zone
+        # Open the file if lazily loaded; flush buffered aux data before the
+        # first zone regardless of whether the file was opened eagerly (in
+        # __init__) or lazily (just now), since add_auxdataset_dict()/
+        # add_auxvar_dict() are normally called after construction, not before.
         if not self._opened:
             self._open(variables)
+        if self.current_zone == 0:
             self.flush_aux()
 
         # Infer per-variable data types from array dtypes (currently overrided to

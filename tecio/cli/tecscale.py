@@ -95,6 +95,7 @@ from typing import Any
 
 import numpy as np
 
+from .. import TecplotFEZoneReader, TecplotOrderedZoneReader
 from .. import open as tecio_open
 from ..libtecio import ZoneType
 
@@ -384,9 +385,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                         aux=zone_aux,
                     )
 
-                    if zt == ZoneType.ORDERED:
+                    if isinstance(zone, TecplotOrderedZoneReader):
                         writer.write_ijk_zone(data=writer_data, **common_kw)
-                    else:
+                    elif isinstance(zone, TecplotFEZoneReader):
                         con_sharing = zone.shared_connectivity
                         writer.write_fe_zone(
                             zone_type=zt,
@@ -394,6 +395,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                             node_map=None if con_sharing else zone.node_map,
                             con_sharing=con_sharing,
                             **common_kw,
+                        )
+                    else:
+                        raise NotImplementedError(
+                            f"Zone '{zone.title}' is neither an ordered nor a "
+                            "classic FE zone; scaling is not supported for it."
                         )
 
     except Exception as exc:  # noqa: BLE001

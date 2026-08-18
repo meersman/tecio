@@ -130,6 +130,12 @@ from typing import Any, NamedTuple
 
 import numpy as np
 
+from .. import (
+    TecplotFEZoneReader,
+    TecplotOrderedZoneReader,
+    TecplotWriter,
+    TecplotZoneReader,
+)
 from .. import open as tecio_open
 from ..libtecio import ZoneType
 
@@ -508,7 +514,7 @@ def _build_time_filter(
 
 
 def _build_protected_set(
-    zones: list[Any],
+    zones: list[TecplotZoneReader],
     keep_indices: set[int],
 ) -> set[int]:
     """Return 0-based zone indices that must be written as protected zones.
@@ -520,7 +526,7 @@ def _build_protected_set(
     anchors without contributing to the time series.
 
     Args:
-        zones:        All source ``ReadZone`` objects.
+        zones:        All source zone reader objects.
         keep_indices: 0-based zone indices selected by the time filter.
 
     Returns:
@@ -540,7 +546,7 @@ def _build_protected_set(
 
 
 def _collect_zone_arrays(
-    zone: Any,
+    zone: TecplotZoneReader,
     num_vars: int,
 ) -> tuple[list[np.ndarray], list[Any], list[bool], list[int]]:
     """Read all variable arrays and metadata from *zone*.
@@ -550,7 +556,7 @@ def _collect_zone_arrays(
     order — either full, protected, or skipped), so no remapping is needed.
 
     Args:
-        zone:     Source ``ReadZone``.
+        zone:     Source zone reader.
         num_vars: Number of variables in the dataset.
 
     Returns:
@@ -611,8 +617,8 @@ def _filter_for_writer(
 
 
 def _write_zone_verbatim(
-    writer: Any,
-    zone: Any,
+    writer: TecplotWriter,
+    zone: TecplotZoneReader,
     num_vars: int,
 ) -> None:
     """Copy a zone to *writer* without modification."""
@@ -633,9 +639,9 @@ def _write_zone_verbatim(
         aux=zone_aux,
     )
 
-    if zone.zone_type == ZoneType.ORDERED:
+    if isinstance(zone, TecplotOrderedZoneReader):
         writer.write_ijk_zone(data=writer_data, **kw)
-    else:
+    elif isinstance(zone, TecplotFEZoneReader):
         con_sharing = zone.shared_connectivity
         writer.write_fe_zone(
             zone_type=zone.zone_type,
@@ -644,11 +650,16 @@ def _write_zone_verbatim(
             con_sharing=con_sharing,
             **kw,
         )
+    else:
+        raise NotImplementedError(
+            f"Zone '{zone.title}' is neither an ordered nor a classic FE "
+            "zone; writing is not supported for it."
+        )
 
 
 def _write_zone_protected(
-    writer: Any,
-    zone: Any,
+    writer: TecplotWriter,
+    zone: TecplotZoneReader,
     num_vars: int,
 ) -> None:
     """Write a zone as a protected grid anchor.
@@ -660,8 +671,8 @@ def _write_zone_protected(
     that zones which share coordinates from this zone continue to work.
 
     Args:
-        writer:   Open ``Write`` instance.
-        zone:     Source ``ReadZone``.
+        writer:   Open writer instance.
+        zone:     Source zone reader.
         num_vars: Number of variables in the dataset.
 
     """
@@ -691,9 +702,9 @@ def _write_zone_protected(
         aux=zone_aux,
     )
 
-    if zone.zone_type == ZoneType.ORDERED:
+    if isinstance(zone, TecplotOrderedZoneReader):
         writer.write_ijk_zone(data=writer_data, **kw)
-    else:
+    elif isinstance(zone, TecplotFEZoneReader):
         con_sharing = zone.shared_connectivity
         writer.write_fe_zone(
             zone_type=zone.zone_type,
@@ -702,11 +713,16 @@ def _write_zone_protected(
             con_sharing=con_sharing,
             **kw,
         )
+    else:
+        raise NotImplementedError(
+            f"Zone '{zone.title}' is neither an ordered nor a classic FE "
+            "zone; writing is not supported for it."
+        )
 
 
 def _slice_and_write_ordered(
-    writer: Any,
-    zone: Any,
+    writer: TecplotWriter,
+    zone: TecplotOrderedZoneReader,
     num_vars: int,
     sl_i: slice,
     sl_j: slice,
@@ -718,8 +734,8 @@ def _slice_and_write_ordered(
     preserved because every zone is written in source order).
 
     Args:
-        writer:   Open ``Write`` instance.
-        zone:     Source ordered ``ReadZone``.
+        writer:   Open writer instance.
+        zone:     Source ordered zone reader.
         num_vars: Number of variables.
         sl_i:     Python slice for I axis.
         sl_j:     Python slice for J axis.
@@ -863,7 +879,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             # Materialise zone list to build the time filter before opening
             # the writer (which requires the variable list at open time for
             # SZL format).
-            all_zones: list[Any] = list(reader.zone)
+            all_zones: list[TecplotZoneReader] = list(reader.zone)
 
             # Build time keep-set.
             if do_time:
@@ -980,7 +996,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if zi not in keep_indices:
                         continue
 
-                    if do_ijk and zt == ZoneType.ORDERED:
+                    if do_ijk and isinstance(zone, TecplotOrderedZoneReader):
                         written = _slice_and_write_ordered(
                             writer,
                             zone,

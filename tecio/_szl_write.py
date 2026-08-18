@@ -2,21 +2,6 @@
 
 Supports lazy-open (deferred until first zone write), buffered auxiliary
 data, and automatic dtype inference from NumPy arrays.
-
-Notes:
-    - flush_aux():
-        - write dataset aux if self.aux_dataset is not empty
-        - write variable aux if self.aux_var is not empty
-        - after writing set both to empty with self.aux_dataset.clear() and
-          self.aux_var.clear()
-    - Zone writers:
-        - write_ijk_zone(): write zone header and optionally data for input ORDERED data
-            - set default value location as NODAL
-            - write default data as DOUBLE
-            - support data provided as a list[npt.NDArrayLike, ...]
-            - if var list already defined for whole dataset, do not require, but if not
-              defined, throw error
-    - write_fe_zone():
 """
 
 from __future__ import annotations
@@ -28,9 +13,10 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from .. import libtecio
-from .._meta import WriterMeta, ZoneMeta
-from ..libtecio import (
+from . import libtecio
+from ._meta import ZoneMeta
+from ._writer import TecplotWriter, normalize_precision
+from .libtecio import (
     DataPacking,
     DataType,
     FaceNeighborMode,
@@ -98,36 +84,6 @@ _STR_TO_PRECISION: dict[str, DataType] = {
     "float": DataType.FLOAT,
     "double": DataType.DOUBLE,
 }
-
-
-def _normalize_precision(precision: DataType | str | None) -> DataType | None:
-    """Return the :class:`DataType` for *precision*, or ``None`` unchanged.
-
-    Default (``None``) means no override, infer each variable's type from its own array
-    automatically. Otherwise accepts the enum directly, or a case-insensitive string.
-
-    Raises:
-        ValueError: If *precision* is neither ``None`` nor FLOAT/DOUBLE (or a recognized
-                    string alias for one of them).
-    """
-    if precision is None:
-        return None
-    if isinstance(precision, str):
-        try:
-            precision = _STR_TO_PRECISION[precision.strip().lower()]
-        except KeyError:
-            raise ValueError(
-                f"precision={precision!r} is not recognized; use 'single' or "
-                "'double' (or DataType.FLOAT / DataType.DOUBLE), or None to "
-                "infer each variable's type automatically."
-            ) from None
-    if precision not in (DataType.FLOAT, DataType.DOUBLE):
-        raise ValueError(
-            f"precision={precision!r} is not supported; precision only "
-            "applies to floating-point variables -- use DataType.FLOAT, "
-            "DataType.DOUBLE, or None."
-        )
-    return precision
 
 
 def _resolve_written_type(inferred: DataType, precision: DataType | None) -> DataType:
@@ -355,11 +311,14 @@ def _write_aux_data(handle: ctypes.c_void_p, aux: dict[str, dict[Any, Any]]) -> 
 
 
 # ======================================================================================
-# Write class
+
+
+# ======================================================================================
+# TecplotSzlWriter
 # ======================================================================================
 
 
-class Write:
+class TecplotSzlWriter(TecplotWriter):
     """Write Tecplot SZL (``.szplt``) files with a lazy-open file handle.
 
     Supports lazy-open: if *variables* is ``None`` at construction, the
@@ -385,21 +344,15 @@ class Write:
                       dtype.
 
     Attributes:
-        path:         Output file path.
-        title:        Dataset title string.
-        variables:    Variable name list, or ``None`` if the file has not been opened
-                      yet.
-        file_type:    File type (FULL, GRID, or SOLUTION).
         precision:    Whole-file floating-point override, or ``None`` for automatic
                       per-variable inference.
-        current_zone: The index of the most recently written zone. Before any zones
-                      have been written, ``current_zone`` is ``0``. During a call to a
-                      zone writing method, ``current_zone`` still refers to the
-                      previously written zone.  ``current_zone`` is incremented only
-                      after a zone writing method successfully completes.
-        auxdataset:   Buffered dataset-level auxiliary data, flushed before the first
-                      zone.
-        auxvar:       Buffered variable-level auxiliary data, flushed before the first
+        handle:       Raw C file handle from ``tec_file_writer_open``, or ``None``
+                      before the file has been opened (or after :meth:`close`).
+        current_var:  1-based index of the variable most recently passed to a
+                      libtecio write call. Set only while a zone's variable data is
+                      being written, and only ever read by user code inspecting the
+                      writer, not consumed internally; useful for diagnosing which
+                      variable was in progress if a write fails partway through a
                       zone.
     """
 
@@ -419,61 +372,18 @@ class Write:
                         :attr:`DataType.FLOAT`/:attr:`DataType.DOUBLE` (or a recognized
                         string alias for one of them).
         """
-        self.path = path
-        self.title = title
-        self.variables = variables
-        self.file_type = file_type
-        self.precision: DataType | None = _normalize_precision(precision)
-        self.current_zone = 0
-        self.current_var = 0
-
-        # Add created data to the buffer and flush once a file handle is created.
-        # Dataset-level aux data buffer (flushed on first zone)
-        self.auxdataset: dict[str, str] = {}
-        # Variable-level aux data buffer: {var_name: {key: value}}
-        self.auxvar: dict[int, dict[str, str]] = {}
-
-        # Running record of everything committed to the file so far (header, aux counts,
-        # per-zone dimensions/sharing). Used to validate var_sharing / con_sharing on
-        # subsequent zones against an earlier zone.
-        self._meta = WriterMeta(
-            path=self.path,
-            title=self.title,
-            file_type=self.file_type,
-            file_format="szplt",
+        # Set before super().__init__(), which calls self._open() when
+        # variables is already known (eager open), and _open() needs this.
+        self.precision: DataType | None = normalize_precision(
+            precision, allow_none=True
         )
+        self.current_var = 0
+        self.handle: ctypes.c_void_p | None = None
+        super().__init__(path, title, variables, file_type)
 
-        # Initialize if all needed info provided, else set to null
-        if self.variables is not None:
-            self.handle: ctypes.c_void_p | None = libtecio.tec_file_writer_open(
-                filename=self.path,
-                variables=self.variables,
-                title=self.title,
-                file_type=self.file_type,
-                use_szl=1,
-            )
-            self._meta.set_variables(self.variables)
-        else:
-            # Variables needed
-            self.handle = None
-
-    # -- Context manager ---------------------------------------------------------------
-
-    def __enter__(self) -> Write:
-        """Context manager to automatically open, close, and flush file."""
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        """Exit Write class context manager regardless of exceptions.
-
-        Only raise an exception if closing the file fails, not if an exception is raised
-        in the with block.
-        """
-        try:
-            self.close()
-        except Exception:
-            if exc_type is None:
-                raise
+    @property
+    def _file_format(self) -> str:
+        return "szplt"
 
     # -- Validation checks and errror handling -----------------------------------------
 
@@ -487,20 +397,6 @@ class Write:
             raise RuntimeError(f"I/O operation on closed file: '{self.path}'")
         else:
             return self.handle
-
-    def _check_variables(self) -> list[str]:
-        """Return the variable list, raising if the file has not been opened yet."""
-        if self.variables is None:
-            raise RuntimeError(
-                "Attempted to access variable name list before they were set. "
-                "Ensure variables are set on initialization or zone write."
-            )
-        return self.variables
-
-    @property
-    def meta(self) -> WriterMeta:
-        """Read-only record of everything written to this file so far."""
-        return self._meta
 
     # -- File lifecycle ----------------------------------------------------------------
 
@@ -523,66 +419,17 @@ class Write:
             libtecio.tec_file_writer_close(self.handle)
             self.handle = None
 
-    def add_auxdataset_dict(self, auxdict: dict[str, Any]) -> None:
-        """Create buffered auxdataset items from input dictionary."""
-        self.auxdataset.update(auxdict)
+    # -- Aux data: only the per-item write differs from the shared base ----------------
 
-    def add_auxvar_dict(self, auxdict: dict[int, dict[str, Any]]) -> None:
-        """Create buffered auxvar items from input dictionary."""
-        self.auxvar.update(auxdict)
+    def _write_dataset_aux_item(self, name: str, value: str) -> None:
+        libtecio.tec_data_set_add_aux_data(self._check_handle(), name, value)
 
-    def flush_aux(self) -> None:
-        """Write buffered dataset and variable aux data to the file.
-
-        Called automatically before the first zone is created. You only
-        need to call this directly if you want to be explicit.
-
-        The C library requires dataset and variable aux data to be written
-        after the file is intialized. Therefore in cases of lazy loading
-        (buffered file info until first zone is defined), aux data is also
-        buffered then flushed on first zone creation.
-        """
-        # Write dataset-level aux data
-        for name, value in self.auxdataset.items():
-            libtecio.tec_data_set_add_aux_data(
-                self._check_handle(),
-                str(name),
-                str(value),
-            )
-
-        # Variable-level aux data. Keys may be 1-based int indices or names.
-        for key, subdict in self.auxvar.items():
-            if isinstance(key, int):
-                var_idx = key - 1  # Convert to 0-based
-                if var_idx not in range(len(self._check_variables())):
-                    raise IndexError(
-                        f"Variable index {var_idx} out of bounds "
-                        f"[1, {len(self._check_variables())}]"
-                    )
-            elif isinstance(key, str):
-                try:
-                    var_idx = self.variables.index(key)
-                except ValueError as exc:
-                    raise KeyError(
-                        f"Variable aux data key '{key}' not found in "
-                        f"variable list ({self.variables})"
-                    ) from exc
-            else:
-                raise TypeError(
-                    f"Aux data key must be a variable name (str) or 1-based "
-                    f"index (int), got {key!r}"
-                )
-
-            for name, value in subdict.items():
-                libtecio.tec_var_add_aux_data(
-                    self._check_handle(), var_idx + 1, str(name), str(value)
-                )
-
-        # Record counts, then clear buffers — each item is written exactly once.
-        self._meta.note_dataset_aux(len(self.auxdataset))
-        self._meta.note_var_aux(sum(len(subdict) for subdict in self.auxvar.values()))
-        self.auxdataset.clear()
-        self.auxvar.clear()
+    def _write_var_aux_item(
+        self, one_based_var_index: int, name: str, value: str
+    ) -> None:
+        libtecio.tec_var_add_aux_data(
+            self._check_handle(), one_based_var_index, name, value
+        )
 
     # -- Structured zone writer --------------------------------------------------------
 
@@ -689,9 +536,13 @@ class Write:
         if variables is None:
             variables = [f"V{i}" for i in range(1, len(arrays) + 1)]
 
-        # Open and initialize the file if lazily loaded
+        # Open the file if lazily loaded; flush buffered aux data before the
+        # first zone regardless of whether the file was opened eagerly (in
+        # __init__) or lazily (just now), since add_auxdataset_dict()/
+        # add_auxvar_dict() are normally called after construction, not before.
         if self.handle is None:
             self._open(variables)
+        if self.current_zone == 0:
             self.flush_aux()
 
         # Get variable types (local variable -> length = number of supplied data arrays)
@@ -1039,9 +890,13 @@ class Write:
         if variables is None:
             variables = [f"V{i}" for i in range(1, len(data) + 1)]
 
-        # Open and initialise the file if lazily loaded
+        # Open the file if lazily loaded; flush buffered aux data before the
+        # first zone regardless of whether the file was opened eagerly (in
+        # __init__) or lazily (just now), since add_auxdataset_dict()/
+        # add_auxvar_dict() are normally called after construction, not before.
         if self.handle is None:
             self._open(variables)
+        if self.current_zone == 0:
             self.flush_aux()
 
         # Infer per-variable data types from array dtypes

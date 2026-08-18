@@ -50,16 +50,18 @@ PLT format, particularly for large unstructured meshes.
    - [`tecio.open`](api/index.md) — open a file for reading, writing, or appending
      - [`AppendWrite`](api/append_write.md) — append zones to an existing file (`mode='a'`)
      - [`AppendReadWrite`](api/append_read_write.md) — append and read in the same session (`mode='a+'`)
-   - **[Submodules](api/submodules.md)**
-     - [`tecio.szl`](api/szl.md) — read and write Tecplot SZL (`.szplt`) files
-       - [`szl.Read`](api/szl_read.md)
-       - [`szl.Write`](api/szl_write.md)
-     - [`tecio.plt`](api/plt.md) — read and write Tecplot PLT (`.plt`) files
-       - [`plt.Read`](api/plt_read.md)
-       - [`plt.Write`](api/plt_write.md)
-     - [`tecio.dat`](api/dat.md) — read and write Tecplot ASCII (`.dat`) files
-       - [`dat.Read`](api/dat_read.md)
-       - [`dat.Write`](api/dat_write.md)
+   - **Core Classes** — the shared interface every reader and writer implements, regardless of format
+     - [`TecplotReader`](api/reader.md)
+     - [`TecplotZoneReader`](api/zone.md), incl. [`TecplotOrderedZoneReader`, `TecplotFEZoneReader`](api/zone.md)
+     - [`TecplotVariableReader`](api/variable.md)
+     - [`TecplotAuxDataReader`](api/auxdata.md)
+     - [`TecplotWriter`](api/writer.md)
+   - **[Containers](api/containers.md)** — `ZoneList` and `VariableList`
+   - **[Format-Specific Classes](api/formats.md)** — one reader and one writer per format
+     - [`TecplotSzlReader`](api/szl_reader.md) / [`TecplotSzlWriter`](api/szl_writer.md)
+     - [`TecplotPltReader`](api/plt_reader.md) / [`TecplotPltWriter`](api/plt_writer.md)
+     - [`TecplotDatReader`](api/dat_reader.md) / [`TecplotDatWriter`](api/dat_writer.md)
+   - **Submodules**
      - [`tecio.libtecio`](api/libtecio.md) — low-level C library bindings and enums
        - [Enums](api/libtecio_enums.md)
        - [SZL Read Functions](api/libtecio_szl_read.md)
