@@ -81,6 +81,7 @@ from create_test_data import (
 )
 
 import tecio
+from tecio._szl_write import _infer_data_type
 from tecio.libtecio import (
     DataPacking,
     DataType,
@@ -89,7 +90,6 @@ from tecio.libtecio import (
     ValueLocation,
     ZoneType,
 )
-from tecio._szl_write import _infer_data_type
 
 _RTOL_F32 = 1e-5
 _RTOL_F64 = 1e-10
