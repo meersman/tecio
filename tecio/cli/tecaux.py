@@ -190,9 +190,9 @@ from .. import (
     TecplotReader,
     TecplotWriter,
     TecplotZoneReader,
+    ZoneType,
 )
 from .. import open as tecio_open
-from ..libtecio import ZoneType
 
 # --------------------------------------------------------------------------------------
 # Constants

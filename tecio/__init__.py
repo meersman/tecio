@@ -9,9 +9,22 @@ from importlib import metadata
 try:
     __version__ = metadata.version("tecio")
 except metadata.PackageNotFoundError:
-    __version__ = "0.3.0"
+    __version__ = "0.2.3"
 
 from . import cli, libtecio
+from ._constants import (
+    Boolean,
+    DataPacking,
+    DataType,
+    Debug,
+    FaceNeighborMode,
+    FeCellShape,
+    FileFormat,
+    FileType,
+    ValueLocation,
+    VarStatus,
+    ZoneType,
+)
 from ._containers import VariableList, ZoneList
 from ._dat_read import TecplotDatReader
 from ._dat_write import TecplotDatWriter
@@ -51,6 +64,17 @@ for _cls in (
     TecplotSzlWriter,
     TecplotPltWriter,
     TecplotDatWriter,
+    Boolean,
+    DataPacking,
+    DataType,
+    Debug,
+    FaceNeighborMode,
+    FeCellShape,
+    FileFormat,
+    FileType,
+    ValueLocation,
+    VarStatus,
+    ZoneType,
 ):
     _cls.__module__ = "tecio"
 del _cls
@@ -76,5 +100,16 @@ __all__ = [
     "TecplotSzlWriter",
     "TecplotPltWriter",
     "TecplotDatWriter",
+    "Boolean",
+    "DataPacking",
+    "DataType",
+    "Debug",
+    "FaceNeighborMode",
+    "FeCellShape",
+    "FileFormat",
+    "FileType",
+    "ValueLocation",
+    "VarStatus",
+    "ZoneType",
     "__version__",
 ]

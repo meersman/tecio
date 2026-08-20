@@ -29,14 +29,13 @@ Design notes:
       FE node map that may hold millions of entries) or that a caller may never
       touch (aux data) stays lazily loaded on first access, exactly matching each
       format's existing behaviour.
-    * Unlike :mod:`~tecio._meta`, this module imports :mod:`~tecio.libtecio`
+    * Unlike :mod:`~tecio._meta`, this module imports :mod:`~tecio._constants`
       at runtime rather than only under ``TYPE_CHECKING``. ``_meta`` only ever
       needs the enums as type annotations (erased at runtime by ``from __future__
       import annotations``); ``nodes_per_cell`` below needs the actual
       ``ZoneType`` members to key a lookup table, so a runtime import is
-      unavoidable. ``libtecio`` does not import from this module, so this
-      introduces no cycle, the same reasoning already applies to ``_io.py``,
-      which imports the same enums at runtime for the same reason.
+      unavoidable. ``_constants`` is a dependency-free leaf module (no C library,
+      no other ``tecio`` submodule), so this introduces no cycle regardless.
 """
 
 from __future__ import annotations
@@ -48,8 +47,8 @@ from typing import Any, overload
 import numpy as np
 import numpy.typing as npt
 
+from ._constants import DataPacking, DataType, FileType, ValueLocation, ZoneType
 from ._containers import VariableList, ZoneList, select_variable_arrays
-from .libtecio import DataPacking, DataType, FileType, ValueLocation, ZoneType
 
 # Nodes per element for the standard finite-element zone types. ORDERED zones are
 # computed from active dimensions instead, see TecplotZoneReader.nodes_per_cell.

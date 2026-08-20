@@ -45,6 +45,7 @@ from typing import Any, Literal, overload
 import numpy as np
 import numpy.typing as npt
 
+from ._constants import FileType, ValueLocation, ZoneType
 from ._containers import ZoneList
 from ._dat_read import TecplotDatReader
 from ._dat_write import TecplotDatWriter
@@ -60,7 +61,6 @@ from ._reader import (
 from ._szl_read import TecplotSzlReader
 from ._szl_write import TecplotSzlWriter
 from ._writer import TecplotWriter
-from .libtecio import FileType, ValueLocation, ZoneType
 
 # --------------------------------------------------------------------------------------
 # Dispatch table

@@ -40,6 +40,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
+from ._constants import DataPacking, DataType, FileType, ValueLocation, ZoneType
 from ._containers import ZoneList
 from ._reader import (
     TecplotAuxDataReader,
@@ -49,7 +50,6 @@ from ._reader import (
     TecplotVariableReader,
     TecplotZoneReader,
 )
-from .libtecio import DataPacking, DataType, FileType, ValueLocation, ZoneType
 
 # --------------------------------------------------------------------------------------
 # Constants

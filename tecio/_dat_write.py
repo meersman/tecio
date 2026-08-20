@@ -22,9 +22,7 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 
-from ._meta import ZoneMeta
-from ._writer import TecplotWriter, normalize_precision
-from .libtecio import (
+from ._constants import (
     DataPacking,
     DataType,
     FaceNeighborMode,
@@ -32,6 +30,8 @@ from .libtecio import (
     ValueLocation,
     ZoneType,
 )
+from ._meta import ZoneMeta
+from ._writer import TecplotWriter, normalize_precision
 
 # -------------------------------------------------------------------------------------
 # Module-level constants

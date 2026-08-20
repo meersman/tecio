@@ -119,8 +119,12 @@ if _TECIO_FALLBACK_PATH and _TECIO_FALLBACK_PATH not in sys.path:
 
 try:
     import tecio
-    from tecio import TecplotFEZoneReader, TecplotOrderedZoneReader
-    from tecio.libtecio import ValueLocation, ZoneType
+    from tecio import (
+        TecplotFEZoneReader,
+        TecplotOrderedZoneReader,
+        ValueLocation,
+        ZoneType,
+    )
 
     _TECIO_IMPORT_ERROR: Exception | None = None
 except Exception as exc:  # pragma: no cover - environment-dependent  # noqa: BLE001

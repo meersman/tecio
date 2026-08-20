@@ -37,8 +37,8 @@ from typing import Any
 
 import numpy.typing as npt
 
+from ._constants import DataPacking, DataType, FileType, ValueLocation, ZoneType
 from ._meta import WriterMeta
-from .libtecio import DataPacking, DataType, FileType, ValueLocation, ZoneType
 
 _STR_TO_PRECISION: dict[str, DataType] = {
     "single": DataType.FLOAT,

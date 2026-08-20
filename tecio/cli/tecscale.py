@@ -95,9 +95,8 @@ from typing import Any
 
 import numpy as np
 
-from .. import TecplotFEZoneReader, TecplotOrderedZoneReader
+from .. import TecplotFEZoneReader, TecplotOrderedZoneReader, ZoneType
 from .. import open as tecio_open
-from ..libtecio import ZoneType
 
 # --------------------------------------------------------------------------------------
 # Argument parsing

@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import ctypes
+import functools
 import os
 import platform
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, TypeVar
+
+_F = TypeVar("_F", bound=Callable[..., Any])
 
 
 class TecplotNotFoundError(RuntimeError):
@@ -208,6 +214,120 @@ def get_tecio_lib() -> str:
         return libpath
 
     raise TecplotNotFoundError(f"Unable to locate TecIO shared library ({libname}).")
+
+
+def load_library() -> tuple[ctypes.CDLL | None, Exception | None, str | None]:
+    """Locate and load the TecIO shared library, tolerating failure.
+
+    Returns:
+        ``(lib, load_error, path)``. On success, ``lib`` is the loaded
+        library, ``load_error`` is ``None``, and ``path`` is where it was
+        found. On failure (nothing found, or found but failed to load, e.g.
+        an architecture mismatch), ``lib`` and ``path`` are ``None`` and
+        ``load_error`` is the exception that would otherwise have been
+        raised. Never raises.
+    """
+    try:
+        path = get_tecio_lib()
+        lib = ctypes.cdll.LoadLibrary(path)
+    except Exception as exc:  # noqa: BLE001 - deliberately broad, see docstring
+        return None, exc, None
+    return lib, None, path
+
+
+def bind(
+    *,
+    lib: ctypes.CDLL | None,
+    name: str,
+    restype: object,
+    argtypes: list[object],
+    unavailable: set[str],
+) -> None:
+    """Set ``restype``/``argtypes`` for one C function, if its symbol exists.
+
+    If not (``lib`` is ``None``, or this library doesn't export *name*),
+    *name* is added to *unavailable* instead of raising. Pair with
+    :func:`requires_symbol` on the corresponding Python wrapper function so
+    a missing symbol disables only that one function rather than crashing
+    on import. Keyword-only, called once per C function, readability at the
+    call site matters more here than brevity.
+
+    Args:
+        lib:        The loaded library, or ``None`` if none loaded.
+        name:       C function name, e.g. ``"tecFileReaderOpen"``.
+        restype:    ``ctypes`` return type for this function.
+        argtypes:   ``ctypes`` argument type list for this function.
+        unavailable: Set to record *name* in if binding fails; shared with
+            the matching :func:`requires_symbol` calls.
+    """
+    try:
+        func = getattr(lib, name)
+    except AttributeError:
+        unavailable.add(name)
+        return
+    func.restype = restype
+    func.argtypes = argtypes
+
+
+def requires_symbol(
+    name: str,
+    *,
+    unavailable: set[str],
+    load_error: Exception | None,
+    library_path: str | None,
+    exception_cls: type[Exception],
+) -> Callable[[_F], _F]:
+    """Decorator: guard a wrapper function behind its required C symbol.
+
+    Checked once, when the decorator is applied, which happens after every
+    C symbol has already been bound by :func:`bind`, not on every call. If
+    *name* is not in *unavailable*, *func* is returned unchanged, zero
+    added overhead. If it is, a stand-in with the same name and docstring
+    (via :func:`functools.wraps`) is returned instead, which raises
+    *exception_cls* rather than calling into a missing symbol.
+
+    Args:
+        name:         C function name this wrapper needs, e.g.
+                      ``"tecFileReaderOpen"``.
+        unavailable:  The set *name* is checked against; same set passed to
+                      the matching :func:`bind` calls.
+        load_error:   The library's load failure, if the library didn't
+                      load at all (see :func:`load_library`), else
+                      ``None``.
+        library_path: Path to the loaded library, if one loaded, else
+                      ``None``.
+        exception_cls: Exception type to raise on a call to the disabled
+                      function. Taken as a parameter, rather than imported
+                      here directly, so this stays free of any dependency
+                      on the module defining that exception (e.g.
+                      :mod:`tecio.libtecio`, which imports this function).
+    """
+
+    def decorator(func: _F) -> _F:
+        if name not in unavailable:
+            return func
+
+        pyname = getattr(func, "__name__", name)
+
+        @functools.wraps(func)
+        def unavailable_func(*args: object, **kwargs: object) -> Any:
+            if load_error is not None:
+                reason = f"no TecIO shared library could be loaded ({load_error})"
+            else:
+                reason = (
+                    f"'{name}' is not present in the loaded library "
+                    f"({library_path}), likely an older Tecplot version "
+                    "that predates this function"
+                )
+            raise exception_cls(
+                f"Cannot call '{pyname}' ('{name}'): {reason}. Install a "
+                "newer Tecplot version, or point TECIO_LIB at one that has "
+                "this symbol."
+            )
+
+        return unavailable_func  # ty: ignore[invalid-return-type]
+
+    return decorator
 
 
 def get_tec_version() -> str:

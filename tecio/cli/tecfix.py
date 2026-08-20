@@ -100,9 +100,8 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from .. import TecplotFEZoneReader, TecplotOrderedZoneReader
+from .. import DataType, TecplotFEZoneReader, TecplotOrderedZoneReader, ZoneType
 from .. import open as tecio_open
-from ..libtecio import DataType, ZoneType
 
 # ---------------------------------------------------------------------------
 # Constants

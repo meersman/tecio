@@ -45,7 +45,7 @@ import numpy as np
 import pytest
 
 import tecio
-from tecio.libtecio import DataPacking, ValueLocation, ZoneType
+from tecio import DataPacking, ValueLocation, ZoneType
 
 # ======================================================================================
 # Cross-format helpers

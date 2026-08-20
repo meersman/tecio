@@ -171,9 +171,9 @@ from .. import (
     TecplotOrderedZoneReader,
     TecplotReader,
     TecplotZoneReader,
+    ZoneType,
 )
 from .. import open as tecio_open
-from ..libtecio import ZoneType
 
 # --------------------------------------------------------------------------------------
 # Constants

@@ -40,14 +40,14 @@ from create_test_data import (
     create_ordered,
 )
 
-from tecio import libtecio
-from tecio.libtecio import (
+from tecio import (
     DataType,
     FaceNeighborMode,
     FileFormat,
     FileType,
     ValueLocation,
     ZoneType,
+    libtecio,
 )
 
 # ===========================================================================
