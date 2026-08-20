@@ -46,11 +46,11 @@ from ._writer import TecplotWriter
 # Ensure these display as their canonical public name in docs and help(),
 # rather than the private module they're actually defined in.
 open.__module__ = "tecio"
-AppendWrite.__module__ = "tecio"
-AppendReadWrite.__module__ = "tecio"
-ZoneList.__module__ = "tecio"
-VariableList.__module__ = "tecio"
 for _cls in (
+    AppendWrite,
+    AppendReadWrite,
+    ZoneList,
+    VariableList,
     TecplotReader,
     TecplotZoneReader,
     TecplotOrderedZoneReader,
@@ -113,3 +113,7 @@ __all__ = [
     "ZoneType",
     "__version__",
 ]
+
+# Only public API visible to user
+def __dir__() -> list:
+    return sorted(__all__)
