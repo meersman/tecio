@@ -9,7 +9,7 @@ from importlib import metadata
 try:
     __version__ = metadata.version("tecio")
 except metadata.PackageNotFoundError:
-    __version__ = "0.2.3"
+    __version__ = "0.3.1"
 
 from . import cli, libtecio
 from ._constants import (
@@ -111,9 +111,20 @@ __all__ = [
     "ValueLocation",
     "VarStatus",
     "ZoneType",
-    "__version__",
 ]
+
+_STANDARD_MODULE_ATTRIBUTES = (
+    "__name__",
+    "__file__",
+    "__path__",
+    "__doc__",
+    "__all__",
+    "__package__",
+    "__version__",
+    "__cached__",
+    "__spec__",
+)
 
 # Only public API visible to user
 def __dir__() -> list:
-    return sorted(__all__)
+    return sorted((*_STANDARD_MODULE_ATTRIBUTES, *__all__))
