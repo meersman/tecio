@@ -1,37 +1,38 @@
 # Readers
 
 {func}`tecio.open` (mode ``'r'``) returns a {class}`~tecio.TecplotSzlReader`,
-{class}`~tecio.TecplotPltReader`, or {class}`~tecio.TecplotDatReader` based
-on the file extension. All three implement the same interface, this page
-documents that interface once; construct a specific class directly only if
-you want to bypass the extension-based dispatch.
+{class}`~tecio.TecplotPltReader`, or {class}`~tecio.TecplotDatReader` based on
+the file extension. All three implement the same interface, this page
+documents that interface once; construct a specific class directly only if you
+want to bypass the extension-based dispatch.
 
 ## What each format keeps in memory
 
-This affects how expensive different operations are, not what you can do
-with the reader, the interface below is identical either way.
+This affects how expensive different operations are, not what you can do with
+the reader, the interface below is identical either way.
 
-| Format | On open | On first zone access | Per-value access |
+| Format | On open | On first zone access | Array access |
 |---|---|---|---|
-| SZL | A live C file handle. Nothing else. | Zone headers resolved via C calls (cheap). | Live C call each time. |
-| PLT | Whole header/zone-metadata section parsed eagerly; no file handle kept open. | Already available, it was parsed at open. | Read from disk on demand, using offsets recorded at open. |
-| DAT | The entire file, header and every array, parsed into memory. | Already available, it was parsed at open. | Already in memory, no further disk access. |
+| SZL | A live C file handle pointer. | Zone headers resolved via C TecIO function calls. | Live C TecIO function call each time. |
+| PLT | Whole header/zone-metadata section parsed eagerly with no file handle kept open. | Output directly from metadata parsed on open. | Read from disk on demand, using offsets recorded at open. |
+| DAT | The entire file, header and every array, parsed into memory. | Output directly from in memory data parsed at open. | Already in memory, no further disk access. |
 
-Opening a PLT or DAT file (however large) does one pass over the file; opening SZL
-does none, cost is deferred to whatever you actually touch.
+Opening a PLT or DAT file (however large) does one pass over the file; opening
+SZL does none, cost is deferred to whatever you actually touch (sub-zone
+loaded on demand access is preserved).
 
 ## Zones and Variables: `ZoneList` / `VariableList`
 
-`reader.zone` and `zone.variable` return one of two format-agnostic
-container types, never a plain `list` and never a raw array:
+`reader.zone` and `zone.variable` return one of two format-agnostic container
+types:
 
 ```python
 with tecio.open("flow.szplt") as r:
-    r.zone[0]  # -> a zone reader (Ordered or FE, see below)
-    r.zone[1:4]  # -> ZoneList, a sub-range, same kind
-    r.zone[0].variable  # -> VariableList
-    r.zone[0].variable["x"]  # -> TecplotVariableReader, by exact name
-    r.zone[0].variable[2]  # -> TecplotVariableReader, by 0-based index
+    r.zone[0]          # -> a zone reader (Ordered or FE, see below)
+    r.zone[1:4]        # -> ZoneList, a sub-range, same kind
+    r.zone[0].variable        # -> VariableList
+    r.zone[0].variable["x"]   # -> TecplotVariableReader, by exact name
+    r.zone[0].variable[2]     # -> TecplotVariableReader, by 0-based index
 ```
 
 | Class | Returned by | Supports |
@@ -39,13 +40,12 @@ with tecio.open("flow.szplt") as r:
 | {class}`~tecio.ZoneList` | `TecplotReader.zone` | `len()`, iteration, `int` index, `slice` (returns another `ZoneList`) |
 | {class}`~tecio.VariableList` | `TecplotZoneReader.variable` | `len()`, iteration, `int` index, exact-name `str` index, `in` |
 
-To pull NumPy arrays out of a zone, use `get_array`, shared by every zone
-type and format:
+To output NumPy arrays directly at the zone level, use `get_array`:
 
 ```python
-p = r.zone[0].get_array("p")  # ndarray | None
-p = r.zone[0].get_array(2)  # by 0-based index
-x, y, z = r.zone[0].get_array(["x", "y", "z"])  # tuple, for unpacking
+p = r.zone[0].get_array("p")             # ndarray | None
+p = r.zone[0].get_array(2)               # by 0-based index
+x, y, z = r.zone[0].get_array(["x", "y", "z"])   # tuple, for unpacking
 ```
 
 A single key (index or name) returns one array; a list of names returns a
@@ -57,8 +57,8 @@ accessor, to pull one variable across many zones, iterate explicitly so the
 outer axis stays in your code:
 
 ```python
-seq = [z.get_array("p") for z in r.zone]  # list[ndarray | None]
-stack = np.stack(seq)  # only once you know the shapes match
+seq = [z.get_array("p") for z in r.zone]   # list[ndarray | None]
+stack = np.stack(seq)                       # only once you know the shapes match
 ```
 
 ```{eval-rst}
@@ -97,6 +97,10 @@ concrete class for you.
    TecplotReader.get_var_auxdata
    TecplotReader.get_zone_auxdata
    TecplotReader.close
+
+.. autoclass:: TecplotReader
+   :members:
+   :show-inheritance:
 ```
 
 ## Zones: `TecplotZoneReader`, split by topology
@@ -109,11 +113,11 @@ rather than returning `None`:
 
 ```python
 zone = r.zone[0]
-zone.title, zone.zone_type  # always available
+zone.title, zone.zone_type          # always available
 if isinstance(zone, tecio.TecplotOrderedZoneReader):
-    zone.dimensions  # (I, J, K)
+    zone.dimensions                  # (I, J, K)
 elif isinstance(zone, tecio.TecplotFEZoneReader):
-    zone.node_map  # ndarray | None
+    zone.node_map                    # ndarray | None
 ```
 
 ```{eval-rst}
@@ -210,6 +214,14 @@ already computed for you from `value_location` and the owning zone.
    :members:
    :show-inheritance:
 ```
+
+Every concrete variable reader also carries a real, working `var_index`
+(1-based, same convention as `zone_index`), not currently promoted to this
+shared base class the way `zone_index` was for zones, so it's absent from
+the table above and doesn't type-check against code written against this
+abstract interface, but it's there and correct at runtime, since
+`zone.variable[i]` always returns a concrete instance. See {doc}`index` for
+the full 1-based/0-based picture.
 
 ## `TecplotAuxDataReader`
 

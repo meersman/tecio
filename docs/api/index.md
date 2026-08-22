@@ -5,86 +5,108 @@ which opens a Tecplot file for reading, writing, or appending and returns the
 appropriate reader or writer based on the file extension. In most cases you
 will not need to instantiate {class}`~tecio.TecplotSzlReader`,
 {class}`~tecio.TecplotSzlWriter`, or any other class directly;
-{func}`tecio.open` selects and returns the correct one for you.
+{func}`tecio.open` selects and returns the correct one.
 
-Every reader and every writer, regardless of format, implements the same
-interface. That shared interface, defined by a small set of base classes, is
-what most of this reference documents; the concrete per-format classes
-mostly add a constructor and a handful of format-specific quirks on top.
 
-## Importing
+<div style="display: flex; gap: 20px;">
 
-For {mod}`tecio.libtecio`'s low-level functions, either of the following
-styles is acceptable, both are explicit enough to be readable:
+<div style="flex: 1;">
 
-```python
-# Import the module and reference through it
-from tecio import libtecio
+:::{table}
 
-libtecio.tec_file_writer_open(...)
+| Mode | Description |
+|------|-------------|
+| `"r"` | Read an existing file |
+| `"w"` | Write a new file |
+| `"x"` | Write, failing if the file already exists |
+| `"a"` | Append new zones to an existing file |
+| `"a+"` | Append and read in the same session |
+:::
 
-# Or import the specific name directly
-from tecio.libtecio import tec_file_writer_open
-```
+</div>
 
-Every other name documented here, readers, writers, zones, variables,
-containers, and constants, is imported directly from {mod}`tecio`:
+<div style="flex: 1;">
 
-```python
-from tecio import TecplotZoneReader, TecplotOrderedZoneReader, ZoneType
+:::{table}
 
-isinstance(zone, TecplotOrderedZoneReader)
-zone.zone_type == ZoneType.ORDERED
-```
+| Extension | Format |
+|-----------|--------|
+| `.szplt` | Tecplot SZL binary (subzone-loadable) |
+| `.plt`, `.bin` | Tecplot PLT binary |
+| `.dat`, `.tec` | Tecplot ASCII |
+:::
+
+</div>
+
+</div>
 
 ---
 
 ## Indexing
 
-Tecplot itself is 1-based throughout, zones, variables, and auxiliary-data
-items are all numbered starting from 1, in the C API, in the file formats, and
-in the ASCII keywords. `tecio` follows Python convention instead wherever a
+From the [Tecplot Data Format Guide](https://tecplot.azureedge.net/products/360/current/360-data-format.html#reading-szl/getting-started/indexing),
+
+> All indexing in Tecplot data files (including zones and variables) is
+  1-based, so the last index is exactly equal to (not one less than) the count
+  of the element type. An exception is nodes in finite-element zones, which
+  can be specified to be zero-based. C and C++ programmers in particular
+  should be wary of off-by-one errors when dealing with Tecplot data.
+
+The `tecio` Python library follows Python convention instead wherever a
 Python object is referenced, and follows Tecplot's convention wherever
 Tecplot's own numbering is the thing being reported or requested. Knowing
-which is which for a given property avoids a real class of off-by-one bugs.
+which is which for a given property avoids of off-by-one bugs.
 
-**Container indexing is 0-based**, like any Python sequence:
+Container indexing is 0-based:
 
 ```python
-r.zone[0]  # the FIRST zone, not zone "0"
+r.zone[0]  # the FIRST zone
 r.zone[0].variable[0]  # the FIRST variable in that zone
 ```
 
-**`zone_index` reports Tecplot's own 1-based number**, and the two won't
-match:
+For read zones, `zone_index` reports the equivalent Tecplot 1-based index:
 
 ```python
-r.zone[0].zone_index  # == 1, not 0
-r.zone[2].zone_index  # == 3, not 2
+r.zone[0].zone_index  # == 1
+r.zone[2].zone_index  # == 3
 ```
 
-**Methods that take an explicit index argument expect Tecplot's 1-based
-numbering**, not a Python position, this is the case most likely to produce
-a silent off-by-one rather than a clear error:
+For read variables, `var_index` reports the equivalent Tecplot 1-based index,
+and `zone_index reports the parent zone Tecplot 1-based index for that
+variable:
+
+```python
+r.zone[0].variable[0].var_index  # == 1
+r.zone[2].variable[0].zone_index  # == 3
+```
+
+Data access method `get_array` similary uses 0-based indexing:
+
+```python
+r.zone[0].get_array(0)  # data array for FIRST variable
+r.zone[0].get_array([1,3,5])  # tuple of data arrays for 2nd, 4th and 6th variables
+```
+
+**Special case** of the indexing rule is auxilary data access. Reader methods
+to output `AUXZONE` and `AUXVARIABLE` items take the 1-based index as the
+argument (same as `zone_index` and `var_index` propetries):
 
 ```python
 r.get_var_auxdata(1)  # the FIRST variable's aux data
-r.get_var_auxdata(0)  # raises IndexError -- there is no variable 0
+r.get_var_auxdata(0)  # raises IndexError
 ```
 
-**One asymmetry worth knowing**: `zone_index` is a real property on every
-zone reader, there's no equivalent `var_index` on `TecplotVariableReader`.
-If you need a variable's 1-based index (e.g. to call `get_var_auxdata`),
-compute it from its position: `reader.variables.index(name) + 1`, or track
-it while enumerating: `for i, var in enumerate(zone.variable, start=1): ...`.
+```python
+r.get_zone_auxdata(1)  # the FIRST zone's aux data
+r.get_zone_auxdata(0)  # raises IndexError
+```
 
 ---
 
 ## Core Classes
 
-These classes define the interface every reader and writer shares,
-regardless of which of the three file formats produced or is producing the
-data. This is the part of the API worth understanding first; see
+These classes define the interface every reader and writer shares, regardless
+of which of the three file formats produced or is producing the data. See
 {doc}`readers` and {doc}`writers` for the full property/method reference.
 
 **Reading**
@@ -104,21 +126,15 @@ data. This is the part of the API worth understanding first; see
 |---|---|
 | {class}`~tecio.TecplotWriter` | Shared writer interface: construction, aux-data staging, zone writing, closing |
 
-{class}`~tecio.TecplotZoneReader` splits into
-{class}`~tecio.TecplotOrderedZoneReader` and
-{class}`~tecio.TecplotFEZoneReader` because the two zone topologies don't
-share properties like dimensions or connectivity; a property that only makes
-sense for one topology (`node_map` on an FE zone, `dimensions` on an
-ordered zone) exists only on that subclass. Accessing it on the other raises
-`AttributeError` rather than returning `None`, so
-`isinstance(zone, TecplotOrderedZoneReader)` (or the FE equivalent) is the
-way to branch on zone topology.
-
-{class}`~tecio.TecplotVariableReader` and {class}`~tecio.TecplotAuxDataReader`
-are not split this way, nodal vs. cell-centered data and dataset- vs.
-zone-level auxiliary data don't remove any properties, they only change the
-behavior of one already-existing method, so a single class covers every
-case.
+{class}`~tecio.TecplotZoneReader` returns either
+{class}`~tecio.TecplotOrderedZoneReader` or
+{class}`~tecio.TecplotFEZoneReader` for structured and unstructured data
+respectivly as these two zone types have properties that are not shared
+(e.g. `dimensions` vs. `node_map`). Accessing a zone property no included in
+the zone type raises `AttributeError`. To check, use `isinstance(zone,
+TecplotOrderedZoneReader)` (or the FE equivalent) or zone reader object
+property `zone_type` for the more in depth identifyer
+{class}`~tecio.ZoneType`.
 
 ---
 
@@ -368,6 +384,4 @@ readers
 writers
 constants
 libtecio
-append_write
-append_read_write
 ```

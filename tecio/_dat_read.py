@@ -2,13 +2,13 @@ r"""Read Tecplot ASCII DAT files.
 
 Supported ``DATAPACKING`` modes:
     * ``BLOCK``, one contiguous value block per variable (Tecplot default).
-    * ``POINT``, one row of all variable values per node, followed by a
-      separate row-per-cell section for any cell-centered variables. This is
-      the format most commonly produced by third-party exporters and tools
-      that treat the file like a CSV with a header.
+    * ``POINT``, one row of all variable values per node, followed by a separate
+      row-per-cell section for any cell-centered variables. This is the format most
+      commonly produced by third-party exporters and tools that treat the file like a
+      CSV with a header.
 
-The entire file is parsed into memory at construction, no lazy disk reads,
-unlike SZL and (for data values) PLT.
+The entire file is parsed into memory at construction, no lazy disk reads, unlike SZL
+and (for data values) PLT.
 """
 
 from __future__ import annotations
@@ -192,8 +192,8 @@ def _is_float_block_boundary(line: str) -> bool:
     r"""Return ``True`` if a stripped *line* ends a float data block early.
 
     Shared by :meth:`TecplotDatReader._read_float_block_slow` (line-by-line) and
-    :meth:`TecplotDatReader._read_float_block_fast` (bulk, on parse failure) so the
-    two readers agree on exactly where a block stops.
+    :meth:`TecplotDatReader._read_float_block_fast` (bulk, on parse failure) so the two
+    readers agree on exactly where a block stops.
 
     Example:
         >>> _is_float_block_boundary("ZONE T=\\"next\\"")
@@ -320,9 +320,9 @@ def _kv_split(text: str) -> dict[str, str]:
             i += 1
             continue
 
-        # Determine the separator between key and value. The modern form is
-        # ``KEY = VALUE``; some legacy files (and ``preplot``) also accept a bare
-        # whitespace separator, e.g. ``STRANDID 2``.
+        # Determine the separator between key and value. The modern form is ``KEY =
+        # VALUE``; some legacy files (and ``preplot``) also accept a bare whitespace
+        # separator, e.g. ``STRANDID 2``.
         while i < n and text[i] in " \t":
             i += 1
         if i < n and text[i] == "=":
@@ -331,8 +331,8 @@ def _kv_split(text: str) -> dict[str, str]:
             while i < n and text[i] in " \t":
                 i += 1
         elif i >= n or not _next_token_is_value(text, i):
-            # Bare flag keyword with no value (e.g. at end of header or directly
-            # before another ``KEY=`` pair).
+            # Bare flag keyword with no value (e.g. at end of header or directly before
+            # another ``KEY=`` pair).
             result[key] = ""
             continue
         # else: legacy ``KEY VALUE`` form — ``i`` already points at the value.
@@ -388,8 +388,8 @@ def _parse_legacy_format(text: str) -> tuple[bool, DataPacking]:
         >>> is_fe, packing = _parse_legacy_format("FEPOINT")
 
     Args:
-        text: Raw ``F`` value string, e.g. ``"FEPOINT"`` (case-insensitive, any
-            trailing comma is ignored).
+        text: Raw ``F`` value string, e.g. ``"FEPOINT"`` (case-insensitive, any trailing
+            comma is ignored).
 
     Returns:
         Tuple of ``(is_fe, packing)`` where *is_fe* is ``True`` for ``FEPOINT`` /
@@ -411,10 +411,10 @@ def _parse_legacy_format(text: str) -> tuple[bool, DataPacking]:
 def _parse_legacy_element_type(text: str) -> ZoneType:
     """Parse a legacy ``ET=`` (element type) value into a :class:`ZoneType`.
 
-    Recognises the canonical Tecplot element names (``TRIANGLE``,
-    ``QUADRILATERAL``, ``TETRAHEDRON``, ``BRICK``, ``LINESEG``). A prefix-based
-    fallback provides a little tolerance for the minor spelling variants some
-    third-party exporters emit, keeping the reader as permissive as ``preplot``.
+    Recognises the canonical Tecplot element names (``TRIANGLE``, ``QUADRILATERAL``,
+    ``TETRAHEDRON``, ``BRICK``, ``LINESEG``). A prefix-based fallback provides a little
+    tolerance for the minor spelling variants some third-party exporters emit, keeping
+    the reader as permissive as ``preplot``.
 
     Example:
         >>> zt = _parse_legacy_element_type("QUADRILATERAL")
@@ -599,9 +599,9 @@ def _parse_auxdata_line(line: str) -> tuple[str, str]:
 def _apply_varauxdata(line: str, var_auxdata_list: list[dict[str, str]]) -> None:
     """Parse ``VARAUXDATA 1-based-idx name="value"`` and store in list.
 
-    *var_auxdata_list* holds plain, mutable dicts, one per variable (index 0
-    is an unused placeholder), accumulated during parsing. Wrapped into an
-    immutable TecplotDatAuxDataReader lazily, only once parsing is complete.
+    *var_auxdata_list* holds plain, mutable dicts, one per variable (index 0 is an
+    unused placeholder), accumulated during parsing. Wrapped into an immutable
+    TecplotDatAuxDataReader lazily, only once parsing is complete.
 
     Example:
         >>> _apply_varauxdata(line, var_auxdata_list)
@@ -626,12 +626,12 @@ class _LineBuffer:
     Also exposes a small *raw* interface (:meth:`take_raw`, :meth:`position`,
     :meth:`seek`) used only by the vectorized numeric-block readers
     (:meth:`TecplotDatReader._read_float_block_fast`/
-    :meth:`TecplotDatReader._read_int_block_fast`). Those
-    readers bypass per-line comment-stripping for speed and instead detect the rare line
-    that *isn't* plain numeric data (a comment, a header keyword) by letting NumPy's
-    parser fail on it, then falling back to this class's ordinary stripped-line
-    interface. Keeping both interfaces on one object means the fast path can hand back
-    an exact resume position for that fallback via :meth:`position`/:meth:`seek`.
+    :meth:`TecplotDatReader._read_int_block_fast`). Those readers bypass per-line
+    comment-stripping for speed and instead detect the rare line that *isn't* plain
+    numeric data (a comment, a header keyword) by letting NumPy's parser fail on it,
+    then falling back to this class's ordinary stripped-line interface. Keeping both
+    interfaces on one object means the fast path can hand back an exact resume position
+    for that fallback via :meth:`position`/:meth:`seek`.
 
     Example:
         >>> buf = _LineBuffer(lines)
@@ -727,9 +727,8 @@ class _LineBuffer:
 class TecplotDatAuxDataReader(TecplotAuxDataReader):
     """Auxiliary data for DAT files.
 
-    Dataset-, zone-, and variable-level aux data are all accumulated into
-    plain dicts during parsing (see :class:`TecplotDatReader`), this just
-    wraps one of them.
+    Dataset-, zone-, and variable-level aux data are all accumulated into plain dicts
+    during parsing (see :class:`TecplotDatReader`), this just wraps one of them.
     """
 
     __slots__ = ("_raw",)
@@ -751,10 +750,10 @@ class TecplotDatAuxDataReader(TecplotAuxDataReader):
 class TecplotDatVariableReader(TecplotVariableReader):
     """Variable reader for ASCII DAT files.
 
-    The entire file is parsed into memory up front, so every property here
-    is a plain stored value, no disk I/O happens after construction.
-    ``is_enabled`` is not overridden here, DAT has no dataset-level enabled
-    flag, so the base class default (``not is_passive()``) applies.
+    The entire file is parsed into memory up front, so every property here is a plain
+    stored value, no disk I/O happens after construction. ``is_enabled`` is not
+    overridden here, DAT has no dataset-level enabled flag, so the base class default
+    (``not is_passive()``) applies.
     """
 
     __slots__ = (
@@ -801,10 +800,9 @@ class TecplotDatVariableReader(TecplotVariableReader):
     def data_type(self) -> DataType:
         """Data type inferred from the stored NumPy dtype.
 
-        A shared variable reports the source zone's actual dtype, since its
-        data array is resolved from that zone. Only a passive variable
-        (which has no data array anywhere in the file) returns
-        DataType.FLOAT as a placeholder.
+        A shared variable reports the source zone's actual dtype, since its data array
+        is resolved from that zone. Only a passive variable (which has no data array
+        anywhere in the file) returns DataType.FLOAT as a placeholder.
         """
         if self._array is None:
             return DataType.FLOAT
@@ -851,9 +849,8 @@ class TecplotDatVariableReader(TecplotVariableReader):
                 values.
 
         Returns:
-            The array (or a slice of it), or None for a passive variable. A
-            shared variable resolves to the source zone's array, per
-            :attr:`values`.
+            The array (or a slice of it), or None for a passive variable. A shared
+            variable resolves to the source zone's array, per :attr:`values`.
 
         Raises:
             ValueError: If only one of start/end is given.
@@ -876,12 +873,11 @@ class TecplotDatVariableReader(TecplotVariableReader):
 class TecplotDatOrderedZoneReader(TecplotOrderedZoneReader):
     """Ordered (IJK) zone reader for ASCII DAT files.
 
-    The entire zone (variable arrays, aux data) is already fully parsed and
-    held in memory by the time this is constructed, so the base class's
-    lazy-loading hooks below do no real work, they just wrap already-computed
-    values on first access, for interface consistency with SZL and PLT.
-    ``is_enabled`` is not overridden here, DAT has no concept of a disabled
-    zone, so the base class default (always True) applies.
+    The entire zone (variable arrays, aux data) is already fully parsed and held in
+    memory by the time this is constructed, so the base class's lazy-loading hooks below
+    do no real work, they just wrap already-computed values on first access, for
+    interface consistency with SZL and PLT.  ``is_enabled`` is not overridden here, DAT
+    has no concept of a disabled zone, so the base class default (always True) applies.
     """
 
     __slots__ = ("_variables", "_aux_raw")
@@ -924,17 +920,17 @@ class TecplotDatOrderedZoneReader(TecplotOrderedZoneReader):
 class TecplotDatFEZoneReader(TecplotFEZoneReader):
     """Finite-element zone reader for ASCII DAT files.
 
-    The entire zone (variable arrays, node map, aux data) is already fully
-    parsed and held in memory by the time this is constructed, so the base
-    class's lazy-loading hooks below do no real work, they just wrap
-    already-computed values on first access, for interface consistency with
-    SZL and PLT. ``is_enabled`` is not overridden here, DAT has no concept of
-    a disabled zone, so the base class default (always True) applies.
+    The entire zone (variable arrays, node map, aux data) is already fully parsed and
+    held in memory by the time this is constructed, so the base class's lazy-loading
+    hooks below do no real work, they just wrap already-computed values on first access,
+    for interface consistency with SZL and PLT. ``is_enabled`` is not overridden here,
+    DAT has no concept of a disabled zone, so the base class default (always True)
+    applies.
 
-    FEPOLYGON/FEPOLYHEDRON are not constructed as this class, or at all,
-    the parser rejects them with :exc:`ValueError` before reaching here (see
-    ``_parse_zone``), so unlike PLT there's no partial-metadata-only case to
-    handle for those types in the ASCII reader.
+    FEPOLYGON/FEPOLYHEDRON are not constructed as this class, or at all, the parser
+    rejects them with :exc:`ValueError` before reaching here (see ``_parse_zone``), so
+    unlike PLT there's no partial-metadata-only case to handle for those types in the
+    ASCII reader.
     """
 
     __slots__ = ("_variables", "_node_map", "_aux_raw")
@@ -985,9 +981,9 @@ class TecplotDatFEZoneReader(TecplotFEZoneReader):
 class TecplotDatReader(TecplotReader):
     """Reader for Tecplot ASCII DAT files.
 
-    The entire file is parsed into memory at construction. Holds no open file
-    handle between accesses, :meth:`close` is a no-op (inherited from the
-    base class default), same as PLT.
+    The entire file is parsed into memory at construction. Holds no open file handle
+    between accesses, :meth:`close` is a no-op (inherited from the base class default),
+    same as PLT.
 
     Args:
         path: Path to the ``.dat`` file.
@@ -1017,18 +1013,17 @@ class TecplotDatReader(TecplotReader):
         self._variable_names: list[str] = []
         self._zones: list[TecplotZoneReader] = []
         self._zone_list: ZoneList[TecplotZoneReader] | None = None
-        # Accumulated as plain dicts during parsing (aux lines can appear
-        # anywhere in the file, interleaved with zones), wrapped into an
-        # immutable TecplotDatAuxDataReader lazily, only once fully parsed.
+        # Accumulated as plain dicts during parsing (aux lines can appear anywhere in
+        # the file, interleaved with zones), wrapped into an immutable
+        # TecplotDatAuxDataReader lazily, only once fully parsed.
         self._dataset_auxdata_raw: dict[str, str] = {}
         self._dataset_auxdata: TecplotAuxDataReader | None = None
-        # Index 0 is an unused placeholder so that 1-based indexing works
-        # directly; populated once num_vars is known, see _parse().
+        # Index 0 is an unused placeholder so that 1-based indexing works directly;
+        # populated once num_vars is known, see _parse().
         self._var_auxdata_raw: list[dict[str, str]] = [{}]
         # Raw VARAUXDATA lines seen before the first zone, buffered by
-        # _parse_file_header() and applied once _var_auxdata_raw is allocated
-        # with the correct length (num_vars isn't known until the header
-        # finishes parsing).
+        # _parse_file_header() and applied once _var_auxdata_raw is allocated with the
+        # correct length (num_vars isn't known until the header finishes parsing).
         self._deferred_var_aux_lines: list[str] = []
         self._parse()
 
@@ -1079,7 +1074,7 @@ class TecplotDatReader(TecplotReader):
     def _var_auxdata_at(self, var_index: int) -> TecplotAuxDataReader:
         return TecplotDatAuxDataReader(self._var_auxdata_raw[var_index])
 
-    # -- parser ---------------------------------------------------------------
+    # -- parser ------------------------------------------------------------------------
 
     def _parse(self) -> None:
         """Read and parse the entire DAT file.
@@ -1211,8 +1206,8 @@ class TecplotDatReader(TecplotReader):
             if nxt_upper.startswith(("DATASETAUXDATA", "VARAUXDATA")):
                 break
             first_ch = nxt.lstrip()[0] if nxt.lstrip() else ""
-            # A data line begins with a numeric token (covers leading-dot values
-            # such as ``.5`` and signed values such as ``-1.2e3``).
+            # A data line begins with a numeric token (covers leading-dot values such as
+            # ``.5`` and signed values such as ``-1.2e3``).
             if first_ch in "0123456789+-.":
                 break
             header_lines.append(tokens.next_stripped())
@@ -1255,9 +1250,9 @@ class TecplotDatReader(TecplotReader):
             # F=POINT/BLOCK: ordered zone. A stray ET (if any) does not apply.
             zone_type = ZoneType.ORDERED
         elif legacy_is_fe or "ET" in kv:
-            # Finite-element zone: F=FEPOINT/FEBLOCK, or an ET keyword with no F
-            # (some exporters omit F). The element shape comes from ET, which is
-            # then required.
+            # Finite-element zone: F=FEPOINT/FEBLOCK, or an ET keyword with no F (some
+            # exporters omit F). The element shape comes from ET, which is then
+            # required.
             if "ET" not in kv:
                 raise ValueError(
                     "Legacy FE zone header specifies F=FEPOINT/FEBLOCK but is "
@@ -1372,8 +1367,8 @@ class TecplotDatReader(TecplotReader):
                 if isinstance(source_zone, TecplotFEZoneReader):
                     node_map = source_zone.node_map
                 # else: malformed file referencing a non-FE zone for shared
-                # connectivity; leave node_map as None rather than crashing on
-                # an otherwise-recoverable read.
+                # connectivity; leave node_map as None rather than crashing on an
+                # otherwise-recoverable read.
             else:
                 nodes_per_cell = _NODES_PER_ELEM[zone_type]
                 flat = self._read_int_block(tokens, num_cells * nodes_per_cell)
@@ -1488,7 +1483,7 @@ class TecplotDatReader(TecplotReader):
             shared_connectivity=shared_connectivity,
         )
 
-    # -- Block readers -------------------------------------------------------
+    # -- Block readers -----------------------------------------------------------------
 
     @staticmethod
     def _read_float_block(tokens: _LineBuffer, n_values: int) -> npt.NDArray:

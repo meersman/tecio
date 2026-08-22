@@ -4,15 +4,14 @@
 {class}`~tecio.TecplotPltWriter`, or {class}`~tecio.TecplotDatWriter` for
 modes ``'w'``/``'x'``, based on the output file extension, or an
 {class}`~tecio.AppendWrite`/{class}`~tecio.AppendReadWrite` for modes
-``'a'``/``'a+'`` (SZL-only, wraps a {class}`~tecio.TecplotSzlWriter`
-internally). All three concrete writers share the same five-method
+``'a'``/``'a+'``. All three concrete writers share the same five-method
 lifecycle:
 
 ```python
 with tecio.open("out.szplt", "w", variables=["x", "y", "p"]) as w:  # 1. open
-    w.add_auxdataset_dict({"Solver": "MyCFD"})                       # 2. stage aux data
-    w.write_ijk_zone(data=[x, y, p], title="Zone 1")                 # 3. write zones
-    w.write_fe_zone(data=[...], zone_type=ZoneType.FETRIANGLE, ...)  # 4. (any zone shape)
+    w.add_auxdataset_dict({"Solver": "MyCFD"})                       # 2. stage dataset level aux data
+    w.write_ijk_zone(data=[x, y, p], title="Zone 1")                 # 3. write structured zones
+    w.write_fe_zone(data=[...], zone_type=ZoneType.FETRIANGLE, ...)  # 4. write unstructured zones
     # 5. close happens automatically on context-manager exit
 ```
 
@@ -20,26 +19,35 @@ Opening with an explicit `variables` list opens the file immediately
 (*eager* open); omitting it defers file creation until the first zone write,
 which must then supply `variables` itself (*lazy* open). Either way, closing
 (directly, or via the context manager, recommended) is required to produce a
-valid, readable file, an SZL/PLT/DAT writer that's never closed has an
-incomplete file on disk.
+valid, readable file.
 
 ## Order of operations
 
-This is the one place the three formats genuinely differ in what's allowed,
-not just in how it's implemented.
+The SZL format allows for flexible order of operations, but PLT and DAT
+require a sequential order of operations. However, the implementation of
+writing via {func}`tecio.open` requires all three formats to write zones
+sequentially. If a SZL file is desired to be written with arrays out of
+sequency, {mod}`tecio.libtecio` wrapper functions must be called directly.
 
-| | SZL | PLT | DAT |
-|---|---|---|---|
-| Zone headers | Must be created in order (can't start zone 10 before zone 9 exists) | Strictly sequential: header, then data, then the next zone's header, ... | Same as PLT |
-| Zone *contents* (arrays, connectivity) | Can be written in any order, any time, after the corresponding header exists | Must immediately follow that zone's own header | Same as PLT |
-| Dataset/variable aux data (`add_auxdataset_dict`/`add_auxvar_dict`) | Any time before `close()` | Any time before `close()` | Any time before `close()` |
+Zone-level aux data must be specificed with the zone write methods, but
+dataset aux data may be staged at any time. Upon file close, all buffered aux
+data is written to the file before finalizing output.
 
-The aux-data row is uniform across all three specifically because closing
-flushes any not-yet-written aux data, so there's no failure mode for adding
-it late, whether you call `add_auxdataset_dict()` before your first zone or
-after your last one, it reaches the file either way.
+## {class}`~tecio.TecplotWriter`
 
-## `TecplotWriter`
+Set once at construction. These are plain attributes, not properties,
+readable at any point, but reassigning one after the file header has
+already been written (e.g. `title` under eager-open, once the first zone
+exists) changes the Python object without changing the file, the header was
+already committed.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `path` | `str` | Output file path |
+| `title` | `str` | Dataset title |
+| `variables` | `list[str] \| None` | Variable name list, `None` before the file is opened (lazy-open) |
+| `file_type` | `FileType` | `FULL`, `GRID`, or `SOLUTION` |
+| `current_zone` | `int` | 1-based index of the most recently written zone, `0` before any zone is written |
 
 ```{eval-rst}
 .. currentmodule:: tecio
@@ -47,11 +55,6 @@ after your last one, it reaches the file either way.
 .. autosummary::
    :nosignatures:
 
-   TecplotWriter.path
-   TecplotWriter.title
-   TecplotWriter.variables
-   TecplotWriter.file_type
-   TecplotWriter.current_zone
    TecplotWriter.meta
    TecplotWriter.add_auxdataset_dict
    TecplotWriter.add_auxvar_dict
@@ -60,10 +63,9 @@ after your last one, it reaches the file either way.
    TecplotWriter.close
 ```
 
-`meta` is a running, read-only summary of everything committed to the file
-so far (title, variables, aux-item counts, and a per-zone record in write
-order), useful for a quick sanity check without re-opening the file for
-reading.
+`meta` is a running, read-only summary of everything committed to the file so
+far (title, variables, aux-item counts, and a per-zone record in write order),
+useful for a quick sanity check without re-opening the file for reading.
 
 ```{eval-rst}
 .. currentmodule:: tecio
@@ -75,9 +77,9 @@ reading.
 
 ## `write_ijk_zone`
 
-Writes one complete IJK-ordered zone. Dimensions are inferred from the
-shape of the first array (1-D → `(N, 1, 1)`, 2-D → `(I, J, 1)`, missing
-trailing dimensions default to `1`).
+Writes one complete IJK-ordered zone. Dimensions are inferred from the shape
+of the first array (1-D → `(N, 1, 1)`, 2-D → `(I, J, 1)`, missing trailing
+dimensions default to `1`).
 
 | Parameter | Type | Default | SZL | PLT | DAT |
 |---|---|---|---|---|---|
