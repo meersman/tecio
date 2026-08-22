@@ -51,7 +51,7 @@ which is which for a given property avoids a real class of off-by-one bugs.
 **Container indexing is 0-based**, like any Python sequence:
 
 ```python
-r.zone[0]              # the FIRST zone, not zone "0"
+r.zone[0]  # the FIRST zone, not zone "0"
 r.zone[0].variable[0]  # the FIRST variable in that zone
 ```
 
@@ -59,8 +59,8 @@ r.zone[0].variable[0]  # the FIRST variable in that zone
 match:
 
 ```python
-r.zone[0].zone_index   # == 1, not 0
-r.zone[2].zone_index   # == 3, not 2
+r.zone[0].zone_index  # == 1, not 0
+r.zone[2].zone_index  # == 3, not 2
 ```
 
 **Methods that take an explicit index argument expect Tecplot's 1-based
@@ -68,8 +68,8 @@ numbering**, not a Python position, this is the case most likely to produce
 a silent off-by-one rather than a clear error:
 
 ```python
-r.get_var_auxdata(1)   # the FIRST variable's aux data
-r.get_var_auxdata(0)   # raises IndexError -- there is no variable 0
+r.get_var_auxdata(1)  # the FIRST variable's aux data
+r.get_var_auxdata(0)  # raises IndexError -- there is no variable 0
 ```
 
 **One asymmetry worth knowing**: `zone_index` is a real property on every

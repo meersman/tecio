@@ -27,11 +27,11 @@ container types, never a plain `list` and never a raw array:
 
 ```python
 with tecio.open("flow.szplt") as r:
-    r.zone[0]          # -> a zone reader (Ordered or FE, see below)
-    r.zone[1:4]        # -> ZoneList, a sub-range, same kind
-    r.zone[0].variable        # -> VariableList
-    r.zone[0].variable["x"]   # -> TecplotVariableReader, by exact name
-    r.zone[0].variable[2]     # -> TecplotVariableReader, by 0-based index
+    r.zone[0]  # -> a zone reader (Ordered or FE, see below)
+    r.zone[1:4]  # -> ZoneList, a sub-range, same kind
+    r.zone[0].variable  # -> VariableList
+    r.zone[0].variable["x"]  # -> TecplotVariableReader, by exact name
+    r.zone[0].variable[2]  # -> TecplotVariableReader, by 0-based index
 ```
 
 | Class | Returned by | Supports |
@@ -43,9 +43,9 @@ To pull NumPy arrays out of a zone, use `get_array`, shared by every zone
 type and format:
 
 ```python
-p = r.zone[0].get_array("p")             # ndarray | None
-p = r.zone[0].get_array(2)               # by 0-based index
-x, y, z = r.zone[0].get_array(["x", "y", "z"])   # tuple, for unpacking
+p = r.zone[0].get_array("p")  # ndarray | None
+p = r.zone[0].get_array(2)  # by 0-based index
+x, y, z = r.zone[0].get_array(["x", "y", "z"])  # tuple, for unpacking
 ```
 
 A single key (index or name) returns one array; a list of names returns a
@@ -57,8 +57,8 @@ accessor, to pull one variable across many zones, iterate explicitly so the
 outer axis stays in your code:
 
 ```python
-seq = [z.get_array("p") for z in r.zone]   # list[ndarray | None]
-stack = np.stack(seq)                       # only once you know the shapes match
+seq = [z.get_array("p") for z in r.zone]  # list[ndarray | None]
+stack = np.stack(seq)  # only once you know the shapes match
 ```
 
 ```{eval-rst}
@@ -109,11 +109,11 @@ rather than returning `None`:
 
 ```python
 zone = r.zone[0]
-zone.title, zone.zone_type          # always available
+zone.title, zone.zone_type  # always available
 if isinstance(zone, tecio.TecplotOrderedZoneReader):
-    zone.dimensions                  # (I, J, K)
+    zone.dimensions  # (I, J, K)
 elif isinstance(zone, tecio.TecplotFEZoneReader):
-    zone.node_map                    # ndarray | None
+    zone.node_map  # ndarray | None
 ```
 
 ```{eval-rst}
