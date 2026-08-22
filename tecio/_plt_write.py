@@ -283,9 +283,13 @@ class TecplotPltWriter(TecplotWriter):
     def close(self) -> None:
         """Finalize and close the PLT file (safe to call more than once).
 
-        Calls ``tecend142`` only if the file was opened.
+        Flushes any buffered aux data first (in case it was added after the
+        first zone, and so never reached the automatic pre-first-zone
+        flush, e.g. ``add_auxdataset_dict`` called after a zone is already
+        written), then calls ``tecend142`` if the file was opened.
         """
         if self._opened:
+            self.flush_aux()
             libtecio.tecend142()
             self._opened = False
 
