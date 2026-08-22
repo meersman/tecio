@@ -84,7 +84,7 @@ Data access method `get_array` similary uses 0-based indexing:
 
 ```python
 r.zone[0].get_array(0)  # data array for FIRST variable
-r.zone[0].get_array([1,3,5])  # tuple of data arrays for 2nd, 4th and 6th variables
+r.zone[0].get_array([1, 3, 5])  # tuple of data arrays for 2nd, 4th and 6th variables
 ```
 
 **Special case** of the indexing rule is auxilary data access. Reader methods

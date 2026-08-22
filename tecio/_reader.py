@@ -539,7 +539,7 @@ class TecplotOrderedZoneReader(TecplotZoneReader):
     def num_elements(self) -> int:
         """Number of cells."""
         # Normalize to proper dimension
-        if self._k == 1 and self._j ==1:
+        if self._k == 1 and self._j == 1:
             # 1D case
             return self._i - 1
         elif self.k == 1 and self._j > 1:
@@ -547,7 +547,7 @@ class TecplotOrderedZoneReader(TecplotZoneReader):
             return (self._i - 1) * (self._j - 1)
         else:
             # 3D case
-            return (self._i -1) * (self._j-1) * (self._k-1)
+            return (self._i - 1) * (self._j - 1) * (self._k - 1)
 
 
 # ======================================================================================

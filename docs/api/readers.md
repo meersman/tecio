@@ -28,11 +28,11 @@ types:
 
 ```python
 with tecio.open("flow.szplt") as r:
-    r.zone[0]          # -> a zone reader (Ordered or FE, see below)
-    r.zone[1:4]        # -> ZoneList, a sub-range, same kind
-    r.zone[0].variable        # -> VariableList
-    r.zone[0].variable["x"]   # -> TecplotVariableReader, by exact name
-    r.zone[0].variable[2]     # -> TecplotVariableReader, by 0-based index
+    r.zone[0]  # -> a zone reader (Ordered or FE, see below)
+    r.zone[1:4]  # -> ZoneList, a sub-range, same kind
+    r.zone[0].variable  # -> VariableList
+    r.zone[0].variable["x"]  # -> TecplotVariableReader, by exact name
+    r.zone[0].variable[2]  # -> TecplotVariableReader, by 0-based index
 ```
 
 | Class | Returned by | Supports |
@@ -43,9 +43,9 @@ with tecio.open("flow.szplt") as r:
 To output NumPy arrays directly at the zone level, use `get_array`:
 
 ```python
-p = r.zone[0].get_array("p")             # ndarray | None
-p = r.zone[0].get_array(2)               # by 0-based index
-x, y, z = r.zone[0].get_array(["x", "y", "z"])   # tuple, for unpacking
+p = r.zone[0].get_array("p")  # ndarray | None
+p = r.zone[0].get_array(2)  # by 0-based index
+x, y, z = r.zone[0].get_array(["x", "y", "z"])  # tuple, for unpacking
 ```
 
 A single key (index or name) returns one array; a list of names returns a
@@ -57,20 +57,18 @@ accessor, to pull one variable across many zones, iterate explicitly so the
 outer axis stays in your code:
 
 ```python
-seq = [z.get_array("p") for z in r.zone]   # list[ndarray | None]
-stack = np.stack(seq)                       # only once you know the shapes match
+seq = [z.get_array("p") for z in r.zone]  # list[ndarray | None]
+stack = np.stack(seq)  # only once you know the shapes match
 ```
 
 ```{eval-rst}
 .. currentmodule:: tecio
 
-.. autoclass:: ZoneList
-   :members:
-   :show-inheritance:
+.. autosummary::
+   :toctree: readers
 
-.. autoclass:: VariableList
-   :members:
-   :show-inheritance:
+   ZoneList
+   VariableList
 ```
 
 ## `TecplotReader`
@@ -82,25 +80,9 @@ concrete class for you.
 .. currentmodule:: tecio
 
 .. autosummary::
-   :nosignatures:
+   :toctree: readers
 
-   TecplotReader.path
-   TecplotReader.file_type
-   TecplotReader.title
-   TecplotReader.variables
-   TecplotReader.num_vars
-   TecplotReader.num_zones
-   TecplotReader.zone
-   TecplotReader.auxdata
-   TecplotReader.num_auxdata_items
-   TecplotReader.var_auxdata
-   TecplotReader.get_var_auxdata
-   TecplotReader.get_zone_auxdata
-   TecplotReader.close
-
-.. autoclass:: TecplotReader
-   :members:
-   :show-inheritance:
+   TecplotReader
 ```
 
 ## Zones: `TecplotZoneReader`, split by topology
@@ -113,78 +95,26 @@ rather than returning `None`:
 
 ```python
 zone = r.zone[0]
-zone.title, zone.zone_type          # always available
+zone.title, zone.zone_type  # always available
 if isinstance(zone, tecio.TecplotOrderedZoneReader):
-    zone.dimensions                  # (I, J, K)
+    zone.dimensions  # (I, J, K)
 elif isinstance(zone, tecio.TecplotFEZoneReader):
-    zone.node_map                    # ndarray | None
+    zone.node_map  # ndarray | None
 ```
+
+`TecplotFEZoneReader` covers finite-element zones, classic element types,
+plus FEPOLYGON/FEPOLYHEDRON/FEMIXED metadata (connectivity for those three
+doesn't work yet).
 
 ```{eval-rst}
 .. currentmodule:: tecio
 
 .. autosummary::
-   :nosignatures:
+   :toctree: readers
 
-   TecplotZoneReader.zone_index
-   TecplotZoneReader.title
-   TecplotZoneReader.zone_type
-   TecplotZoneReader.solution_time
-   TecplotZoneReader.strand_id
-   TecplotZoneReader.datapacking
-   TecplotZoneReader.is_enabled
-   TecplotZoneReader.variable
-   TecplotZoneReader.auxdata
-   TecplotZoneReader.get_array
-```
-
-`TecplotOrderedZoneReader` adds, for IJK-ordered zones:
-
-```{eval-rst}
-.. currentmodule:: tecio
-
-.. autosummary::
-   :nosignatures:
-
-   TecplotOrderedZoneReader.I
-   TecplotOrderedZoneReader.J
-   TecplotOrderedZoneReader.K
-   TecplotOrderedZoneReader.dimensions
-   TecplotOrderedZoneReader.num_nodes
-   TecplotOrderedZoneReader.num_elements
-```
-
-`TecplotFEZoneReader` adds, for finite-element zones (classic element types;
-FEPOLYGON/FEPOLYHEDRON/FEMIXED metadata works too, connectivity for those
-three doesn't yet):
-
-```{eval-rst}
-.. currentmodule:: tecio
-
-.. autosummary::
-   :nosignatures:
-
-   TecplotFEZoneReader.num_nodes
-   TecplotFEZoneReader.num_elements
-   TecplotFEZoneReader.shared_connectivity
-   TecplotFEZoneReader.nodes_per_cell
-   TecplotFEZoneReader.node_map
-```
-
-```{eval-rst}
-.. currentmodule:: tecio
-
-.. autoclass:: TecplotZoneReader
-   :members:
-   :show-inheritance:
-
-.. autoclass:: TecplotOrderedZoneReader
-   :members:
-   :show-inheritance:
-
-.. autoclass:: TecplotFEZoneReader
-   :members:
-   :show-inheritance:
+   TecplotZoneReader
+   TecplotOrderedZoneReader
+   TecplotFEZoneReader
 ```
 
 ## `TecplotVariableReader`
@@ -198,28 +128,16 @@ already computed for you from `value_location` and the owning zone.
 .. currentmodule:: tecio
 
 .. autosummary::
-   :nosignatures:
+   :toctree: readers
 
-   TecplotVariableReader.name
-   TecplotVariableReader.data_type
-   TecplotVariableReader.value_location
-   TecplotVariableReader.is_passive
-   TecplotVariableReader.is_enabled
-   TecplotVariableReader.shared_zone
-   TecplotVariableReader.num_values
-   TecplotVariableReader.values
-   TecplotVariableReader.get_values
-
-.. autoclass:: TecplotVariableReader
-   :members:
-   :show-inheritance:
+   TecplotVariableReader
 ```
 
 Every concrete variable reader also carries a real, working `var_index`
 (1-based, same convention as `zone_index`), not currently promoted to this
 shared base class the way `zone_index` was for zones, so it's absent from
-the table above and doesn't type-check against code written against this
-abstract interface, but it's there and correct at runtime, since
+the generated page above and doesn't type-check against code written against
+this abstract interface, but it's there and correct at runtime, since
 `zone.variable[i]` always returns a concrete instance. See {doc}`index` for
 the full 1-based/0-based picture.
 
@@ -234,15 +152,9 @@ and `len()` all work as expected, plus typed convenience accessors:
 .. currentmodule:: tecio
 
 .. autosummary::
-   :nosignatures:
+   :toctree: readers
 
-   TecplotAuxDataReader.as_int
-   TecplotAuxDataReader.as_float
-   TecplotAuxDataReader.as_bool
-
-.. autoclass:: TecplotAuxDataReader
-   :members:
-   :show-inheritance:
+   TecplotAuxDataReader
 ```
 
 ## Format-specific classes
@@ -253,15 +165,10 @@ interface above.
 ```{eval-rst}
 .. currentmodule:: tecio
 
-.. autoclass:: TecplotSzlReader
-   :members:
-   :show-inheritance:
+.. autosummary::
+   :toctree: readers
 
-.. autoclass:: TecplotPltReader
-   :members:
-   :show-inheritance:
-
-.. autoclass:: TecplotDatReader
-   :members:
-   :show-inheritance:
+   TecplotSzlReader
+   TecplotPltReader
+   TecplotDatReader
 ```

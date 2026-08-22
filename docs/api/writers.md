@@ -27,9 +27,9 @@ The SZL format allows for flexible order of operations, but PLT and DAT
 require a sequential order of operations. However, the implementation of
 writing via {func}`tecio.open` requires all three formats to write zones
 sequentially. If a SZL file is desired to be written with arrays out of
-sequency, {mod}`tecio.libtecio` wrapper functions must be called directly.
+sequence, {mod}`tecio.libtecio` wrapper functions must be called directly.
 
-Zone-level aux data must be specificed with the zone write methods, but
+Zone-level aux data must be specified with the zone write methods, but
 dataset aux data may be staged at any time. Upon file close, all buffered aux
 data is written to the file before finalizing output.
 
@@ -49,30 +49,18 @@ already committed.
 | `file_type` | `FileType` | `FULL`, `GRID`, or `SOLUTION` |
 | `current_zone` | `int` | 1-based index of the most recently written zone, `0` before any zone is written |
 
+`meta` (below) is a running, read-only summary of everything committed to
+the file so far (title, variables, aux-item counts, and a per-zone record
+in write order), useful for a quick sanity check without re-opening the
+file for reading.
+
 ```{eval-rst}
 .. currentmodule:: tecio
 
 .. autosummary::
-   :nosignatures:
+   :toctree: writers
 
-   TecplotWriter.meta
-   TecplotWriter.add_auxdataset_dict
-   TecplotWriter.add_auxvar_dict
-   TecplotWriter.write_ijk_zone
-   TecplotWriter.write_fe_zone
-   TecplotWriter.close
-```
-
-`meta` is a running, read-only summary of everything committed to the file so
-far (title, variables, aux-item counts, and a per-zone record in write order),
-useful for a quick sanity check without re-opening the file for reading.
-
-```{eval-rst}
-.. currentmodule:: tecio
-
-.. autoclass:: TecplotWriter
-   :members:
-   :show-inheritance:
+   TecplotWriter
 ```
 
 ## `write_ijk_zone`
@@ -123,20 +111,20 @@ accepted without error but currently do nothing, the ASCII face-neighbor
 representation isn't implemented yet. Passing them silently produces a file
 with no face-neighbor data, planned work, not yet scheduled.
 
+## Format-specific classes
+
+Constructor and a handful of format quirks; everything else is the shared
+interface above.
+
 ```{eval-rst}
 .. currentmodule:: tecio
 
-.. autoclass:: TecplotSzlWriter
-   :members:
-   :show-inheritance:
+.. autosummary::
+   :toctree: writers
 
-.. autoclass:: TecplotPltWriter
-   :members:
-   :show-inheritance:
-
-.. autoclass:: TecplotDatWriter
-   :members:
-   :show-inheritance:
+   TecplotSzlWriter
+   TecplotPltWriter
+   TecplotDatWriter
 ```
 
 ## Precision
