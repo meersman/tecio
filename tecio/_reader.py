@@ -542,7 +542,7 @@ class TecplotOrderedZoneReader(TecplotZoneReader):
         if self._k == 1 and self._j == 1:
             # 1D case
             return self._i - 1
-        elif self.k == 1 and self._j > 1:
+        elif self._k == 1 and self._j > 1:
             # 2D case
             return (self._i - 1) * (self._j - 1)
         else:
