@@ -42,6 +42,7 @@ import numpy as np
 import pytest
 
 import tecio
+from tecio import ZoneType
 from tecio.cli.tec2mat import main as tec2mat
 from tecio.cli.tecaux import main as tecaux
 from tecio.cli.tecdump import main as tecdump
@@ -52,7 +53,6 @@ from tecio.cli.teconvert import main as teconvert
 from tecio.cli.tecscale import main as tecscale
 from tecio.cli.tecslice import main as tecslice
 from tecio.cli.tecstats import main as tecstats
-from tecio.libtecio import ZoneType
 
 try:
     import scipy.io as sio

@@ -9,9 +9,22 @@ from importlib import metadata
 try:
     __version__ = metadata.version("tecio")
 except metadata.PackageNotFoundError:
-    __version__ = "0.3.0"
+    __version__ = "0.3.1"
 
 from . import cli, libtecio
+from ._constants import (
+    Boolean,
+    DataPacking,
+    DataType,
+    Debug,
+    FaceNeighborMode,
+    FeCellShape,
+    FileFormat,
+    FileType,
+    ValueLocation,
+    VarStatus,
+    ZoneType,
+)
 from ._containers import VariableList, ZoneList
 from ._dat_read import TecplotDatReader
 from ._dat_write import TecplotDatWriter
@@ -33,11 +46,11 @@ from ._writer import TecplotWriter
 # Ensure these display as their canonical public name in docs and help(),
 # rather than the private module they're actually defined in.
 open.__module__ = "tecio"
-AppendWrite.__module__ = "tecio"
-AppendReadWrite.__module__ = "tecio"
-ZoneList.__module__ = "tecio"
-VariableList.__module__ = "tecio"
 for _cls in (
+    AppendWrite,
+    AppendReadWrite,
+    ZoneList,
+    VariableList,
     TecplotReader,
     TecplotZoneReader,
     TecplotOrderedZoneReader,
@@ -51,6 +64,17 @@ for _cls in (
     TecplotSzlWriter,
     TecplotPltWriter,
     TecplotDatWriter,
+    Boolean,
+    DataPacking,
+    DataType,
+    Debug,
+    FaceNeighborMode,
+    FeCellShape,
+    FileFormat,
+    FileType,
+    ValueLocation,
+    VarStatus,
+    ZoneType,
 ):
     _cls.__module__ = "tecio"
 del _cls
@@ -76,5 +100,32 @@ __all__ = [
     "TecplotSzlWriter",
     "TecplotPltWriter",
     "TecplotDatWriter",
-    "__version__",
+    "Boolean",
+    "DataPacking",
+    "DataType",
+    "Debug",
+    "FaceNeighborMode",
+    "FeCellShape",
+    "FileFormat",
+    "FileType",
+    "ValueLocation",
+    "VarStatus",
+    "ZoneType",
 ]
+
+_STANDARD_MODULE_ATTRIBUTES = (
+    "__name__",
+    "__file__",
+    "__path__",
+    "__doc__",
+    "__all__",
+    "__package__",
+    "__version__",
+    "__cached__",
+    "__spec__",
+)
+
+
+# Only public API visible to user
+def __dir__() -> list:
+    return sorted((*_STANDARD_MODULE_ATTRIBUTES, *__all__))

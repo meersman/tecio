@@ -1,48 +1,55 @@
-# tecio.libtecio
+# C Function Wrappers
 
 ```{eval-rst}
 .. automodule:: tecio.libtecio
 ```
 
-The {mod}`libtecio` module provides the direct interface with the
-TecIO C library functions. Each are wrapped in an equivalent Python
-function which also handles conversions from Python data objects to C
-compatible objects, and vis versa for the read functions.
+{mod}`tecio.libtecio` provides the direct interface with the TecIO C
+library functions. Each is wrapped in an equivalent Python function that
+also handles conversion between Python data objects and C-compatible ones,
+and back again for the read functions.
 
-These are the basis of the {mod}`tecio` Python package, and each
-submodule provides a higher level interface with these
-functions. However, the the Python wrapper functions in this submodule
-are kept in the public API to allow users directly call the TecIO
-library if desired.
+These are the basis of the {mod}`tecio` Python package; each reader and
+writer class provides a higher-level interface built on top of them.
+However, the Python wrapper functions here are kept in the public API to
+allow calling the TecIO library directly, if desired.
 
-## Enums
+## Partial or Missing TecIO Shared Library 
 
-See {doc}`libtecio_enums` for full documentation.
+Importing {mod}`tecio.libtecio` never raises, even if the TecIO shared
+library can't be found at all, or the library that *is* found predates a
+newer C entry point (e.g. `tecznefemixed142`, added in Tecplot 360 2024
+R1). Every wrapper function is bound independently; a missing symbol
+disables only that one function. Calling a disabled function raises
+{class}`~tecio.libtecio.TecioUnavailableError` with a message explaining
+why.
 
 ```{eval-rst}
 .. currentmodule:: tecio.libtecio
 
 .. autosummary::
    :nosignatures:
-   
-   FileFormat
-   FileType
-   ZoneType
-   DataType
-   ValueLocation
-   FaceNeighborMode
-   FeCellShape
-   DataPacking
-   VarStatus
-   Boolean
+
+   LIBRARY_LOAD_ERROR
+   LIBRARY_PATH
+   UNAVAILABLE_FUNCTIONS
 ```
-
-
 
 ## Exceptions
 
 ```{eval-rst}
+.. currentmodule:: tecio.libtecio
+
+.. autosummary::
+   :nosignatures:
+
+   TecioError
+   TecioUnavailableError
+   TecioAvailabilityWarning
+
 .. autoclass:: tecio.libtecio.TecioError
+.. autoclass:: tecio.libtecio.TecioUnavailableError
+.. autoclass:: tecio.libtecio.TecioAvailabilityWarning
 ```
 
 ## SZL Read Functions
@@ -152,7 +159,6 @@ See {doc}`libtecio_classic` for full documentation.
 ```{toctree}
 :hidden:
 
-libtecio_enums
 libtecio_szl_read
 libtecio_szl_write
 libtecio_classic

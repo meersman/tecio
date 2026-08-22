@@ -22,9 +22,7 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 
-from ._meta import ZoneMeta
-from ._writer import TecplotWriter, normalize_precision
-from .libtecio import (
+from ._constants import (
     DataPacking,
     DataType,
     FaceNeighborMode,
@@ -32,6 +30,8 @@ from .libtecio import (
     ValueLocation,
     ZoneType,
 )
+from ._meta import ZoneMeta
+from ._writer import TecplotWriter, normalize_precision
 
 # -------------------------------------------------------------------------------------
 # Module-level constants
@@ -351,8 +351,17 @@ class TecplotDatWriter(TecplotWriter):
         self._meta.set_variables(self.variables)
 
     def close(self) -> None:
-        """Flush and close the output file (safe to call more than once)."""
+        """Flush and close the output file (safe to call more than once).
+
+        Flushes any buffered aux data first (in case it was added after the
+        first zone, and so never reached the automatic pre-first-zone
+        flush, e.g. ``add_auxdataset_dict`` called after a zone is already
+        written); DAT's ``DATASETAUXDATA``/``VARAUXDATA`` keywords are valid
+        anywhere in the file, including after the last zone, so this is
+        always a legal position to write them.
+        """
         if self._fp is not None:
+            self.flush_aux()
             self._fp.flush()
             self._fp.close()
             self._fp = None

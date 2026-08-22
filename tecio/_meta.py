@@ -21,7 +21,9 @@ Design notes:
       zones are written.
     * Enum types are imported only under :data:`typing.TYPE_CHECKING`. With ``from
       __future__ import annotations`` the annotations are never evaluated at runtime,
-      which keeps this module free of any import cycle with :mod:`tecio.libtecio`.
+      so no import of :mod:`tecio._constants` happens at all unless a type checker is
+      running. Not that it would matter either way, ``_constants`` is a dependency-free
+      leaf module.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .libtecio import DataType, FileType, ValueLocation, ZoneType
+    from ._constants import DataType, FileType, ValueLocation, ZoneType
 
 
 # =====================================================================================

@@ -25,8 +25,8 @@ import numpy as np
 import pytest
 
 import tecio
+from tecio import FileType, ZoneType
 from tecio._io import AppendReadWrite, AppendWrite
-from tecio.libtecio import FileType, ZoneType
 
 # ---------------------------------------------------------------------------
 # Constants

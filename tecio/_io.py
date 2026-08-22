@@ -45,6 +45,7 @@ from typing import Any, Literal, overload
 import numpy as np
 import numpy.typing as npt
 
+from ._constants import FileType, ValueLocation, ZoneType
 from ._containers import ZoneList
 from ._dat_read import TecplotDatReader
 from ._dat_write import TecplotDatWriter
@@ -60,7 +61,6 @@ from ._reader import (
 from ._szl_read import TecplotSzlReader
 from ._szl_write import TecplotSzlWriter
 from ._writer import TecplotWriter
-from .libtecio import FileType, ValueLocation, ZoneType
 
 # --------------------------------------------------------------------------------------
 # Dispatch table
@@ -739,28 +739,8 @@ def open(
 
     Keyword Args (modes ``'a'``, ``'a+'``):
         ``title``, ``variables``, and ``file_type`` default to the values read from the
-        existing file. In most cases you should **not** pass these — they are
-        documented here for completeness.
-
-        .. list-table::
-           :header-rows: 1
-           :widths: 20 15 65
-
-           * - Keyword
-             - Default
-             - Description
-           * - ``title``
-             - From file
-             - Override the dataset title in the output file. Rarely needed — the
-               existing title is preserved by default.
-           * - ``variables``
-             - From file
-             - **Do not override.** The variable list is fixed by the existing file.
-               Passing a different list will cause a mismatch between the copied zones
-               and any new zones.
-           * - ``file_type``
-             - From file
-             - Override the file type. Rarely needed.
+        existing file. In most cases you should **not** pass these. Providing them will
+        override the source file when written out.
 
     Returns:
         - ``'r'`` → :class:`~tecio.TecplotSzlReader`, :class:`~tecio.TecplotPltReader`,

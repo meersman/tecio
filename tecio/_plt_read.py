@@ -1,29 +1,25 @@
 r"""Read Tecplot PLT (``.plt``) binary files.
 
-A pure-Python / NumPy reader for Tecplot PLT binary files (format versions v112
-and v191), no C library involved.
+A pure-Python / NumPy reader for Tecplot PLT binary files (format versions v112 and
+v191), no C library involved.
 
 Notes:
-    * **No byte-swapping boilerplate.** The INT32 value of ``1`` written
-      immediately after the magic number is used to detect endianness at open
-      time. All subsequent reads use the correct NumPy byte-order prefix
-      (``"<"`` or ``">"``).
-    * **Eager metadata, lazy data.** Zone and variable metadata is parsed
-      during ``TecplotPltReader.__init__``. Numeric data and node maps are
-      read from disk only on first access, matching SZL's laziness even
-      though PLT has no C library or file handle behind it.
-    * **No text / geometry support.** Header records with markers 399.0
-      (geometry) and 499.0 (text) are detected and skipped without parsing
-      their contents.
-    * **v112 and v191 zone headers.** Zone marker ``299.0`` -> v112 header;
-      ``298.0`` -> v191 header. Both are fully supported.
+    * **No byte-swapping boilerplate.** The INT32 value of ``1`` written immediately
+      after the magic number is used to detect endianness at open time. All subsequent
+      reads use the correct NumPy byte-order prefix (``"<"`` or ``">"``).
+    * **Eager metadata, lazy data.** Zone and variable metadata is parsed during
+      ``TecplotPltReader.__init__``. Numeric data and node maps are read from disk only
+      on first access, matching SZL's laziness even though PLT has no C library or file
+      handle behind it.
+    * **No text / geometry support.** Header records with markers 399.0 (geometry) and
+      499.0 (text) are detected and skipped without parsing their contents.
+    * **v112 and v191 zone headers.** Zone marker ``299.0`` -> v112 header; ``298.0`` ->
+      v191 header. Both are fully supported.
 
 Limitations:
-    * FEPOLYGON and FEPOLYHEDRON zones are parsed for metadata but face-map
-      reading is not yet implemented (``node_map`` returns None for those
-      types).
-    * Bit-packed data (DataType 6) is not supported and raises
-      NotImplementedError.
+    * FEPOLYGON and FEPOLYHEDRON zones are parsed for metadata but face-map reading is
+      not yet implemented (``node_map`` returns None for those types).
+    * Bit-packed data (DataType 6) is not supported and raises NotImplementedError.
 
 Format reference:
     Tecplot 360 Data Format Guide, Binary PLT v112 / v191.
@@ -40,6 +36,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
+from ._constants import DataPacking, DataType, FileType, ValueLocation, ZoneType
 from ._containers import ZoneList
 from ._reader import (
     TecplotAuxDataReader,
@@ -49,7 +46,6 @@ from ._reader import (
     TecplotVariableReader,
     TecplotZoneReader,
 )
-from .libtecio import DataPacking, DataType, FileType, ValueLocation, ZoneType
 
 # --------------------------------------------------------------------------------------
 # Constants
@@ -254,8 +250,8 @@ class _ZoneMeta:
 class _PltParser:
     """Low-level PLT binary parser.
 
-    Called once from :class:`Read.__init__`. After construction the following
-    attributes are available:
+    Called once from :class:`Read.__init__`. After construction the following attributes
+    are available:
 
         ===================   ===============================================
         Attribute             Description
@@ -784,10 +780,10 @@ class TecplotPltAuxDataReader(TecplotAuxDataReader):
 class TecplotPltVariableReader(TecplotVariableReader):
     """Variable reader for PLT files.
 
-    Metadata comes from the pre-parsed :class:`_ZoneMeta`, no disk I/O. Data
-    values are read from disk only when :attr:`values`/:meth:`get_values` is
-    called. ``is_enabled`` is not overridden here, PLT has no dataset-level
-    enabled flag, so the base class default (``not is_passive()``) applies.
+    Metadata comes from the pre-parsed :class:`_ZoneMeta`, no disk I/O. Data values are
+    read from disk only when :attr:`values`/:meth:`get_values` is called. ``is_enabled``
+    is not overridden here, PLT has no dataset-level enabled flag, so the base class
+    default (``not is_passive()``) applies.
     """
 
     __slots__ = (
@@ -826,10 +822,10 @@ class TecplotPltVariableReader(TecplotVariableReader):
             var_index:  1-based variable index.
             var_names:  All variable names for the dataset.
             byte_order: NumPy byte-order prefix (``"<"`` or ``">"``).
-            all_metas:  All zones' parsed metadata, in file order (needed to
-                resolve shared variables). Optional so the class remains
-                constructible standalone; without it, shared variables cannot
-                be resolved and read as None.
+            all_metas: All zones' parsed metadata, in file order (needed to resolve
+                shared variables). Optional so the class remains constructible
+                standalone; without it, shared variables cannot be resolved and read as
+                None.
         """
         object.__setattr__(self, "_file_path", file_path)
         object.__setattr__(self, "_meta", zone_meta)
@@ -842,13 +838,13 @@ class TecplotPltVariableReader(TecplotVariableReader):
     def _resolve_data_meta(self) -> _ZoneMeta | None:
         """Return the :class:`_ZoneMeta` that owns this variable's data.
 
-        For a variable this zone stores itself this is simply ``self._meta``.
-        For a shared variable, the chain of per-variable ``shared_zone``
-        references is followed to the owning zone (with a cycle/range guard
-        against malformed files), the variable-level analogue of
-        :meth:`TecplotPltFEZoneReader._resolve_connectivity_meta`. Returns None
-        when the share cannot be resolved, e.g. when ``all_metas`` was not
-        supplied at construction.
+        For a variable this zone stores itself this is simply ``self._meta``.  For a
+        shared variable, the chain of per-variable ``shared_zone`` references is
+        followed to the owning zone (with a cycle/range guard against malformed files),
+        the variable-level analogue of
+        :meth:`TecplotPltFEZoneReader._resolve_connectivity_meta`. Returns None when the
+        share cannot be resolved, e.g. when ``all_metas`` was not supplied at
+        construction.
         """
         idx = self.var_index - 1
         meta = self._meta
@@ -896,8 +892,7 @@ class TecplotPltVariableReader(TecplotVariableReader):
     def num_values(self) -> int:
         """Number of values stored for this variable.
 
-        For a shared variable the count is read from the owning zone's data
-        block.
+        For a shared variable the count is read from the owning zone's data block.
         """
         meta = self._resolve_data_meta()
         if meta is None:
@@ -916,18 +911,18 @@ class TecplotPltVariableReader(TecplotVariableReader):
     ) -> npt.NDArray[Any] | None:
         """Read variable data from disk.
 
-        When this variable is shared from another zone (:attr:`shared_zone` is
-        not None), the data is read from the owning zone's data block and
-        returned as this variable's own. None is returned only for passive
-        variables, which have no data anywhere in the file.
+        When this variable is shared from another zone (:attr:`shared_zone` is not
+        None), the data is read from the owning zone's data block and returned as this
+        variable's own. None is returned only for passive variables, which have no data
+        anywhere in the file.
 
         Args:
-            value_range: 1-based ``(start, end)``, half-open. ``(None, None)``
-                reads all values.
+            value_range: 1-based ``(start, end)``, half-open. ``(None, None)`` reads all
+                values.
 
         Returns:
-            NumPy array with the dtype matching :attr:`data_type`, or None if
-            the variable is passive.
+            NumPy array with the dtype matching :attr:`data_type`, or None if the
+            variable is passive.
 
         Raises:
             ValueError: On invalid *value_range*.
@@ -935,10 +930,10 @@ class TecplotPltVariableReader(TecplotVariableReader):
         if self.is_passive():
             return None
 
-        # Resolve to the zone that actually owns this variable's data (self for
-        # unshared variables, the share-chain source otherwise). The resolved
-        # meta describes the on-disk block being read, so it also drives the
-        # count, dtype, and ordered-zone reshape/ghost-trim logic below.
+        # Resolve to the zone that actually owns this variable's data (self for unshared
+        # variables, the share-chain source otherwise). The resolved meta describes the
+        # on-disk block being read, so it also drives the count, dtype, and ordered-zone
+        # reshape/ghost-trim logic below.
         meta = self._resolve_data_meta()
         if meta is None:
             return None
@@ -976,17 +971,17 @@ class TecplotPltVariableReader(TecplotVariableReader):
         if data.dtype.byteorder not in ("=", "|", np.dtype(dt).str[0]):
             data = data.byteswap().view(data.dtype.newbyteorder())
 
-        # Reshape for full reads of ordered zones, using the owning zone's
-        # dimensions and value location (they describe the on-disk layout
-        # including cell-centered ghost padding). Sharing requires matching
-        # dimensions, so these equal this zone's own for well-formed files.
+        # Reshape for full reads of ordered zones, using the owning zone's dimensions
+        # and value location (they describe the on-disk layout including cell-centered
+        # ghost padding). Sharing requires matching dimensions, so these equal this
+        # zone's own for well-formed files.
         if full_read and meta.zone_type == ZoneType.ORDERED:
             ni, nj, nk = meta.i_max, meta.j_max, meta.k_max
             if meta.value_locations[self.var_index - 1] == ValueLocation.CELL_CENTERED:
-                # On disk: i * j * (k-1) values in Fortran order. Ghost padding
-                # occupies the last row in I and J after reshape, so reshape
-                # to (ni, nj, nk-1) then slice to (ni-1, nj-1, nk-1) to discard
-                # the ghost values and return only significant cells.
+                # On disk: i * j * (k-1) values in Fortran order. Ghost padding occupies
+                # the last row in I and J after reshape, so reshape to (ni, nj, nk-1)
+                # then slice to (ni-1, nj-1, nk-1) to discard the ghost values and
+                # return only significant cells.
                 data = data.reshape((ni, nj, max(nk - 1, 1)), order="F")
                 data = data[: max(ni - 1, 1), : max(nj - 1, 1), :]
             else:
@@ -1029,9 +1024,9 @@ def _load_plt_variables(
 class TecplotPltOrderedZoneReader(TecplotOrderedZoneReader):
     """Ordered (IJK) zone reader for PLT files.
 
-    All metadata comes from the pre-parsed :class:`_ZoneMeta`, no disk I/O
-    beyond what :class:`_PltParser` already did. The variable list and aux
-    data stay lazily loaded on first access.
+    All metadata comes from the pre-parsed :class:`_ZoneMeta`, no disk I/O beyond what
+    :class:`_PltParser` already did. The variable list and aux data stay lazily loaded
+    on first access.
     """
 
     __slots__ = (
@@ -1094,9 +1089,9 @@ class TecplotPltOrderedZoneReader(TecplotOrderedZoneReader):
 class TecplotPltFEZoneReader(TecplotFEZoneReader):
     """Finite-element zone reader for PLT files.
 
-    All metadata comes from the pre-parsed :class:`_ZoneMeta`, no disk I/O
-    beyond what :class:`_PltParser` already did. The variable list, node map,
-    and aux data stay lazily loaded on first access.
+    All metadata comes from the pre-parsed :class:`_ZoneMeta`, no disk I/O beyond what
+    :class:`_PltParser` already did. The variable list, node map, and aux data stay
+    lazily loaded on first access.
     """
 
     __slots__ = (
@@ -1160,12 +1155,11 @@ class TecplotPltFEZoneReader(TecplotFEZoneReader):
     def _resolve_connectivity_meta(self) -> _ZoneMeta | None:
         """Return the :class:`_ZoneMeta` that owns this zone's connectivity.
 
-        For a zone with its own connectivity this is simply ``self._meta``.
-        For a zone that shares connectivity, the chain of
-        ``connectivity_shared_zone`` references is followed to the owning
-        zone (with a cycle/range guard against malformed files). Returns None
-        when the share cannot be resolved, e.g. when ``all_metas`` was not
-        supplied at construction.
+        For a zone with its own connectivity this is simply ``self._meta``.  For a zone
+        that shares connectivity, the chain of ``connectivity_shared_zone`` references
+        is followed to the owning zone (with a cycle/range guard against malformed
+        files). Returns None when the share cannot be resolved, e.g. when ``all_metas``
+        was not supplied at construction.
         """
         meta = self._meta
         if meta.connectivity_shared_zone < 0:
@@ -1184,8 +1178,8 @@ class TecplotPltFEZoneReader(TecplotFEZoneReader):
     def _load_node_map(self) -> npt.NDArray[np.int64] | None:
         """Read this zone's node connectivity.
 
-        Returns None for FEPOLYGON/FEPOLYHEDRON zones, face-map reading is
-        not yet implemented (see module docstring Limitations).
+        Returns None for FEPOLYGON/FEPOLYHEDRON zones, face-map reading is not yet
+        implemented (see module docstring Limitations).
         """
         if self.zone_type in (ZoneType.FEPOLYGON, ZoneType.FEPOLYHEDRON):
             return None
@@ -1234,10 +1228,10 @@ def _build_plt_zone(
 class TecplotPltReader(TecplotReader):
     """Reader for Tecplot ``.plt`` binary files.
 
-    Zone metadata is parsed eagerly at construction (:class:`_PltParser` reads
-    the whole header section up front); variable data and node maps are read
-    lazily from disk. Holds no open file handle between accesses, :meth:`close`
-    is a no-op (inherited from the base class default).
+    Zone metadata is parsed eagerly at construction (:class:`_PltParser` reads the whole
+    header section up front); variable data and node maps are read lazily from
+    disk. Holds no open file handle between accesses, :meth:`close` is a no-op
+    (inherited from the base class default).
 
     Args:
         file_name: Path to the ``.plt`` file.
@@ -1302,9 +1296,9 @@ class TecplotPltReader(TecplotReader):
     def num_zones(self) -> int:
         """Number of zones in the file.
 
-        Queried directly from the already-parsed metadata list. Cheaper than
-        the base class's default of ``len(self.zone)``, which would build
-        every zone's reader object first.
+        Queried directly from the already-parsed metadata list. Cheaper than the base
+        class's default of ``len(self.zone)``, which would build every zone's reader
+        object first.
         """
         return len(self._zone_metas)
 

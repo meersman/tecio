@@ -1,43 +1,13 @@
 """Python bindings for the TecIO C library.
 
-Ctypes bindings for both the new SZL API (``tec_*``) and the classic PLT
-API (``tec*142``), and a Python wrapper function for each C entry point.
-Constants live in :mod:`tecio._constants` instead, since they don't depend on
-this library at all, and are available directly from :mod:`tecio` (e.g.
-``tecio.ZoneType``); re-exported here too since every wrapper function
-below uses them.
-
-Graceful degradation:
-    Importing this module never raises, even if ``libtecio.so``/``.dylib``
-    cannot be found at all, or if the library that *is* found is missing
-    individual symbols (e.g. an older Tecplot install predating a newer
-    C entry point such as ``tecznefemixed142``, added in Tecplot 360 2024
-    R1). Every wrapper function is bound independently; a missing symbol
-    disables only that one function; it doesn't take down the whole module.
-    Calling a disabled function raises :exc:`TecioUnavailableError`
-    (a subclass of :exc:`TecioError`) with a message explaining why. The
-    actual load/bind/guard mechanism lives in :mod:`tecio._utils`, this
-    module just uses it, filling in its own exceptions and its own already
-    -loaded ``lib``.
-
-    This matters most for the ASCII DAT reader/writer, which only needs
-    the constants in :mod:`tecio._constants` and never calls into the C
-    library at all, so it works with no Tecplot installation whatsoever.
-    SZL and PLT genuinely need the C library and degrade to raising on
-    first use instead.
-
-    After binding, a one-line summary is emitted via :mod:`warnings`
-    (category :class:`TecioAvailabilityWarning`) if anything is disabled,
-    silent if everything bound successfully. The same information is
-    available as data, without relying on the warning being seen, via
-    :data:`LIBRARY_LOAD_ERROR` and :data:`UNAVAILABLE_FUNCTIONS`.
+Provides enum types for Tecplot constants, ctypes bindings for both the
+new SZL API (``tec_*``) and the classic PLT API (``tec*142``), and
+Python wrapper functions for each C entry point.
 """
 
 from __future__ import annotations
 
 import ctypes
-import functools
-import warnings
 from collections.abc import Sequence
 from enum import Enum
 from typing import Any
@@ -46,157 +16,353 @@ import numpy as np
 import numpy.typing as npt
 
 from . import _utils
-from ._constants import (
-    Boolean,
-    DataPacking,
-    DataType,
-    Debug,
-    FaceNeighborMode,
-    FileFormat,
-    FileType,
-    ValueLocation,
-    VarStatus,
-    ZoneType,
-)
 
-__all__ = [
-    "TecioError",
-    "TecioUnavailableError",
-    "TecioAvailabilityWarning",
-    "LIBRARY_LOAD_ERROR",
-    "LIBRARY_PATH",
-    "UNAVAILABLE_FUNCTIONS",
-    "tec_file_reader_open",
-    "tec_file_reader_close",
-    "tec_file_get_type",
-    "tec_data_set_get_title",
-    "tec_data_set_get_num_vars",
-    "tec_data_set_get_num_zones",
-    "tec_zone_get_ijk",
-    "tec_zone_get_title",
-    "tec_zone_get_type",
-    "tec_zone_is_enabled",
-    "tec_zone_get_solution_time",
-    "tec_zone_get_strand_id",
-    "is_64bit",
-    "tec_zone_node_map_get_64",
-    "tec_zone_node_map_get",
-    "tec_var_get_name",
-    "tec_var_is_enabled",
-    "tec_zone_var_get_type",
-    "tec_zone_var_get_value_location",
-    "tec_zone_var_is_passive",
-    "tec_zone_var_get_shared_zone",
-    "tec_zone_connectivity_get_shared_zone",
-    "tec_zone_var_get_num_values",
-    "tec_zone_var_get_float_values",
-    "tec_zone_var_get_double_values",
-    "tec_zone_var_get_int32_values",
-    "tec_zone_var_get_int16_values",
-    "tec_zone_var_get_uint8_values",
-    "tec_data_set_aux_data_get_num_items",
-    "tec_data_set_aux_data_get_item",
-    "tec_var_aux_data_get_num_items",
-    "tec_var_aux_data_get_item",
-    "tec_zone_aux_data_get_num_items",
-    "tec_zone_aux_data_get_item",
-    "tec_file_writer_open",
-    "tec_file_writer_close",
-    "tec_file_writer_flush",
-    "tec_zone_create_ijk",
-    "tec_zone_create_fe",
-    "tec_zone_set_unsteady_options",
-    "tec_data_set_add_aux_data",
-    "tec_var_add_aux_data",
-    "tec_zone_add_aux_data",
-    "tec_zone_var_write_double_values",
-    "tec_zone_var_write_float_values",
-    "tec_zone_var_write_int32_values",
-    "tec_zone_var_write_int16_values",
-    "tec_zone_var_write_uint8_values",
-    "tec_zone_node_map_write32",
-    "tec_zone_node_map_write64",
-    "tec_zone_face_nbr_write_connections32",
-    "tec_zone_face_nbr_write_connections64",
-    "tecini142",
-    "tecend142",
-    "tecflush142",
-    "tecfil142",
-    "tecforeign142",
-    "teczne142",
-    "tecpolyzne142",
-    "tecznefemixed142",
-    "tecdat142",
-    "tecnode142",
-    "tecface142",
-    "tecpolyface142",
-    "tecpolybconn142",
-    "tecauxstr142",
-    "tecvauxstr142",
-    "teczauxstr142",
-    "tecusr142",
-]
-
-
-# ======================================================================================
-# Error classes
-# ======================================================================================
+# Load tecio library
+TECIO_LIB_PATH = _utils.get_tecio_lib()
+lib = ctypes.cdll.LoadLibrary(TECIO_LIB_PATH)
 
 
 class TecioError(RuntimeError):
     """Exception for TecIO C library errors."""
 
 
-class TecioUnavailableError(TecioError):
-    """Raised when calling a function whose C symbol is unavailable.
+# ======================================================================================
+# Meaningful integers
+# - The TecIO library often uses integers with special meanings (zone types, data types,
+#   data locations)
+# - The same values are used both for writing (tec*142 functions) and for SZL reading
+#   and writing (tec_* functions)
+# - The classes below provide a more readable format of these values
+# - Where available, the equivalent keywords used in Tecplot ASCII files are set as the
+#   class property, returning the corresponding int value.
+# ======================================================================================
 
-    Either because no TecIO shared library could be located at all, or
-    because the library that was found doesn't export this particular
-    symbol (typically an older Tecplot version, predating that entry
-    point).
+
+class FileFormat(Enum):
+    """Binary data format selector.
+
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
+
+       * - Attribute
+         - Value
+         - Description
+       * - ``PLT``
+         - ``0``
+         - Classic PLT binary format.
+       * - ``SZPLT``
+         - ``1``
+         - SZL subzone-loadable format.
     """
 
+    PLT = 0
+    SZPLT = 1
 
-class TecioAvailabilityWarning(UserWarning):
-    """Emitted once at import time if any C function could not be bound."""
+
+class FileType(Enum):
+    """Tecplot file type.
+
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
+
+       * - Attribute
+         - Value
+         - Description
+       * - ``FULL``
+         - ``0``
+         - Contains both grid and solution data.
+       * - ``GRID``
+         - ``1``
+         - Grid coordinates only.
+       * - ``SOLUTION``
+         - ``2``
+         - Solution variables only.
+    """
+
+    FULL = 0
+    GRID = 1
+    SOLUTION = 2
 
 
-_lib, _load_error, _library_path = _utils.load_library()
+class ZoneType(Enum):
+    """Tecplot zone type.
 
-lib = _lib
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
 
-# Exception raised while trying to locate/load the shared library, or None
-# if it loaded successfully
-LIBRARY_LOAD_ERROR: Exception | None = _load_error
+       * - Attribute
+         - Value
+         - Description
+       * - ``ORDERED``
+         - ``0``
+         - Structured IJK grid.
+       * - ``FELINESEG``
+         - ``1``
+         - Finite-element line segments.
+       * - ``FETRIANGLE``
+         - ``2``
+         - Finite-element triangles.
+       * - ``FEQUADRILATERAL``
+         - ``3``
+         - Finite-element quadrilaterals.
+       * - ``FETETRAHEDRON``
+         - ``4``
+         - Finite-element tetrahedra.
+       * - ``FEBRICK``
+         - ``5``
+         - Finite-element hexahedra.
+       * - ``FEPOLYGON``
+         - ``6``
+         - Finite-element polygons (face-based).
+       * - ``FEPOLYHEDRON``
+         - ``7``
+         - Finite-element polyhedra (face-based).
+       * - ``FEMIXED``
+         - ``8``
+         - Mixed finite-element types.
+    """
 
-# Path to the shared library that was loaded, or None if none could be
-# located/loaded (see :data:`LIBRARY_LOAD_ERROR`).
-LIBRARY_PATH: str | None = _library_path
+    ORDERED = 0
+    FELINESEG = 1
+    FETRIANGLE = 2
+    FEQUADRILATERAL = 3
+    FETETRAHEDRON = 4
+    FEBRICK = 5
+    FEPOLYGON = 6
+    FEPOLYHEDRON = 7
+    FEMIXED = 8
 
-# C function names (e.g. ``"tecFileReaderOpen"``) whose symbol could not be
-# bound, either because no library loaded at all or because the loaded
-# library doesn't export them
-UNAVAILABLE_FUNCTIONS: set[str] = set()
 
-# Bind one C function's ``restype``/``argtypes`` on this module's ``lib``, pre-applied
-# against this module's own ``lib``/``UNAVAILABLE_FUNCTIONS`` so each of the ~75 call
-# sites below only needs to supply ``name``, ``restype``, and ``argtypes``. See
-# :func:`tecio._utils.bind`.
-bind_ctypes = functools.partial(_utils.bind, lib=lib, unavailable=UNAVAILABLE_FUNCTIONS)
+class FeCellShape(Enum):
+    """Unstructured cell shape category.
 
-# Decorator guarding a wrapper function behind its required C symbol, pre-applied
-# against this module's own state and :exc:`TecioUnavailableError`
-requires_symbol = functools.partial(
-    _utils.requires_symbol,
-    unavailable=UNAVAILABLE_FUNCTIONS,
-    load_error=LIBRARY_LOAD_ERROR,
-    library_path=LIBRARY_PATH,
-    exception_cls=TecioUnavailableError,
-)
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
+
+       * - Attribute
+         - Value
+         - Description
+       * - ``BAR``
+         - ``0``
+         - 2D two-node element.
+       * - ``TRIANGLE``
+         - ``1``
+         - 2D three-node element.
+       * - ``QUADRILATERAL``
+         - ``2``
+         - 2D four-node element.
+       * - ``TETRAHEDRON``
+         - ``3``
+         - 3D four-node element.
+       * - ``HEXAHEDRON``
+         - ``4``
+         - 3D six-node element.
+       * - ``PYRAMID``
+         - ``5``
+         - 3D five-node element.
+       * - ``PRISM``
+         - ``6``
+         - 3D eight-node element.
+    """
+
+    BAR = 0
+    TRIANGLE = 1
+    QUADRILATERAL = 2
+    TETRAHEDRON = 3
+    HEXAHEDRON = 4
+    PYRAMID = 5
+    PRISM = 6
+
+
+class FaceNeighborMode(Enum):
+    """Boundary face-sharing mode between zones.
+
+    .. list-table::
+       :header-rows: 1
+       :widths: 35 10 55
+
+       * - Attribute
+         - Value
+         - Description
+       * - ``LOCAL_ONE_TO_ONE``
+         - ``0``
+         - Each face has at most one local neighbor.
+       * - ``LOCAL_ONE_TO_MANY``
+         - ``1``
+         - Each face may have multiple local neighbors (hanging nodes).
+       * - ``GLOBAL_ONE_TO_ONE``
+         - ``2``
+         - Each face has at most one neighbor in any zone.
+       * - ``GLOBAL_ONE_TO_MANY``
+         - ``3``
+         - Each face may have multiple neighbors in any zone (hanging nodes).
+    """
+
+    LOCAL_ONE_TO_ONE = 0
+    LOCAL_ONE_TO_MANY = 1
+    GLOBAL_ONE_TO_ONE = 2
+    GLOBAL_ONE_TO_MANY = 3
+
+
+class ValueLocation(Enum):
+    """Data value location within a cell.
+
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
+
+       * - Attribute
+         - Value
+         - Description
+       * - ``CELL_CENTERED``
+         - ``0``
+         - Values stored at cell centres.
+       * - ``NODAL``
+         - ``1``
+         - Values stored at grid nodes.
+    """
+
+    CELL_CENTERED = 0
+    NODAL = 1
+
+
+class DataPacking(Enum):
+    """Zone data packing order for ASCII (``.dat``) files.
+
+    Controls whether data is laid out variable-by-variable or point-by-point
+    in the ASCII file. The ``DATAPACKING`` keyword in a zone header takes one
+    of these two values.
+
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
+
+       * - Attribute
+         - Value
+         - Description
+       * - ``POINT``
+         - ``0``
+         - One row per node/cell containing all variable values.
+       * - ``BLOCK``
+         - ``1``
+         - One contiguous block per variable containing all node/cell values.
+           Tecplot default; faster for variable-at-a-time access patterns.
+    """
+
+    POINT = 0
+    BLOCK = 1
+
+
+class DataType(Enum):
+    """On-disk storage type for variable data.
+
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
+
+       * - Attribute
+         - Value
+         - Description
+       * - ``FLOAT``
+         - ``1``
+         - 32-bit IEEE floating point.
+       * - ``DOUBLE``
+         - ``2``
+         - 64-bit IEEE floating point.
+       * - ``INT32``
+         - ``3``
+         - 32-bit signed integer.
+       * - ``INT16``
+         - ``4``
+         - 16-bit signed integer.
+       * - ``BYTE``
+         - ``5``
+         - 8-bit unsigned integer.
+    """
+
+    FLOAT = 1
+    DOUBLE = 2
+    INT32 = 3
+    INT16 = 4
+    BYTE = 5
+
+
+class VarStatus(Enum):
+    """Variable active/passive flag.
+
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
+
+       * - Attribute
+         - Value
+         - Description
+       * - ``ACTIVE``
+         - ``0``
+         - Variable has data in this zone.
+       * - ``PASSIVE``
+         - ``1``
+         - Variable has no data in this zone.
+    """
+
+    ACTIVE = 0
+    PASSIVE = 1
+
+
+class Boolean(Enum):
+    """Boolean flag for C function arguments.
+
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
+
+       * - Attribute
+         - Value
+         - Description
+       * - ``FALSE``
+         - ``0``
+         - Logical false.
+       * - ``TRUE``
+         - ``1``
+         - Logical true.
+    """
+
+    FALSE = 0
+    TRUE = 1
+
+
+class Debug(Enum):
+    """Debug flag for C function arguments.
+
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 10 65
+
+       * - Attribute
+         - Value
+         - Description
+       * - ``FALSE``
+         - ``0``
+         - Debug output disabled.
+       * - ``TRUE``
+         - ``1``
+         - Debug output enabled.
+    """
+
+    FALSE = 0
+    TRUE = 1
 
 
 # ======================================================================================
-# Local helpers
+# Helper functions
+# - Used to convert Numpy array-like input to C-compatible pointers for passing to the C
+#   API
+# - Used to convert special integer values (enums, ints, or sequences) to int values for
+#   passing to the C API, with optional validation against an Enum class
 # ======================================================================================
 
 
@@ -272,846 +438,611 @@ def _decode(value: bytes | None) -> str:
 # --------------------------------------------------------------------------------------
 
 # Reading SZL files
-bind_ctypes(
-    name="tecFileReaderOpen",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_char_p,
-        ctypes.POINTER(ctypes.c_void_p),
-    ],
-)
-bind_ctypes(
-    name="tecFileReaderClose",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_void_p),
-    ],
-)
-bind_ctypes(
-    name="tecFileGetType",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecDataSetGetTitle",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_char_p),
-    ],
-)
-bind_ctypes(
-    name="tecDataSetGetNumVars",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecDataSetGetNumZones",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecDataSetAuxDataGetNumItems",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
+lib.tecFileReaderOpen.restype = ctypes.c_int32
+lib.tecFileReaderOpen.argtypes = [
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_void_p),
+]
+lib.tecFileReaderClose.restype = ctypes.c_int32
+lib.tecFileReaderClose.argtypes = [
+    ctypes.POINTER(ctypes.c_void_p),
+]
+lib.tecFileGetType.restype = ctypes.c_int32
+lib.tecFileGetType.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecDataSetGetTitle.restype = ctypes.c_int32
+lib.tecDataSetGetTitle.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_char_p),
+]
+lib.tecDataSetGetNumVars.restype = ctypes.c_int32
+lib.tecDataSetGetNumVars.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecDataSetGetNumZones.restype = ctypes.c_int32
+lib.tecDataSetGetNumZones.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecDataSetAuxDataGetNumItems.restype = ctypes.c_int32
+lib.tecDataSetAuxDataGetNumItems.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_int32),
+]
 
 # Reading SZL zones
-bind_ctypes(
-    name="tecZoneGetIJK",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_int64),
-        ctypes.POINTER(ctypes.c_int64),
-        ctypes.POINTER(ctypes.c_int64),
-    ],
-)
-bind_ctypes(
-    name="tecZoneGetTitle",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_char_p),
-    ],
-)
-bind_ctypes(
-    name="tecZoneGetType",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecZoneIsEnabled",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecZoneGetSolutionTime",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_double),
-    ],
-)
-bind_ctypes(
-    name="tecZoneGetStrandID",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecZoneNodeMapIs64Bit",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecZoneNodeMapGet64",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.c_int64,
-        ctypes.c_int64,
-        ctypes.POINTER(ctypes.c_int64),
-    ],
-)
-bind_ctypes(
-    name="tecZoneNodeMapGet",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.c_int64,
-        ctypes.c_int64,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
+lib.tecZoneGetIJK.restype = ctypes.c_int32
+lib.tecZoneGetIJK.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int64),
+    ctypes.POINTER(ctypes.c_int64),
+    ctypes.POINTER(ctypes.c_int64),
+]
+lib.tecZoneGetTitle.restype = ctypes.c_int32
+lib.tecZoneGetTitle.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_char_p),
+]
+lib.tecZoneGetType.restype = ctypes.c_int32
+lib.tecZoneGetType.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecZoneIsEnabled.restype = ctypes.c_int32
+lib.tecZoneIsEnabled.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecZoneGetSolutionTime.restype = ctypes.c_int32
+lib.tecZoneGetSolutionTime.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_double),
+]
+lib.tecZoneGetStrandID.restype = ctypes.c_int32
+lib.tecZoneGetStrandID.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecZoneNodeMapIs64Bit.restype = ctypes.c_int32
+lib.tecZoneNodeMapIs64Bit.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecZoneNodeMapGet64.restype = ctypes.c_int32
+lib.tecZoneNodeMapGet64.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.c_int64,
+    ctypes.c_int64,
+    ctypes.POINTER(ctypes.c_int64),
+]
+lib.tecZoneNodeMapGet.restype = ctypes.c_int32
+lib.tecZoneNodeMapGet.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.c_int64,
+    ctypes.c_int64,
+    ctypes.POINTER(ctypes.c_int32),
+]
 
 # Reading SZL variable data
-bind_ctypes(
-    name="tecVarGetName",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_char_p),
-    ],
-)
-bind_ctypes(
-    name="tecVarIsEnabled",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecZoneVarGetType",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecZoneVarGetValueLocation",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecZoneVarIsPassive",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecZoneVarGetSharedZone",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecZoneConnectivityGetSharedZone",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecZoneVarGetNumValues",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecZoneVarGetFloatValues",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # File Handle
-        ctypes.c_int32,  # Zone index
-        ctypes.c_int32,  # Variable index
-        ctypes.c_int64,  # Start index
-        ctypes.c_int64,  # Number of values
-        ctypes.POINTER(ctypes.c_float),  # Values
-    ],
-)
-bind_ctypes(
-    name="tecZoneVarGetDoubleValues",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # File Handle
-        ctypes.c_int32,  # Zone index
-        ctypes.c_int32,  # Variable index
-        ctypes.c_int64,  # Start index
-        ctypes.c_int64,  # Number of values
-        ctypes.POINTER(ctypes.c_double),  # Values
-    ],
-)
-bind_ctypes(
-    name="tecZoneVarGetInt32Values",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # File Handle
-        ctypes.c_int32,  # Zone index
-        ctypes.c_int32,  # Variable index
-        ctypes.c_int64,  # Start index
-        ctypes.c_int64,  # Number of values
-        ctypes.POINTER(ctypes.c_int32),  # Values
-    ],
-)
-bind_ctypes(
-    name="tecZoneVarGetInt16Values",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # File Handle
-        ctypes.c_int32,  # Zone index
-        ctypes.c_int32,  # Variable index
-        ctypes.c_int64,  # Start index
-        ctypes.c_int64,  # Number of values
-        ctypes.POINTER(ctypes.c_int16),  # Values
-    ],
-)
-bind_ctypes(
-    name="tecZoneVarGetUInt8Values",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # File Handle
-        ctypes.c_int32,  # Zone index
-        ctypes.c_int32,  # Variable index
-        ctypes.c_int64,  # Start index
-        ctypes.c_int64,  # Number of values
-        ctypes.POINTER(ctypes.c_uint8),  # Values
-    ],
-)
+lib.tecVarGetName.restype = ctypes.c_int32
+lib.tecVarGetName.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_char_p),
+]
+lib.tecVarIsEnabled.restype = ctypes.c_int32
+lib.tecVarIsEnabled.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecZoneVarGetType.restype = ctypes.c_int32
+lib.tecZoneVarGetType.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecZoneVarGetValueLocation.restype = ctypes.c_int32
+lib.tecZoneVarGetValueLocation.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecZoneVarIsPassive.restype = ctypes.c_int32
+lib.tecZoneVarIsPassive.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecZoneVarGetSharedZone.restype = ctypes.c_int32
+lib.tecZoneVarGetSharedZone.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecZoneConnectivityGetSharedZone.restype = ctypes.c_int32
+lib.tecZoneConnectivityGetSharedZone.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecZoneVarGetNumValues.restype = ctypes.c_int32
+lib.tecZoneVarGetNumValues.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecZoneVarGetFloatValues.restype = ctypes.c_int32
+lib.tecZoneVarGetFloatValues.argtypes = [
+    ctypes.c_void_p,  # File Handle
+    ctypes.c_int32,  # Zone index
+    ctypes.c_int32,  # Variable index
+    ctypes.c_int64,  # Start index
+    ctypes.c_int64,  # Number of values
+    ctypes.POINTER(ctypes.c_float),  # Values
+]
+lib.tecZoneVarGetDoubleValues.restype = ctypes.c_int32
+lib.tecZoneVarGetDoubleValues.argtypes = [
+    ctypes.c_void_p,  # File Handle
+    ctypes.c_int32,  # Zone index
+    ctypes.c_int32,  # Variable index
+    ctypes.c_int64,  # Start index
+    ctypes.c_int64,  # Number of values
+    ctypes.POINTER(ctypes.c_double),  # Values
+]
+lib.tecZoneVarGetInt32Values.restype = ctypes.c_int32
+lib.tecZoneVarGetInt32Values.argtypes = [
+    ctypes.c_void_p,  # File Handle
+    ctypes.c_int32,  # Zone index
+    ctypes.c_int32,  # Variable index
+    ctypes.c_int64,  # Start index
+    ctypes.c_int64,  # Number of values
+    ctypes.POINTER(ctypes.c_int32),  # Values
+]
+lib.tecZoneVarGetInt16Values.restype = ctypes.c_int32
+lib.tecZoneVarGetInt16Values.argtypes = [
+    ctypes.c_void_p,  # File Handle
+    ctypes.c_int32,  # Zone index
+    ctypes.c_int32,  # Variable index
+    ctypes.c_int64,  # Start index
+    ctypes.c_int64,  # Number of values
+    ctypes.POINTER(ctypes.c_int16),  # Values
+]
+lib.tecZoneVarGetUInt8Values.restype = ctypes.c_int32
+lib.tecZoneVarGetUInt8Values.argtypes = [
+    ctypes.c_void_p,  # File Handle
+    ctypes.c_int32,  # Zone index
+    ctypes.c_int32,  # Variable index
+    ctypes.c_int64,  # Start index
+    ctypes.c_int64,  # Number of values
+    ctypes.POINTER(ctypes.c_uint8),  # Values
+]
 
 # Reading SZL aux data
-bind_ctypes(
-    name="tecDataSetAuxDataGetNumItems",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecDataSetAuxDataGetItem",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_char_p),
-        ctypes.POINTER(ctypes.c_char_p),
-    ],
-)
-bind_ctypes(
-    name="tecVarAuxDataGetNumItems",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecVarAuxDataGetItem",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_char_p),
-        ctypes.POINTER(ctypes.c_char_p),
-    ],
-)
-bind_ctypes(
-    name="tecZoneAuxDataGetNumItems",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_int32),
-    ],
-)
-bind_ctypes(
-    name="tecZoneAuxDataGetItem",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,
-        ctypes.c_int32,
-        ctypes.c_int32,
-        ctypes.POINTER(ctypes.c_char_p),
-        ctypes.POINTER(ctypes.c_char_p),
-    ],
-)
+lib.tecDataSetAuxDataGetNumItems.restype = ctypes.c_int32
+lib.tecDataSetAuxDataGetNumItems.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecDataSetAuxDataGetItem.restype = ctypes.c_int32
+lib.tecDataSetAuxDataGetItem.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_char_p),
+    ctypes.POINTER(ctypes.c_char_p),
+]
+lib.tecVarAuxDataGetNumItems.restype = ctypes.c_int32
+lib.tecVarAuxDataGetNumItems.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecVarAuxDataGetItem.restype = ctypes.c_int32
+lib.tecVarAuxDataGetItem.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_char_p),
+    ctypes.POINTER(ctypes.c_char_p),
+]
+lib.tecZoneAuxDataGetNumItems.restype = ctypes.c_int32
+lib.tecZoneAuxDataGetNumItems.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_int32),
+]
+lib.tecZoneAuxDataGetItem.restype = ctypes.c_int32
+lib.tecZoneAuxDataGetItem.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_int32,
+    ctypes.c_int32,
+    ctypes.POINTER(ctypes.c_char_p),
+    ctypes.POINTER(ctypes.c_char_p),
+]
 
 # Output file initialization and file handling
-bind_ctypes(
-    name="tecFileWriterOpen",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_char_p,  # fileName
-        ctypes.c_char_p,  # dataSetTitle
-        ctypes.c_char_p,  # varNames (comma separated)
-        ctypes.c_int32,  # useSZL (1)
-        ctypes.c_int32,  # fileType
-        ctypes.c_int32,  # reserved / options
-        ctypes.c_void_p,  # gridFileHandle (optional)
-        ctypes.POINTER(ctypes.c_void_p),  # out fileHandle
-    ],
-)
-bind_ctypes(
-    name="tecFileWriterClose",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_void_p),
-    ],
-)
-bind_ctypes(
-    name="tecFileWriterFlush",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # fileHandle
-        ctypes.c_int32,  # numZonesToRetain
-        ctypes.POINTER(ctypes.c_int32),  # zonesToRetain
-    ],
-)
+lib.tecFileWriterOpen.restype = ctypes.c_int32
+lib.tecFileWriterOpen.argtypes = [
+    ctypes.c_char_p,  # fileName
+    ctypes.c_char_p,  # dataSetTitle
+    ctypes.c_char_p,  # varNames (comma separated)
+    ctypes.c_int32,  # useSZL (1)
+    ctypes.c_int32,  # fileType
+    ctypes.c_int32,  # reserved / options
+    ctypes.c_void_p,  # gridFileHandle (optional)
+    ctypes.POINTER(ctypes.c_void_p),  # out fileHandle
+]
+lib.tecFileWriterClose.restype = ctypes.c_int32
+lib.tecFileWriterClose.argtypes = [
+    ctypes.POINTER(ctypes.c_void_p),
+]
+lib.tecFileWriterFlush.restype = ctypes.c_int32
+lib.tecFileWriterFlush.argtypes = [
+    ctypes.c_void_p,  # fileHandle
+    ctypes.c_int32,  # numZonesToRetain
+    ctypes.POINTER(ctypes.c_int32),  # zonesToRetain
+]
 
 # Write Zone Headers
-bind_ctypes(
-    name="tecZoneCreateIJK",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # file_handle
-        ctypes.c_char_p,  # zoneTitle
-        ctypes.c_int64,  # I
-        ctypes.c_int64,  # J
-        ctypes.c_int64,  # K
-        ctypes.POINTER(ctypes.c_int32),  # varTypes
-        ctypes.POINTER(ctypes.c_int32),  # shareVarFromZone
-        ctypes.POINTER(ctypes.c_int32),  # valueLocations
-        ctypes.POINTER(ctypes.c_int32),  # passiveVarList
-        ctypes.c_int32,  # shareFaceNeighborsFromZone
-        ctypes.c_int64,  # numFaceConnections
-        ctypes.c_int32,  # faceNeighborMode
-        ctypes.POINTER(ctypes.c_int32),  # out zone
-    ],
-)
-bind_ctypes(
-    name="tecZoneCreateFE",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # file_handle
-        ctypes.c_char_p,  # zoneTitle
-        ctypes.c_int32,  # ZoneType
-        ctypes.c_int64,  # numNodes
-        ctypes.c_int64,  # numCells
-        ctypes.POINTER(ctypes.c_int32),  # varTypes
-        ctypes.POINTER(ctypes.c_int32),  # shareVarFromZone
-        ctypes.POINTER(ctypes.c_int32),  # valueLocations
-        ctypes.POINTER(ctypes.c_int32),  # passiveVarList
-        ctypes.c_int32,  # shareFaceNeighborsFromZone
-        ctypes.c_int64,  # numFaceConnections
-        ctypes.c_int32,  # faceNeighborMode
-        ctypes.POINTER(ctypes.c_int32),  # out zone
-    ],
-)
+lib.tecZoneCreateIJK.restype = ctypes.c_int32
+lib.tecZoneCreateIJK.argtypes = [
+    ctypes.c_void_p,  # file_handle
+    ctypes.c_char_p,  # zoneTitle
+    ctypes.c_int64,  # I
+    ctypes.c_int64,  # J
+    ctypes.c_int64,  # K
+    ctypes.POINTER(ctypes.c_int32),  # varTypes
+    ctypes.POINTER(ctypes.c_int32),  # shareVarFromZone
+    ctypes.POINTER(ctypes.c_int32),  # valueLocations
+    ctypes.POINTER(ctypes.c_int32),  # passiveVarList
+    ctypes.c_int32,  # shareFaceNeighborsFromZone
+    ctypes.c_int64,  # numFaceConnections
+    ctypes.c_int32,  # faceNeighborMode
+    ctypes.POINTER(ctypes.c_int32),  # out zone
+]
+lib.tecZoneCreateFE.restype = ctypes.c_int32
+lib.tecZoneCreateFE.argtypes = [
+    ctypes.c_void_p,  # file_handle
+    ctypes.c_char_p,  # zoneTitle
+    ctypes.c_int32,  # ZoneType
+    ctypes.c_int64,  # numNodes
+    ctypes.c_int64,  # numCells
+    ctypes.POINTER(ctypes.c_int32),  # varTypes
+    ctypes.POINTER(ctypes.c_int32),  # shareVarFromZone
+    ctypes.POINTER(ctypes.c_int32),  # valueLocations
+    ctypes.POINTER(ctypes.c_int32),  # passiveVarList
+    ctypes.c_int32,  # shareFaceNeighborsFromZone
+    ctypes.c_int64,  # numFaceConnections
+    ctypes.c_int32,  # faceNeighborMode
+    ctypes.POINTER(ctypes.c_int32),  # out zone
+]
 
 # Optional fields
-bind_ctypes(
-    name="tecZoneSetUnsteadyOptions",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # file_handle
-        ctypes.c_int32,  # zone
-        ctypes.c_double,  # solutionTime
-        ctypes.c_int32,  # strand
-    ],
-)
-bind_ctypes(
-    name="tecDataSetAddAuxData",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # fileHandle
-        ctypes.c_char_p,  # name
-        ctypes.c_char_p,  # value
-    ],
-)
-bind_ctypes(
-    name="tecVarAddAuxData",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # fileHandle
-        ctypes.c_int32,  # varIndex (1-based)
-        ctypes.c_char_p,  # name
-        ctypes.c_char_p,  # value
-    ],
-)
-bind_ctypes(
-    name="tecZoneAddAuxData",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # fileHandle
-        ctypes.c_int32,  # zoneIndex (1-based)
-        ctypes.c_char_p,  # name
-        ctypes.c_char_p,  # value
-    ],
-)
+lib.tecZoneSetUnsteadyOptions.restype = ctypes.c_int32
+lib.tecZoneSetUnsteadyOptions.argtypes = [
+    ctypes.c_void_p,  # file_handle
+    ctypes.c_int32,  # zone
+    ctypes.c_double,  # solutionTime
+    ctypes.c_int32,  # strand
+]
+lib.tecDataSetAddAuxData.restype = ctypes.c_int32
+lib.tecDataSetAddAuxData.argtypes = [
+    ctypes.c_void_p,  # fileHandle
+    ctypes.c_char_p,  # name
+    ctypes.c_char_p,  # value
+]
+lib.tecVarAddAuxData.restype = ctypes.c_int32
+lib.tecVarAddAuxData.argtypes = [
+    ctypes.c_void_p,  # fileHandle
+    ctypes.c_int32,  # varIndex (1-based)
+    ctypes.c_char_p,  # name
+    ctypes.c_char_p,  # value
+]
+lib.tecZoneAddAuxData.restype = ctypes.c_int32
+lib.tecZoneAddAuxData.argtypes = [
+    ctypes.c_void_p,  # fileHandle
+    ctypes.c_int32,  # zoneIndex (1-based)
+    ctypes.c_char_p,  # name
+    ctypes.c_char_p,  # value
+]
 
 # Write variable value functions
-bind_ctypes(
-    name="tecZoneVarWriteDoubleValues",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # file handle
-        ctypes.c_int32,  # zone index
-        ctypes.c_int32,  # variable index
-        ctypes.c_int32,  # partition index (0 for non-partitioned zones)
-        ctypes.c_int64,  # number of values to write
-        ctypes.POINTER(ctypes.c_double),  # pointer to values array
-    ],
-)
-bind_ctypes(
-    name="tecZoneVarWriteFloatValues",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # file handle
-        ctypes.c_int32,  # zone index
-        ctypes.c_int32,  # variable index
-        ctypes.c_int32,  # partition index (0 for non-partitioned zones)
-        ctypes.c_int64,  # number of values to write
-        ctypes.POINTER(ctypes.c_float),  # pointer to values array
-    ],
-)
-bind_ctypes(
-    name="tecZoneVarWriteInt32Values",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # file handle
-        ctypes.c_int32,  # zone index
-        ctypes.c_int32,  # variable index
-        ctypes.c_int32,  # partition index (0 for non-partitioned zones)
-        ctypes.c_int64,  # number of values to write
-        ctypes.POINTER(ctypes.c_int32),  # pointer to values array
-    ],
-)
-bind_ctypes(
-    name="tecZoneVarWriteInt16Values",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # file handle
-        ctypes.c_int32,  # zone index
-        ctypes.c_int32,  # variable index
-        ctypes.c_int32,  # partition index (0 for non-partitioned zones)
-        ctypes.c_int64,  # number of values to write
-        ctypes.POINTER(ctypes.c_int16),  # pointer to values array
-    ],
-)
-bind_ctypes(
-    name="tecZoneVarWriteUInt8Values",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # file handle
-        ctypes.c_int32,  # zone index
-        ctypes.c_int32,  # variable index
-        ctypes.c_int32,  # partition index (0 for non-partitioned zones)
-        ctypes.c_int64,  # number of values to write
-        ctypes.POINTER(ctypes.c_uint8),  # pointer to values array
-    ],
-)
+lib.tecZoneVarWriteDoubleValues.restype = ctypes.c_int32
+lib.tecZoneVarWriteDoubleValues.argtypes = [
+    ctypes.c_void_p,  # file handle
+    ctypes.c_int32,  # zone index
+    ctypes.c_int32,  # variable index
+    ctypes.c_int32,  # partition index (0 for non-partitioned zones)
+    ctypes.c_int64,  # number of values to write
+    ctypes.POINTER(ctypes.c_double),  # pointer to values array
+]
+lib.tecZoneVarWriteFloatValues.restype = ctypes.c_int32
+lib.tecZoneVarWriteFloatValues.argtypes = [
+    ctypes.c_void_p,  # file handle
+    ctypes.c_int32,  # zone index
+    ctypes.c_int32,  # variable index
+    ctypes.c_int32,  # partition index (0 for non-partitioned zones)
+    ctypes.c_int64,  # number of values to write
+    ctypes.POINTER(ctypes.c_float),  # pointer to values array
+]
+lib.tecZoneVarWriteInt32Values.restype = ctypes.c_int32
+lib.tecZoneVarWriteInt32Values.argtypes = [
+    ctypes.c_void_p,  # file handle
+    ctypes.c_int32,  # zone index
+    ctypes.c_int32,  # variable index
+    ctypes.c_int32,  # partition index (0 for non-partitioned zones)
+    ctypes.c_int64,  # number of values to write
+    ctypes.POINTER(ctypes.c_int32),  # pointer to values array
+]
+lib.tecZoneVarWriteInt16Values.restype = ctypes.c_int32
+lib.tecZoneVarWriteInt16Values.argtypes = [
+    ctypes.c_void_p,  # file handle
+    ctypes.c_int32,  # zone index
+    ctypes.c_int32,  # variable index
+    ctypes.c_int32,  # partition index (0 for non-partitioned zones)
+    ctypes.c_int64,  # number of values to write
+    ctypes.POINTER(ctypes.c_int16),  # pointer to values array
+]
+lib.tecZoneVarWriteUInt8Values.restype = ctypes.c_int32
+lib.tecZoneVarWriteUInt8Values.argtypes = [
+    ctypes.c_void_p,  # file handle
+    ctypes.c_int32,  # zone index
+    ctypes.c_int32,  # variable index
+    ctypes.c_int32,  # partition index (0 for non-partitioned zones)
+    ctypes.c_int64,  # number of values to write
+    ctypes.POINTER(ctypes.c_uint8),  # pointer to values array
+]
+lib.tecZoneVarWriteUInt8Values.argtypes = [
+    ctypes.c_void_p,  # file handle
+    ctypes.c_int32,  # zone index
+    ctypes.c_int32,  # variable index
+    ctypes.c_int32,  # partition index (0 for non-partitioned zones)
+    ctypes.c_int64,  # number of values to write
+    ctypes.POINTER(ctypes.c_uint8),  # pointer to values array
+]
 
 # Write Zone Connectivity (FE zones only)
-bind_ctypes(
-    name="tecZoneNodeMapWrite32",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # fileHandle
-        ctypes.c_int32,  # zone index(1-based)
-        ctypes.c_int32,  # partition index (MPI)
-        ctypes.c_int32,  # isOneBased (Boolean)
-        ctypes.c_int64,  # nodeCount
-        ctypes.POINTER(ctypes.c_int32),  # array of nodes
-    ],
-)
-bind_ctypes(
-    name="tecZoneNodeMapWrite64",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # fileHandle
-        ctypes.c_int32,  # zone index(1-based)
-        ctypes.c_int32,  # partition index (MPI)
-        ctypes.c_int32,  # isOneBased (Boolean)
-        ctypes.c_int64,  # nodeCount
-        ctypes.POINTER(ctypes.c_int64),  # array of nodes
-    ],
-)
-bind_ctypes(
-    name="tecZoneFaceNbrWriteConnections32",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # fileHandle
-        ctypes.c_int32,  # zone (1-based)
-        ctypes.POINTER(ctypes.c_int32),  # faceNeighbors
-    ],
-)
-bind_ctypes(
-    name="tecZoneFaceNbrWriteConnections64",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_void_p,  # fileHandle
-        ctypes.c_int32,  # zone (1-based)
-        ctypes.POINTER(ctypes.c_int64),  # faceNeighbors
-    ],
-)
+lib.tecZoneNodeMapWrite32.restype = ctypes.c_int32
+lib.tecZoneNodeMapWrite32.argtypes = [
+    ctypes.c_void_p,  # fileHandle
+    ctypes.c_int32,  # zone index(1-based)
+    ctypes.c_int32,  # partition index (MPI)
+    ctypes.c_int32,  # isOneBased (Boolean)
+    ctypes.c_int64,  # nodeCount
+    ctypes.POINTER(ctypes.c_int32),  # array of nodes
+]
+lib.tecZoneNodeMapWrite64.restype = ctypes.c_int32
+lib.tecZoneNodeMapWrite64.argtypes = [
+    ctypes.c_void_p,  # fileHandle
+    ctypes.c_int32,  # zone index(1-based)
+    ctypes.c_int32,  # partition index (MPI)
+    ctypes.c_int32,  # isOneBased (Boolean)
+    ctypes.c_int64,  # nodeCount
+    ctypes.POINTER(ctypes.c_int64),  # array of nodes
+]
+lib.tecZoneFaceNbrWriteConnections32.restype = ctypes.c_int32
+lib.tecZoneFaceNbrWriteConnections32.argtypes = [
+    ctypes.c_void_p,  # fileHandle
+    ctypes.c_int32,  # zone (1-based)
+    ctypes.POINTER(ctypes.c_int32),  # faceNeighbors
+]
+lib.tecZoneFaceNbrWriteConnections64.restype = ctypes.c_int32
+lib.tecZoneFaceNbrWriteConnections64.argtypes = [
+    ctypes.c_void_p,  # fileHandle
+    ctypes.c_int32,  # zone (1-based)
+    ctypes.POINTER(ctypes.c_int64),  # faceNeighbors
+]
 
 # --------------------------------------------------------------------------------------
 # Classic API bindings
 # --------------------------------------------------------------------------------------
 
 # File initialization and finalization
-bind_ctypes(
-    name="tecini142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_char_p,  # Title
-        ctypes.c_char_p,  # Variables
-        ctypes.c_char_p,  # FName
-        ctypes.c_char_p,  # ScratchDir
-        ctypes.POINTER(ctypes.c_int32),  # FileFormat (0=PLT, 1=SZPLT)
-        ctypes.POINTER(ctypes.c_int32),  # FileType (0=FULL, 1=GRID, 2=SOLUTION)
-        ctypes.POINTER(ctypes.c_int32),  # Debug
-        ctypes.POINTER(ctypes.c_int32),  # VIsDouble
-    ],
-)
-bind_ctypes(
-    name="tecend142",
-    restype=ctypes.c_int32,
-    argtypes=[],
-)
-bind_ctypes(
-    name="tecflush142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_int32),  # NumZonesToRetain
-        ctypes.POINTER(ctypes.c_int32),  # ZonesToRetain
-    ],
-)
-bind_ctypes(
-    name="tecfil142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_int32),  # OutputFileHandle
-    ],
-)
-bind_ctypes(
-    name="tecforeign142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_int32),  # OutputForeignByteOrder
-    ],
-)
+lib.tecini142.restype = ctypes.c_int32
+lib.tecini142.argtypes = [
+    ctypes.c_char_p,  # Title
+    ctypes.c_char_p,  # Variables
+    ctypes.c_char_p,  # FName
+    ctypes.c_char_p,  # ScratchDir
+    ctypes.POINTER(ctypes.c_int32),  # FileFormat (0=PLT, 1=SZPLT)
+    ctypes.POINTER(ctypes.c_int32),  # FileType (0=FULL, 1=GRID, 2=SOLUTION)
+    ctypes.POINTER(ctypes.c_int32),  # Debug
+    ctypes.POINTER(ctypes.c_int32),  # VIsDouble
+]
+lib.tecend142.restype = ctypes.c_int32
+lib.tecend142.argtypes = []
+lib.tecflush142.restype = ctypes.c_int32
+lib.tecflush142.argtypes = [
+    ctypes.POINTER(ctypes.c_int32),  # NumZonesToRetain
+    ctypes.POINTER(ctypes.c_int32),  # ZonesToRetain
+]
+lib.tecfil142.restype = ctypes.c_int32
+lib.tecfil142.argtypes = [
+    ctypes.POINTER(ctypes.c_int32),  # OutputFileHandle
+]
+lib.tecforeign142.restype = ctypes.c_int32
+lib.tecforeign142.argtypes = [
+    ctypes.POINTER(ctypes.c_int32),  # OutputForeignByteOrder
+]
 
 # Zone creation
-bind_ctypes(
-    name="teczne142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_char_p,  # ZoneTitle
-        ctypes.POINTER(ctypes.c_int32),  # ZoneType
-        ctypes.POINTER(ctypes.c_int32),  # IMx (or NumNodes for FE)
-        ctypes.POINTER(ctypes.c_int32),  # JMx (or NumElements for FE)
-        ctypes.POINTER(ctypes.c_int32),  # KMx
-        ctypes.POINTER(ctypes.c_int32),  # ICellMax
-        ctypes.POINTER(ctypes.c_int32),  # JCellMax
-        ctypes.POINTER(ctypes.c_int32),  # KCellMax
-        ctypes.POINTER(ctypes.c_double),  # SolutionTime
-        ctypes.POINTER(ctypes.c_int32),  # StrandID
-        ctypes.POINTER(ctypes.c_int32),  # ParentZone
-        ctypes.POINTER(ctypes.c_int32),  # IsBlock (1=Block, 0=Point)
-        ctypes.POINTER(ctypes.c_int32),  # NumFaceConnections
-        ctypes.POINTER(ctypes.c_int32),  # FaceNeighborMode
-        ctypes.POINTER(ctypes.c_int32),  # TotalNumFaceNodes (for poly zones)
-        ctypes.POINTER(ctypes.c_int32),  # NumConnectedBoundaryFaces (for poly)
-        ctypes.POINTER(ctypes.c_int32),  # TotalNumBoundaryConnections (for poly)
-        ctypes.POINTER(ctypes.c_int32),  # PassiveVarList
-        ctypes.POINTER(ctypes.c_int32),  # ValueLocation
-        ctypes.POINTER(ctypes.c_int32),  # ShareVarFromZone
-        ctypes.POINTER(ctypes.c_int32),  # ShareConnectivityFromZone
-    ],
-)
-bind_ctypes(
-    name="tecpolyzne142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_char_p,  # ZoneTitle
-        ctypes.POINTER(ctypes.c_int32),  # ZoneType (FEPOLYGON or FEPOLYHEDRON)
-        ctypes.POINTER(ctypes.c_int32),  # NumNodes
-        ctypes.POINTER(ctypes.c_int32),  # NumElements
-        ctypes.POINTER(ctypes.c_int32),  # NumFaces
-        ctypes.POINTER(ctypes.c_int32),  # TotalNumFaceNodes
-        ctypes.POINTER(ctypes.c_double),  # SolutionTime
-        ctypes.POINTER(ctypes.c_int32),  # StrandID
-        ctypes.POINTER(ctypes.c_int32),  # ParentZone
-        ctypes.POINTER(ctypes.c_int32),  # NumConnectedBoundaryFaces
-        ctypes.POINTER(ctypes.c_int32),  # TotalNumBoundaryConnections
-        ctypes.POINTER(ctypes.c_int32),  # PassiveVarList
-        ctypes.POINTER(ctypes.c_int32),  # ValueLocation
-        ctypes.POINTER(ctypes.c_int32),  # ShareVarFromZone
-        ctypes.POINTER(ctypes.c_int32),  # ShareConnectivityFromZone
-    ],
-)
-bind_ctypes(
-    name="tecznefemixed142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_char_p,  # ZoneTitle
-        ctypes.POINTER(ctypes.c_int32),  # NumNodes
-        ctypes.POINTER(ctypes.c_int32),  # NumElements
-        ctypes.POINTER(ctypes.c_int32),  # NumNodesPerElement
-        ctypes.POINTER(ctypes.c_double),  # SolutionTime
-        ctypes.POINTER(ctypes.c_int32),  # StrandID
-        ctypes.POINTER(ctypes.c_int32),  # ParentZone
-        ctypes.POINTER(ctypes.c_int32),  # IsBlock
-        ctypes.POINTER(ctypes.c_int32),  # NumFaceConnections
-        ctypes.POINTER(ctypes.c_int32),  # FaceNeighborMode
-        ctypes.POINTER(ctypes.c_int32),  # PassiveVarList
-        ctypes.POINTER(ctypes.c_int32),  # ValueLocation
-        ctypes.POINTER(ctypes.c_int32),  # ShareVarFromZone
-        ctypes.POINTER(ctypes.c_int32),  # ShareConnectivityFromZone
-    ],
-)
+lib.teczne142.restype = ctypes.c_int32
+lib.teczne142.argtypes = [
+    ctypes.c_char_p,  # ZoneTitle
+    ctypes.POINTER(ctypes.c_int32),  # ZoneType
+    ctypes.POINTER(ctypes.c_int32),  # IMx (or NumNodes for FE)
+    ctypes.POINTER(ctypes.c_int32),  # JMx (or NumElements for FE)
+    ctypes.POINTER(ctypes.c_int32),  # KMx
+    ctypes.POINTER(ctypes.c_int32),  # ICellMax
+    ctypes.POINTER(ctypes.c_int32),  # JCellMax
+    ctypes.POINTER(ctypes.c_int32),  # KCellMax
+    ctypes.POINTER(ctypes.c_double),  # SolutionTime
+    ctypes.POINTER(ctypes.c_int32),  # StrandID
+    ctypes.POINTER(ctypes.c_int32),  # ParentZone
+    ctypes.POINTER(ctypes.c_int32),  # IsBlock (1=Block, 0=Point)
+    ctypes.POINTER(ctypes.c_int32),  # NumFaceConnections
+    ctypes.POINTER(ctypes.c_int32),  # FaceNeighborMode
+    ctypes.POINTER(ctypes.c_int32),  # TotalNumFaceNodes (for poly zones)
+    ctypes.POINTER(ctypes.c_int32),  # NumConnectedBoundaryFaces (for poly)
+    ctypes.POINTER(ctypes.c_int32),  # TotalNumBoundaryConnections (for poly)
+    ctypes.POINTER(ctypes.c_int32),  # PassiveVarList
+    ctypes.POINTER(ctypes.c_int32),  # ValueLocation
+    ctypes.POINTER(ctypes.c_int32),  # ShareVarFromZone
+    ctypes.POINTER(ctypes.c_int32),  # ShareConnectivityFromZone
+]
+lib.tecpolyzne142.restype = ctypes.c_int32
+lib.tecpolyzne142.argtypes = [
+    ctypes.c_char_p,  # ZoneTitle
+    ctypes.POINTER(ctypes.c_int32),  # ZoneType (FEPOLYGON or FEPOLYHEDRON)
+    ctypes.POINTER(ctypes.c_int32),  # NumNodes
+    ctypes.POINTER(ctypes.c_int32),  # NumElements
+    ctypes.POINTER(ctypes.c_int32),  # NumFaces
+    ctypes.POINTER(ctypes.c_int32),  # TotalNumFaceNodes
+    ctypes.POINTER(ctypes.c_double),  # SolutionTime
+    ctypes.POINTER(ctypes.c_int32),  # StrandID
+    ctypes.POINTER(ctypes.c_int32),  # ParentZone
+    ctypes.POINTER(ctypes.c_int32),  # NumConnectedBoundaryFaces
+    ctypes.POINTER(ctypes.c_int32),  # TotalNumBoundaryConnections
+    ctypes.POINTER(ctypes.c_int32),  # PassiveVarList
+    ctypes.POINTER(ctypes.c_int32),  # ValueLocation
+    ctypes.POINTER(ctypes.c_int32),  # ShareVarFromZone
+    ctypes.POINTER(ctypes.c_int32),  # ShareConnectivityFromZone
+]
+lib.tecznefemixed142.restype = ctypes.c_int32
+lib.tecznefemixed142.argtypes = [
+    ctypes.c_char_p,  # ZoneTitle
+    ctypes.POINTER(ctypes.c_int32),  # NumNodes
+    ctypes.POINTER(ctypes.c_int32),  # NumElements
+    ctypes.POINTER(ctypes.c_int32),  # NumNodesPerElement
+    ctypes.POINTER(ctypes.c_double),  # SolutionTime
+    ctypes.POINTER(ctypes.c_int32),  # StrandID
+    ctypes.POINTER(ctypes.c_int32),  # ParentZone
+    ctypes.POINTER(ctypes.c_int32),  # IsBlock
+    ctypes.POINTER(ctypes.c_int32),  # NumFaceConnections
+    ctypes.POINTER(ctypes.c_int32),  # FaceNeighborMode
+    ctypes.POINTER(ctypes.c_int32),  # PassiveVarList
+    ctypes.POINTER(ctypes.c_int32),  # ValueLocation
+    ctypes.POINTER(ctypes.c_int32),  # ShareVarFromZone
+    ctypes.POINTER(ctypes.c_int32),  # ShareConnectivityFromZone
+]
 
 # Partitioned zone creation
-bind_ctypes(
-    name="tecijkptn142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_int32),  # PartitionOwnerZone
-        ctypes.POINTER(ctypes.c_int32),  # IMin
-        ctypes.POINTER(ctypes.c_int32),  # JMin
-        ctypes.POINTER(ctypes.c_int32),  # KMin
-        ctypes.POINTER(ctypes.c_int32),  # IMax
-        ctypes.POINTER(ctypes.c_int32),  # JMax
-        ctypes.POINTER(ctypes.c_int32),  # KMax
-    ],
-)
-bind_ctypes(
-    name="tecfeptn142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_int32),  # PartitionOwnerZone
-        ctypes.POINTER(ctypes.c_int32),  # NumNodes
-        ctypes.POINTER(ctypes.c_int32),  # NumElements
-    ],
-)
-bind_ctypes(
-    name="tecfemixedptn142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_int32),  # PartitionOwnerZone
-        ctypes.POINTER(ctypes.c_int32),  # NumNodes
-        ctypes.POINTER(ctypes.c_int32),  # NumElements
-        ctypes.POINTER(ctypes.c_int32),  # NumNodesPerElement
-    ],
-)
+lib.tecijkptn142.restype = ctypes.c_int32
+lib.tecijkptn142.argtypes = [
+    ctypes.POINTER(ctypes.c_int32),  # PartitionOwnerZone
+    ctypes.POINTER(ctypes.c_int32),  # IMin
+    ctypes.POINTER(ctypes.c_int32),  # JMin
+    ctypes.POINTER(ctypes.c_int32),  # KMin
+    ctypes.POINTER(ctypes.c_int32),  # IMax
+    ctypes.POINTER(ctypes.c_int32),  # JMax
+    ctypes.POINTER(ctypes.c_int32),  # KMax
+]
+lib.tecfeptn142.restype = ctypes.c_int32
+lib.tecfeptn142.argtypes = [
+    ctypes.POINTER(ctypes.c_int32),  # PartitionOwnerZone
+    ctypes.POINTER(ctypes.c_int32),  # NumNodes
+    ctypes.POINTER(ctypes.c_int32),  # NumElements
+]
+lib.tecfemixedptn142.restype = ctypes.c_int32
+lib.tecfemixedptn142.argtypes = [
+    ctypes.POINTER(ctypes.c_int32),  # PartitionOwnerZone
+    ctypes.POINTER(ctypes.c_int32),  # NumNodes
+    ctypes.POINTER(ctypes.c_int32),  # NumElements
+    ctypes.POINTER(ctypes.c_int32),  # NumNodesPerElement
+]
 
 # Data writing
-bind_ctypes(
-    name="tecdat142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_int32),  # N (number of values)
-        ctypes.c_void_p,  # FieldData (void pointer for flexibility)
-        ctypes.POINTER(ctypes.c_int32),  # IsDouble (1=double, 0=float)
-    ],
-)
+lib.tecdat142.restype = ctypes.c_int32
+lib.tecdat142.argtypes = [
+    ctypes.POINTER(ctypes.c_int32),  # N (number of values)
+    ctypes.c_void_p,  # FieldData (void pointer for flexibility)
+    ctypes.POINTER(ctypes.c_int32),  # IsDouble (1=double, 0=float)
+]
 
 # Connectivity writing
-bind_ctypes(
-    name="tecnod142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_int32),  # NData (connectivity array)
-    ],
-)
-bind_ctypes(
-    name="tecnode142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_int32),  # N (number of values)
-        ctypes.POINTER(ctypes.c_int32),  # NData (connectivity array)
-    ],
-)
-bind_ctypes(
-    name="tecznemap142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_int32),  # N (number of values)
-        ctypes.POINTER(ctypes.c_int32),  # NodeMap
-    ],
-)
-bind_ctypes(
-    name="tecface142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_int32),  # FaceConnections
-    ],
-)
-bind_ctypes(
-    name="tecpolyface142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_int32),  # NumFaces
-        ctypes.POINTER(ctypes.c_int32),  # FaceNodeCounts
-        ctypes.POINTER(ctypes.c_int32),  # FaceNodes
-        ctypes.POINTER(ctypes.c_int32),  # FaceLeftElems
-        ctypes.POINTER(ctypes.c_int32),  # FaceRightElems
-    ],
-)
-bind_ctypes(
-    name="tecpolybconn142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_int32),  # NumBoundaryFaces
-        ctypes.POINTER(ctypes.c_int32),  # BoundaryConnectionCounts
-        ctypes.POINTER(ctypes.c_int32),  # BoundaryConnectionElems
-        ctypes.POINTER(ctypes.c_int16),  # BoundaryConnectionZones
-    ],
-)
+lib.tecnod142.restype = ctypes.c_int32
+lib.tecnod142.argtypes = [
+    ctypes.POINTER(ctypes.c_int32),  # NData (connectivity array)
+]
+lib.tecnode142.restype = ctypes.c_int32
+lib.tecnode142.argtypes = [
+    ctypes.POINTER(ctypes.c_int32),  # N (number of values)
+    ctypes.POINTER(ctypes.c_int32),  # NData (connectivity array)
+]
+lib.tecznemap142.restype = ctypes.c_int32
+lib.tecznemap142.argtypes = [
+    ctypes.POINTER(ctypes.c_int32),  # N (number of values)
+    ctypes.POINTER(ctypes.c_int32),  # NodeMap
+]
+lib.tecface142.restype = ctypes.c_int32
+lib.tecface142.argtypes = [
+    ctypes.POINTER(ctypes.c_int32),  # FaceConnections
+]
+lib.tecpolyface142.restype = ctypes.c_int32
+lib.tecpolyface142.argtypes = [
+    ctypes.POINTER(ctypes.c_int32),  # NumFaces
+    ctypes.POINTER(ctypes.c_int32),  # FaceNodeCounts
+    ctypes.POINTER(ctypes.c_int32),  # FaceNodes
+    ctypes.POINTER(ctypes.c_int32),  # FaceLeftElems
+    ctypes.POINTER(ctypes.c_int32),  # FaceRightElems
+]
+lib.tecpolybconn142.restype = ctypes.c_int32
+lib.tecpolybconn142.argtypes = [
+    ctypes.POINTER(ctypes.c_int32),  # NumBoundaryFaces
+    ctypes.POINTER(ctypes.c_int32),  # BoundaryConnectionCounts
+    ctypes.POINTER(ctypes.c_int32),  # BoundaryConnectionElems
+    ctypes.POINTER(ctypes.c_int16),  # BoundaryConnectionZones
+]
 
 # Auxiliary data
-bind_ctypes(
-    name="tecauxstr142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_char_p,  # Name
-        ctypes.c_char_p,  # Value
-    ],
-)
+lib.tecauxstr142.restype = ctypes.c_int32
+lib.tecauxstr142.argtypes = [
+    ctypes.c_char_p,  # Name
+    ctypes.c_char_p,  # Value
+]
 
-bind_ctypes(
-    name="tecvauxstr142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_int32),  # Var (1-based variable index)
-        ctypes.c_char_p,  # Name
-        ctypes.c_char_p,  # Value
-    ],
-)
+lib.tecvauxstr142.restype = ctypes.c_int32
+lib.tecvauxstr142.argtypes = [
+    ctypes.POINTER(ctypes.c_int32),  # Var (1-based variable index)
+    ctypes.c_char_p,  # Name
+    ctypes.c_char_p,  # Value
+]
 
-bind_ctypes(
-    name="teczauxstr142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_char_p,  # Name
-        ctypes.c_char_p,  # Value
-    ],
-)
+lib.teczauxstr142.restype = ctypes.c_int32
+lib.teczauxstr142.argtypes = [
+    ctypes.c_char_p,  # Name
+    ctypes.c_char_p,  # Value
+]
 
 # MPI initialization (for parallel I/O)
-bind_ctypes(
-    name="tecmpiinit142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.POINTER(ctypes.c_int32),  # Communicator
-        ctypes.POINTER(ctypes.c_int32),  # MainRank
-    ],
-)
+lib.tecmpiinit142.restype = ctypes.c_int32
+lib.tecmpiinit142.argtypes = [
+    ctypes.POINTER(ctypes.c_int32),  # Communicator
+    ctypes.POINTER(ctypes.c_int32),  # MainRank
+]
 
 # User-defined data (custom records)
-bind_ctypes(
-    name="tecusr142",
-    restype=ctypes.c_int32,
-    argtypes=[
-        ctypes.c_char_p,  # UserRec
-    ],
-)
-
-if UNAVAILABLE_FUNCTIONS:
-    if LIBRARY_LOAD_ERROR is not None:
-        _reason = f"no TecIO shared library could be loaded ({LIBRARY_LOAD_ERROR})"
-    else:
-        _reason = f"the loaded library ({LIBRARY_PATH}) doesn't export them"
-    warnings.warn(
-        f"tecio.libtecio: {len(UNAVAILABLE_FUNCTIONS)} function(s) unavailable, "
-        f"{_reason}. Calling one of these raises TecioUnavailableError; see "
-        "tecio.libtecio.UNAVAILABLE_FUNCTIONS for the full list. DAT reading and "
-        "writing is unaffected, it does not use this library. Affected: "
-        + ", ".join(sorted(UNAVAILABLE_FUNCTIONS)),
-        TecioAvailabilityWarning,
-        stacklevel=2,
-    )
+lib.tecusr142.restype = ctypes.c_int32
+lib.tecusr142.argtypes = [
+    ctypes.c_char_p,  # UserRec
+]
 
 
 # ======================================================================================
@@ -1147,7 +1078,6 @@ if UNAVAILABLE_FUNCTIONS:
 
 
 # -- Reading SZL files -----------------------------------------------------------------
-@requires_symbol("tecFileReaderOpen")
 def tec_file_reader_open(file_name: str) -> ctypes.c_void_p:
     """Open an SZL file for reading.
 
@@ -1160,7 +1090,6 @@ def tec_file_reader_open(file_name: str) -> ctypes.c_void_p:
     Raises:
         TecioError: If the file cannot be opened.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     handle = ctypes.c_void_p(0)
 
     ret = lib.tecFileReaderOpen(
@@ -1175,7 +1104,6 @@ def tec_file_reader_open(file_name: str) -> ctypes.c_void_p:
     return handle
 
 
-@requires_symbol("tecFileReaderClose")
 def tec_file_reader_close(handle: ctypes.c_void_p) -> None:
     """Close an SZL file reader handle and release its resources.
 
@@ -1185,7 +1113,6 @@ def tec_file_reader_close(handle: ctypes.c_void_p) -> None:
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ret = lib.tecFileReaderClose(ctypes.byref(handle))
     if ret != 0:
         raise TecioError(
@@ -1193,7 +1120,6 @@ def tec_file_reader_close(handle: ctypes.c_void_p) -> None:
         )
 
 
-@requires_symbol("tecFileGetType")
 def tec_file_get_type(handle: ctypes.c_void_p) -> FileType:
     """Get the file type for an opened SZL file.
 
@@ -1206,7 +1132,6 @@ def tec_file_get_type(handle: ctypes.c_void_p) -> FileType:
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     file_type = ctypes.c_int32(0)
 
     ret = lib.tecFileGetType(handle, ctypes.byref(file_type))
@@ -1216,7 +1141,6 @@ def tec_file_get_type(handle: ctypes.c_void_p) -> FileType:
     return FileType(file_type.value)
 
 
-@requires_symbol("tecDataSetGetTitle")
 def tec_data_set_get_title(handle: ctypes.c_void_p) -> str:
     """Read the dataset title string.
 
@@ -1229,7 +1153,6 @@ def tec_data_set_get_title(handle: ctypes.c_void_p) -> str:
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     title = ctypes.c_char_p(0)
 
     ret = lib.tecDataSetGetTitle(handle, ctypes.byref(title))
@@ -1241,7 +1164,6 @@ def tec_data_set_get_title(handle: ctypes.c_void_p) -> str:
     return _decode(title.value)
 
 
-@requires_symbol("tecDataSetGetNumVars")
 def tec_data_set_get_num_vars(handle: ctypes.c_void_p) -> int:
     """Query the number of variables in the dataset.
 
@@ -1254,7 +1176,6 @@ def tec_data_set_get_num_vars(handle: ctypes.c_void_p) -> int:
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     num_vars = ctypes.c_int32(0)
 
     ret = lib.tecDataSetGetNumVars(handle, ctypes.byref(num_vars))
@@ -1266,7 +1187,6 @@ def tec_data_set_get_num_vars(handle: ctypes.c_void_p) -> int:
     return num_vars.value
 
 
-@requires_symbol("tecDataSetGetNumZones")
 def tec_data_set_get_num_zones(handle: ctypes.c_void_p) -> int:
     """Query the number of zones in the dataset.
 
@@ -1279,7 +1199,6 @@ def tec_data_set_get_num_zones(handle: ctypes.c_void_p) -> int:
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     num_zones = ctypes.c_int32(0)
 
     ret = lib.tecDataSetGetNumZones(handle, ctypes.byref(num_zones))
@@ -1292,7 +1211,6 @@ def tec_data_set_get_num_zones(handle: ctypes.c_void_p) -> int:
 
 
 # -- Reading SZL zones -----------------------------------------------------------------
-@requires_symbol("tecZoneGetIJK")
 def tec_zone_get_ijk(handle: ctypes.c_void_p, zone_index: int) -> tuple[int, int, int]:
     """Get zone dimensions (ORDERED) or node/element counts (FE).
 
@@ -1307,7 +1225,6 @@ def tec_zone_get_ijk(handle: ctypes.c_void_p, zone_index: int) -> tuple[int, int
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     imax = ctypes.c_int64(0)
     jmax = ctypes.c_int64(0)
     kmax = ctypes.c_int64(0)
@@ -1328,7 +1245,6 @@ def tec_zone_get_ijk(handle: ctypes.c_void_p, zone_index: int) -> tuple[int, int
     return imax.value, jmax.value, kmax.value
 
 
-@requires_symbol("tecZoneGetTitle")
 def tec_zone_get_title(handle: ctypes.c_void_p, zone_index: int) -> str:
     """Read the title for a zone.
 
@@ -1342,7 +1258,6 @@ def tec_zone_get_title(handle: ctypes.c_void_p, zone_index: int) -> str:
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     zone_title = ctypes.c_char_p(0)
 
     ret = lib.tecZoneGetTitle(
@@ -1357,7 +1272,6 @@ def tec_zone_get_title(handle: ctypes.c_void_p, zone_index: int) -> str:
     return _decode(zone_title.value)
 
 
-@requires_symbol("tecZoneGetType")
 def tec_zone_get_type(handle: ctypes.c_void_p, zone_index: int) -> ZoneType:
     """Query the zone type.
 
@@ -1371,7 +1285,6 @@ def tec_zone_get_type(handle: ctypes.c_void_p, zone_index: int) -> ZoneType:
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     zone_type = ctypes.c_int32(0)
 
     ret = lib.tecZoneGetType(
@@ -1386,7 +1299,6 @@ def tec_zone_get_type(handle: ctypes.c_void_p, zone_index: int) -> ZoneType:
     return ZoneType(zone_type.value)
 
 
-@requires_symbol("tecZoneIsEnabled")
 def tec_zone_is_enabled(handle: ctypes.c_void_p, zone_index: int) -> bool:
     """Check whether a zone is enabled.
 
@@ -1400,7 +1312,6 @@ def tec_zone_is_enabled(handle: ctypes.c_void_p, zone_index: int) -> bool:
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     is_enabled = ctypes.c_int32(0)
 
     ret = lib.tecZoneIsEnabled(
@@ -1415,7 +1326,6 @@ def tec_zone_is_enabled(handle: ctypes.c_void_p, zone_index: int) -> bool:
     return bool(is_enabled.value)
 
 
-@requires_symbol("tecZoneGetSolutionTime")
 def tec_zone_get_solution_time(handle: ctypes.c_void_p, zone_index: int) -> float:
     """Read the solution time for a zone.
 
@@ -1429,7 +1339,6 @@ def tec_zone_get_solution_time(handle: ctypes.c_void_p, zone_index: int) -> floa
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     solution_time = ctypes.c_double(0)
 
     ret = lib.tecZoneGetSolutionTime(
@@ -1446,7 +1355,6 @@ def tec_zone_get_solution_time(handle: ctypes.c_void_p, zone_index: int) -> floa
     return solution_time.value
 
 
-@requires_symbol("tecZoneGetStrandID")
 def tec_zone_get_strand_id(handle: ctypes.c_void_p, zone_index: int) -> int:
     """Get the strand ID for a zone.
 
@@ -1460,7 +1368,6 @@ def tec_zone_get_strand_id(handle: ctypes.c_void_p, zone_index: int) -> int:
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     strand_id = ctypes.c_int32(0)
 
     ret = lib.tecZoneGetStrandID(
@@ -1475,7 +1382,6 @@ def tec_zone_get_strand_id(handle: ctypes.c_void_p, zone_index: int) -> int:
     return strand_id.value
 
 
-@requires_symbol("tecZoneNodeMapIs64Bit")
 def is_64bit(handle: ctypes.c_void_p, zone_index: int) -> bool:
     """Check whether a zone's node-map uses 64-bit indices.
 
@@ -1489,7 +1395,6 @@ def is_64bit(handle: ctypes.c_void_p, zone_index: int) -> bool:
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     is64bit = ctypes.c_int32(0)
     ret = lib.tecZoneNodeMapIs64Bit(
         handle, ctypes.c_int32(zone_index), ctypes.byref(is64bit)
@@ -1503,7 +1408,6 @@ def is_64bit(handle: ctypes.c_void_p, zone_index: int) -> bool:
     return bool(is64bit.value)
 
 
-@requires_symbol("tecZoneNodeMapGet64")
 def tec_zone_node_map_get_64(
     handle: ctypes.c_void_p,
     zone_index: int,
@@ -1524,7 +1428,6 @@ def tec_zone_node_map_get_64(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     size_of_array = num_elements * nodes_per_cell
     nodemap = (ctypes.c_int64 * size_of_array)()
 
@@ -1548,7 +1451,6 @@ def tec_zone_node_map_get_64(
     return np.ctypeslib.as_array(nodemap).reshape(num_elements, nodes_per_cell)
 
 
-@requires_symbol("tecZoneNodeMapGet")
 def tec_zone_node_map_get(
     handle: ctypes.c_void_p,
     zone_index: int,
@@ -1569,7 +1471,6 @@ def tec_zone_node_map_get(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     size_of_array = num_elements * nodes_per_cell
     nodemap = (ctypes.c_int32 * size_of_array)()
 
@@ -1594,7 +1495,6 @@ def tec_zone_node_map_get(
 
 
 # -- Reading SZL variable data ---------------------------------------------------------
-@requires_symbol("tecVarGetName")
 def tec_var_get_name(handle: ctypes.c_void_p, var_index: int) -> str:
     """Get a variable name by index.
 
@@ -1608,7 +1508,6 @@ def tec_var_get_name(handle: ctypes.c_void_p, var_index: int) -> str:
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     var_name = ctypes.c_char_p(0)
 
     ret = lib.tecVarGetName(handle, ctypes.c_int32(var_index), ctypes.byref(var_name))
@@ -1621,7 +1520,6 @@ def tec_var_get_name(handle: ctypes.c_void_p, var_index: int) -> str:
     return _decode(var_name.value)
 
 
-@requires_symbol("tecVarIsEnabled")
 def tec_var_is_enabled(handle: ctypes.c_void_p, var_index: int) -> bool:
     """Check whether a variable is enabled.
 
@@ -1635,7 +1533,6 @@ def tec_var_is_enabled(handle: ctypes.c_void_p, var_index: int) -> bool:
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     is_enabled = ctypes.c_int32(0)
 
     ret = lib.tecVarIsEnabled(
@@ -1650,7 +1547,6 @@ def tec_var_is_enabled(handle: ctypes.c_void_p, var_index: int) -> bool:
     return bool(is_enabled.value)
 
 
-@requires_symbol("tecZoneVarGetType")
 def tec_zone_var_get_type(
     handle: ctypes.c_void_p, zone_index: int, var_index: int
 ) -> DataType:
@@ -1667,7 +1563,6 @@ def tec_zone_var_get_type(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     var_type = ctypes.c_int32(0)
 
     ret = lib.tecZoneVarGetType(
@@ -1685,7 +1580,6 @@ def tec_zone_var_get_type(
     return DataType(var_type.value)
 
 
-@requires_symbol("tecZoneVarGetValueLocation")
 def tec_zone_var_get_value_location(
     handle: ctypes.c_void_p, zone_index: int, var_index: int
 ) -> ValueLocation:
@@ -1702,7 +1596,6 @@ def tec_zone_var_get_value_location(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     value_location = ctypes.c_int32(0)
 
     ret = lib.tecZoneVarGetValueLocation(
@@ -1720,7 +1613,6 @@ def tec_zone_var_get_value_location(
     return ValueLocation(value_location.value)
 
 
-@requires_symbol("tecZoneVarIsPassive")
 def tec_zone_var_is_passive(
     handle: ctypes.c_void_p, zone_index: int, var_index: int
 ) -> bool:
@@ -1737,7 +1629,6 @@ def tec_zone_var_is_passive(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     is_passive = ctypes.c_int32(0)
 
     ret = lib.tecZoneVarIsPassive(
@@ -1755,7 +1646,6 @@ def tec_zone_var_is_passive(
     return bool(is_passive.value)
 
 
-@requires_symbol("tecZoneVarGetSharedZone")
 def tec_zone_var_get_shared_zone(
     handle: ctypes.c_void_p, zone_index: int, var_index: int
 ) -> int | None:
@@ -1772,7 +1662,6 @@ def tec_zone_var_get_shared_zone(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     shared_zone = ctypes.c_int32(0)
 
     ret = lib.tecZoneVarGetSharedZone(
@@ -1790,7 +1679,6 @@ def tec_zone_var_get_shared_zone(
     return shared_zone.value if shared_zone.value != 0 else None
 
 
-@requires_symbol("tecZoneConnectivityGetSharedZone")
 def tec_zone_connectivity_get_shared_zone(
     handle: ctypes.c_void_p, zone_index: int
 ) -> int | None:
@@ -1806,7 +1694,6 @@ def tec_zone_connectivity_get_shared_zone(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     shared_zone = ctypes.c_int32(0)
 
     ret = lib.tecZoneConnectivityGetSharedZone(
@@ -1823,7 +1710,6 @@ def tec_zone_connectivity_get_shared_zone(
     return shared_zone.value if shared_zone.value != 0 else None
 
 
-@requires_symbol("tecZoneVarGetNumValues")
 def tec_zone_var_get_num_values(
     handle: ctypes.c_void_p, zone_index: int, var_index: int
 ) -> int:
@@ -1840,7 +1726,6 @@ def tec_zone_var_get_num_values(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     num_values = ctypes.c_int32(0)
 
     ret = lib.tecZoneVarGetNumValues(
@@ -1858,7 +1743,6 @@ def tec_zone_var_get_num_values(
     return num_values.value
 
 
-@requires_symbol("tecZoneVarGetFloatValues")
 def tec_zone_var_get_float_values(
     handle: ctypes.c_void_p,
     zone_index: int,
@@ -1881,7 +1765,6 @@ def tec_zone_var_get_float_values(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     values = (ctypes.c_float * num_values)()
 
     ret = lib.tecZoneVarGetFloatValues(
@@ -1905,7 +1788,6 @@ def tec_zone_var_get_float_values(
     return np.ctypeslib.as_array(values)
 
 
-@requires_symbol("tecZoneVarGetDoubleValues")
 def tec_zone_var_get_double_values(
     handle: ctypes.c_void_p,
     zone_index: int,
@@ -1928,7 +1810,6 @@ def tec_zone_var_get_double_values(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     values = (ctypes.c_double * num_values)()
 
     ret = lib.tecZoneVarGetDoubleValues(
@@ -1952,7 +1833,6 @@ def tec_zone_var_get_double_values(
     return np.ctypeslib.as_array(values)
 
 
-@requires_symbol("tecZoneVarGetInt32Values")
 def tec_zone_var_get_int32_values(
     handle: ctypes.c_void_p,
     zone_index: int,
@@ -1975,7 +1855,6 @@ def tec_zone_var_get_int32_values(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     values = (ctypes.c_int32 * num_values)()
 
     ret = lib.tecZoneVarGetInt32Values(
@@ -1999,7 +1878,6 @@ def tec_zone_var_get_int32_values(
     return np.ctypeslib.as_array(values)
 
 
-@requires_symbol("tecZoneVarGetInt16Values")
 def tec_zone_var_get_int16_values(
     handle: ctypes.c_void_p,
     zone_index: int,
@@ -2022,7 +1900,6 @@ def tec_zone_var_get_int16_values(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     values = (ctypes.c_int16 * num_values)()
 
     ret = lib.tecZoneVarGetInt16Values(
@@ -2046,7 +1923,6 @@ def tec_zone_var_get_int16_values(
     return np.ctypeslib.as_array(values)
 
 
-@requires_symbol("tecZoneVarGetUInt8Values")
 def tec_zone_var_get_uint8_values(
     handle: ctypes.c_void_p,
     zone_index: int,
@@ -2069,7 +1945,6 @@ def tec_zone_var_get_uint8_values(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     values = (ctypes.c_uint8 * num_values)()
 
     ret = lib.tecZoneVarGetUInt8Values(
@@ -2094,7 +1969,6 @@ def tec_zone_var_get_uint8_values(
 
 
 # -- Reading SZL aux data --------------------------------------------------------------
-@requires_symbol("tecDataSetAuxDataGetNumItems")
 def tec_data_set_aux_data_get_num_items(handle: ctypes.c_void_p) -> int:
     """Get the number of dataset-level auxiliary data items.
 
@@ -2107,7 +1981,6 @@ def tec_data_set_aux_data_get_num_items(handle: ctypes.c_void_p) -> int:
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     num_auxdata_items = ctypes.c_int32(0)
 
     ret = lib.tecDataSetAuxDataGetNumItems(handle, ctypes.byref(num_auxdata_items))
@@ -2119,7 +1992,6 @@ def tec_data_set_aux_data_get_num_items(handle: ctypes.c_void_p) -> int:
     return num_auxdata_items.value
 
 
-@requires_symbol("tecDataSetAuxDataGetItem")
 def tec_data_set_aux_data_get_item(
     handle: ctypes.c_void_p, item_index: int
 ) -> tuple[str, str]:
@@ -2135,7 +2007,6 @@ def tec_data_set_aux_data_get_item(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     name = ctypes.c_char_p(0)
     value = ctypes.c_char_p(0)
 
@@ -2154,7 +2025,6 @@ def tec_data_set_aux_data_get_item(
     return _decode(name.value), _decode(value.value)
 
 
-@requires_symbol("tecVarAuxDataGetNumItems")
 def tec_var_aux_data_get_num_items(handle: ctypes.c_void_p, var_index: int) -> int:
     """Get the number of auxiliary data items for a variable.
 
@@ -2168,7 +2038,6 @@ def tec_var_aux_data_get_num_items(handle: ctypes.c_void_p, var_index: int) -> i
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     num_items = ctypes.c_int32(0)
 
     ret = lib.tecVarAuxDataGetNumItems(
@@ -2183,7 +2052,6 @@ def tec_var_aux_data_get_num_items(handle: ctypes.c_void_p, var_index: int) -> i
     return num_items.value
 
 
-@requires_symbol("tecVarAuxDataGetItem")
 def tec_var_aux_data_get_item(
     handle: ctypes.c_void_p, var_index: int, item_index: int
 ) -> tuple[str, str]:
@@ -2200,7 +2068,6 @@ def tec_var_aux_data_get_item(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     name = ctypes.c_char_p(0)
     value = ctypes.c_char_p(0)
 
@@ -2220,7 +2087,6 @@ def tec_var_aux_data_get_item(
     return _decode(name.value), _decode(value.value)
 
 
-@requires_symbol("tecZoneAuxDataGetNumItems")
 def tec_zone_aux_data_get_num_items(handle: ctypes.c_void_p, zone_index: int) -> int:
     """Get the number of auxiliary data items for a zone.
 
@@ -2234,7 +2100,6 @@ def tec_zone_aux_data_get_num_items(handle: ctypes.c_void_p, zone_index: int) ->
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     num_items = ctypes.c_int32(0)
 
     ret = lib.tecZoneAuxDataGetNumItems(
@@ -2249,7 +2114,6 @@ def tec_zone_aux_data_get_num_items(handle: ctypes.c_void_p, zone_index: int) ->
     return num_items.value
 
 
-@requires_symbol("tecZoneAuxDataGetItem")
 def tec_zone_aux_data_get_item(
     handle: ctypes.c_void_p, zone_index: int, item_index: int
 ) -> tuple[str, str]:
@@ -2266,7 +2130,6 @@ def tec_zone_aux_data_get_item(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     name = ctypes.c_char_p(0)
     value = ctypes.c_char_p(0)
 
@@ -2301,7 +2164,6 @@ def tec_zone_aux_data_get_item(
 
 
 # -- Initialization and File Handling --------------------------------------------------
-@requires_symbol("tecFileWriterOpen")
 def tec_file_writer_open(
     filename: str,
     variables: Sequence[str],
@@ -2327,7 +2189,6 @@ def tec_file_writer_open(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     if not isinstance(file_type, FileType):
         raise TypeError("file_type must be a libtecio.FileType enum")
 
@@ -2354,7 +2215,6 @@ def tec_file_writer_open(
     return handle
 
 
-@requires_symbol("tecFileWriterClose")
 def tec_file_writer_close(handle: ctypes.c_void_p) -> None:
     """Close a writer handle and finalise the output file.
 
@@ -2364,7 +2224,6 @@ def tec_file_writer_close(handle: ctypes.c_void_p) -> None:
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ret = lib.tecFileWriterClose(ctypes.byref(handle))
     if ret != 0:
         raise TecioError(
@@ -2372,7 +2231,6 @@ def tec_file_writer_close(handle: ctypes.c_void_p) -> None:
         )
 
 
-@requires_symbol("tecFileWriterFlush")
 def tec_file_writer_flush(
     handle: ctypes.c_void_p,
     num_zones_to_retain: int = 0,
@@ -2403,7 +2261,6 @@ def tec_file_writer_flush(
         Temporary files created by flushing are merged into the final output file when
         :func:`tec_file_writer_close` is called.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     zones_ptr = None
     if zones_to_retain is not None and len(zones_to_retain) > 0:
         zones_array = (ctypes.c_int32 * len(zones_to_retain))(*zones_to_retain)
@@ -2426,7 +2283,6 @@ def tec_file_writer_flush(
 
 
 # -- Write Zone Headers ----------------------------------------------------------------
-@requires_symbol("tecZoneCreateIJK")
 def tec_zone_create_ijk(
     handle: ctypes.c_void_p,
     zone_title: str,
@@ -2468,7 +2324,6 @@ def tec_zone_create_ijk(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     zone_out = ctypes.c_int32()
 
     # Create C array for varable types
@@ -2522,7 +2377,6 @@ def tec_zone_create_ijk(
     return zone_out.value
 
 
-@requires_symbol("tecZoneCreateFE")
 def tec_zone_create_fe(
     handle: ctypes.c_void_p,
     zone_title: str,
@@ -2567,7 +2421,6 @@ def tec_zone_create_fe(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     zone_out = ctypes.c_int32()
 
     # Create C array for varable types
@@ -2622,7 +2475,6 @@ def tec_zone_create_fe(
 
 
 # -- Optional fields -------------------------------------------------------------------
-@requires_symbol("tecZoneSetUnsteadyOptions")
 def tec_zone_set_unsteady_options(
     handle: ctypes.c_void_p, zone: int, strand: int = 0, solution_time: float = 0.0
 ) -> None:
@@ -2637,7 +2489,6 @@ def tec_zone_set_unsteady_options(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ret = lib.tecZoneSetUnsteadyOptions(
         handle,
         ctypes.c_int32(zone),
@@ -2651,7 +2502,6 @@ def tec_zone_set_unsteady_options(
         )
 
 
-@requires_symbol("tecDataSetAddAuxData")
 def tec_data_set_add_aux_data(
     handle: ctypes.c_void_p,
     name: str,
@@ -2667,7 +2517,6 @@ def tec_data_set_add_aux_data(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ret = lib.tecDataSetAddAuxData(
         handle,
         ctypes.c_char_p(name.encode("utf-8")),
@@ -2680,7 +2529,6 @@ def tec_data_set_add_aux_data(
         )
 
 
-@requires_symbol("tecVarAddAuxData")
 def tec_var_add_aux_data(
     handle: ctypes.c_void_p,
     var_index: int,
@@ -2698,7 +2546,6 @@ def tec_var_add_aux_data(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ret = lib.tecVarAddAuxData(
         handle,
         ctypes.c_int32(var_index),
@@ -2712,7 +2559,6 @@ def tec_var_add_aux_data(
         )
 
 
-@requires_symbol("tecZoneAddAuxData")
 def tec_zone_add_aux_data(
     handle: ctypes.c_void_p,
     zone_index: int,
@@ -2730,7 +2576,6 @@ def tec_zone_add_aux_data(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ret = lib.tecZoneAddAuxData(
         handle,
         ctypes.c_int32(zone_index),
@@ -2745,7 +2590,6 @@ def tec_zone_add_aux_data(
 
 
 # -- Write variable value functions ----------------------------------------------------
-@requires_symbol("tecZoneVarWriteDoubleValues")
 def tec_zone_var_write_double_values(
     handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
 ) -> None:
@@ -2760,7 +2604,6 @@ def tec_zone_var_write_double_values(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ptr, count, _backing = _prepare_array_for_ctypes(
         values, np.float64, ctypes.c_double
     )
@@ -2780,7 +2623,6 @@ def tec_zone_var_write_double_values(
         )
 
 
-@requires_symbol("tecZoneVarWriteFloatValues")
 def tec_zone_var_write_float_values(
     handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
 ) -> None:
@@ -2795,7 +2637,6 @@ def tec_zone_var_write_float_values(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.float32, ctypes.c_float)
 
     ret = lib.tecZoneVarWriteFloatValues(
@@ -2813,7 +2654,6 @@ def tec_zone_var_write_float_values(
         )
 
 
-@requires_symbol("tecZoneVarWriteInt32Values")
 def tec_zone_var_write_int32_values(
     handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
 ) -> None:
@@ -2828,7 +2668,6 @@ def tec_zone_var_write_int32_values(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.int32, ctypes.c_int32)
 
     ret = lib.tecZoneVarWriteInt32Values(
@@ -2846,7 +2685,6 @@ def tec_zone_var_write_int32_values(
         )
 
 
-@requires_symbol("tecZoneVarWriteInt16Values")
 def tec_zone_var_write_int16_values(
     handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
 ) -> None:
@@ -2861,7 +2699,6 @@ def tec_zone_var_write_int16_values(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.int16, ctypes.c_int16)
 
     ret = lib.tecZoneVarWriteInt16Values(
@@ -2879,7 +2716,6 @@ def tec_zone_var_write_int16_values(
         )
 
 
-@requires_symbol("tecZoneVarWriteUInt8Values")
 def tec_zone_var_write_uint8_values(
     handle: ctypes.c_void_p, zone: int, var: int, values: npt.ArrayLike
 ) -> None:
@@ -2894,7 +2730,6 @@ def tec_zone_var_write_uint8_values(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ptr, count, _backing = _prepare_array_for_ctypes(values, np.uint8, ctypes.c_uint8)
 
     ret = lib.tecZoneVarWriteUInt8Values(
@@ -2913,7 +2748,6 @@ def tec_zone_var_write_uint8_values(
 
 
 # -- Write Zone Connectivity (FE zones only) -------------------------------------------
-@requires_symbol("tecZoneNodeMapWrite32")
 def tec_zone_node_map_write32(
     handle: ctypes.c_void_p,
     zone: int,
@@ -2943,7 +2777,6 @@ def tec_zone_node_map_write32(
     Note:
         Node indices are 1-based by convention in Tecplot.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ptr, count, _backing = _prepare_array_for_ctypes(nodes, np.int32, ctypes.c_int32)
 
     ret = lib.tecZoneNodeMapWrite32(
@@ -2961,7 +2794,6 @@ def tec_zone_node_map_write32(
         )
 
 
-@requires_symbol("tecZoneNodeMapWrite64")
 def tec_zone_node_map_write64(
     handle: ctypes.c_void_p,
     zone: int,
@@ -2991,7 +2823,6 @@ def tec_zone_node_map_write64(
     Note:
         Node indices are 1-based by convention in Tecplot.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ptr, count, _backing = _prepare_array_for_ctypes(nodes, np.int64, ctypes.c_int64)
 
     ret = lib.tecZoneNodeMapWrite64(
@@ -3009,7 +2840,6 @@ def tec_zone_node_map_write64(
         )
 
 
-@requires_symbol("tecZoneFaceNbrWriteConnections32")
 def tec_zone_face_nbr_write_connections32(
     handle: ctypes.c_void_p,
     zone: int,
@@ -3041,7 +2871,6 @@ def tec_zone_face_nbr_write_connections32(
         only to manually specify connections that are not defined via the connectivity
         list.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ptr, count, _backing = _prepare_array_for_ctypes(
         face_neighbors, np.int32, ctypes.c_int32
     )
@@ -3057,7 +2886,6 @@ def tec_zone_face_nbr_write_connections32(
         )
 
 
-@requires_symbol("tecZoneFaceNbrWriteConnections64")
 def tec_zone_face_nbr_write_connections64(
     handle: ctypes.c_void_p,
     zone: int,
@@ -3089,7 +2917,6 @@ def tec_zone_face_nbr_write_connections64(
         only to manually specify connections that are not defined via the connectivity
         list.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ptr, count, _backing = _prepare_array_for_ctypes(
         face_neighbors, np.int64, ctypes.c_int64
     )
@@ -3120,7 +2947,6 @@ def tec_zone_face_nbr_write_connections64(
 
 
 # -- File initialization and finalization ----------------------------------------------
-@requires_symbol("tecini142")
 def tecini142(
     filename: str,
     variables: Sequence[str],
@@ -3154,7 +2980,6 @@ def tecini142(
     Note:
         Call :func:`tecend142()` to finalize the file
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     if not isinstance(file_type, FileType):
         raise TypeError("file_type must be a libtecio.FileType enum")
 
@@ -3178,7 +3003,6 @@ def tecini142(
         raise TecioError(f"tecini142 Error: filename={filename!r}, return_code={ret}")
 
 
-@requires_symbol("tecend142")
 def tecend142() -> None:
     """Finalise and close the active Tecplot data file.
 
@@ -3191,13 +3015,11 @@ def tecend142() -> None:
     Note:
         Flushes all pending data and closes the file
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ret = lib.tecend142()
     if ret != 0:
         raise TecioError(f"tecend142 Error: return_code={ret}")
 
 
-@requires_symbol("tecflush142")
 def tecflush142(
     num_zones_to_retain: int = 0,
     zones_to_retain: Sequence[int] | None = None,
@@ -3220,7 +3042,6 @@ def tecflush142(
     Note:
         Retained zones can still be modified.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     num_zones_c = ctypes.c_int32(num_zones_to_retain)
 
     zones_ptr = None
@@ -3238,7 +3059,6 @@ def tecflush142(
         raise TecioError(f"tecflush142 Error: return_code={ret}")
 
 
-@requires_symbol("tecfil142")
 def tecfil142() -> int:
     """Get the file handle for the current output file.
 
@@ -3251,7 +3071,6 @@ def tecfil142() -> int:
     Note:
         Used for advanced file operations.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     output_file_handle = ctypes.c_int32(0)
 
     ret = lib.tecfil142(ctypes.byref(output_file_handle))
@@ -3261,7 +3080,6 @@ def tecfil142() -> int:
     return output_file_handle.value
 
 
-@requires_symbol("tecforeign142")
 def tecforeign142(output_foreign_byte_order: int) -> None:
     """Set foreign byte order for output.
 
@@ -3271,7 +3089,6 @@ def tecforeign142(output_foreign_byte_order: int) -> None:
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     foreign_c = ctypes.c_int32(output_foreign_byte_order)
 
     ret = lib.tecforeign142(ctypes.byref(foreign_c))
@@ -3280,7 +3097,6 @@ def tecforeign142(output_foreign_byte_order: int) -> None:
 
 
 # -- Zone creation ---------------------------------------------------------------------
-@requires_symbol("teczne142")
 def teczne142(
     zone_title: str,
     zone_type: int | ZoneType,
@@ -3339,7 +3155,6 @@ def teczne142(
         For FE zones: imax=NumNodes, jmax=NumElements, kmax=0 (unless higher order
         element)
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     # Create C array for passive variable flags
     pas_vars_ptr = None
     if pas_vars is not None:
@@ -3388,7 +3203,6 @@ def teczne142(
         )
 
 
-@requires_symbol("tecpolyzne142")
 def tecpolyzne142(
     zone_title: str,
     zone_type: int | ZoneType,
@@ -3432,7 +3246,6 @@ def tecpolyzne142(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     # Create C array for passive variable flags
     pas_vars_ptr = None
     if pas_vars is not None:
@@ -3475,7 +3288,6 @@ def tecpolyzne142(
         )
 
 
-@requires_symbol("tecznefemixed142")
 def tecznefemixed142(
     zone_title: str,
     num_nodes: int,
@@ -3519,7 +3331,6 @@ def tecznefemixed142(
     Raises:
         TecioError: On C library error.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     num_nodes_c = ctypes.c_int32(num_nodes)
     num_elements_c = ctypes.c_int32(num_elements)
     num_nodes_per_element_c = ctypes.c_int32(num_nodes_per_element)
@@ -3576,7 +3387,6 @@ def tecznefemixed142(
 
 
 # -- Data writing ----------------------------------------------------------------------
-@requires_symbol("tecdat142")
 def tecdat142(
     field_data: npt.ArrayLike,
     is_double: bool = True,
@@ -3605,7 +3415,6 @@ def tecdat142(
         For FE zones: data should be ordered by node index for nodal variables, and by
         element index for cell-centered variables
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     # Convert to appropriate numpy array
     if is_double:
         arr = np.ascontiguousarray(field_data, dtype=np.float64)
@@ -3628,7 +3437,6 @@ def tecdat142(
 
 
 # -- Connectivity writing --------------------------------------------------------------
-@requires_symbol("tecnode142")
 def tecnode142(nodes: npt.ArrayLike) -> None:
     """Write node connectivity for an FE zone (classic API).
 
@@ -3645,7 +3453,6 @@ def tecnode142(nodes: npt.ArrayLike) -> None:
         - For FEBRICK elements: 8 nodes per element.
         - For FETETRAHEDRON elements: 4 nodes per element.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     nodes_array = np.ascontiguousarray(nodes, dtype=np.int32)
     n = ctypes.c_int32(nodes_array.size)
     nodes_ptr = nodes_array.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
@@ -3660,7 +3467,6 @@ def tecnode142(nodes: npt.ArrayLike) -> None:
         )
 
 
-@requires_symbol("tecface142")
 def tecface142(face_connections: npt.ArrayLike) -> None:
     """Write face-neighbor connections (classic API).
 
@@ -3673,7 +3479,6 @@ def tecface142(face_connections: npt.ArrayLike) -> None:
     Note:
         Used to specify face-to-face connectivity between zones.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     face_conn_array = np.ascontiguousarray(face_connections, dtype=np.int32)
     face_conn_ptr = face_conn_array.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
 
@@ -3682,7 +3487,6 @@ def tecface142(face_connections: npt.ArrayLike) -> None:
         raise TecioError(f"tecface142 Error: return_code={ret}")
 
 
-@requires_symbol("tecpolyface142")
 def tecpolyface142(
     face_node_counts: npt.ArrayLike,
     face_nodes: npt.ArrayLike,
@@ -3709,7 +3513,6 @@ def tecpolyface142(
     Hint:
         Element indices are 1-based; 0 indicates boundary.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     face_node_counts_array = np.ascontiguousarray(face_node_counts, dtype=np.int32)
     face_nodes_array = np.ascontiguousarray(face_nodes, dtype=np.int32)
     face_left_elems_array = np.ascontiguousarray(face_left_elems, dtype=np.int32)
@@ -3741,7 +3544,6 @@ def tecpolyface142(
         )
 
 
-@requires_symbol("tecpolybconn142")
 def tecpolybconn142(
     boundary_connection_counts: npt.ArrayLike,
     boundary_connection_elems: npt.ArrayLike,
@@ -3761,7 +3563,6 @@ def tecpolybconn142(
     Note:
         Used to specify connectivity to neighboring zones at boundaries.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     bconn_counts_array = np.ascontiguousarray(
         boundary_connection_counts, dtype=np.int32
     )
@@ -3795,7 +3596,6 @@ def tecpolybconn142(
 
 
 # -- Auxiliary data --------------------------------------------------------------------
-@requires_symbol("tecauxstr142")
 def tecauxstr142(name: str, value: str) -> None:
     """Add dataset-level auxiliary data (classic API).
 
@@ -3809,7 +3609,6 @@ def tecauxstr142(name: str, value: str) -> None:
     Note:
         Must be called after ``tecini142`` but before first ``teczne142``.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ret = lib.tecauxstr142(
         ctypes.c_char_p(name.encode("utf-8")),
         ctypes.c_char_p(value.encode("utf-8")),
@@ -3820,7 +3619,6 @@ def tecauxstr142(name: str, value: str) -> None:
         )
 
 
-@requires_symbol("tecvauxstr142")
 def tecvauxstr142(var: int, name: str, value: str) -> None:
     """Add variable-level auxiliary data (classic API).
 
@@ -3835,7 +3633,6 @@ def tecvauxstr142(var: int, name: str, value: str) -> None:
     Note:
         Must be called after ``tecini142`` but before first ``teczne142``.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     var_c = ctypes.c_int32(var)
 
     ret = lib.tecvauxstr142(
@@ -3850,7 +3647,6 @@ def tecvauxstr142(var: int, name: str, value: str) -> None:
         )
 
 
-@requires_symbol("teczauxstr142")
 def teczauxstr142(name: str, value: str) -> None:
     """Add zone-level auxiliary data (classic API).
 
@@ -3864,7 +3660,6 @@ def teczauxstr142(name: str, value: str) -> None:
     Note:
         Must be called after ``teczne142`` for the current zone.
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ret = lib.teczauxstr142(
         ctypes.c_char_p(name.encode("utf-8")),
         ctypes.c_char_p(value.encode("utf-8")),
@@ -3876,7 +3671,6 @@ def teczauxstr142(name: str, value: str) -> None:
 
 
 # -- User-defined data (custom records) ------------------------------------------------
-@requires_symbol("tecusr142")
 def tecusr142(user_rec: str) -> None:
     """Write a user-defined data record (classic API).
 
@@ -3890,7 +3684,6 @@ def tecusr142(user_rec: str) -> None:
         Used to write custom data records into the file.
         Data is preserved but not interpreted by Tecplot
     """
-    assert lib is not None  # narrowed: @_requires_symbol already checked
     ret = lib.tecusr142(ctypes.c_char_p(user_rec.encode("utf-8")))
     if ret != 0:
         raise TecioError(f"tecusr142 Error: user_rec={user_rec!r}, return_code={ret}")

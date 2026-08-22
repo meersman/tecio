@@ -50,23 +50,13 @@ PLT format, particularly for large unstructured meshes.
    - [`tecio.open`](api/index.md) — open a file for reading, writing, or appending
      - [`AppendWrite`](api/append_write.md) — append zones to an existing file (`mode='a'`)
      - [`AppendReadWrite`](api/append_read_write.md) — append and read in the same session (`mode='a+'`)
-   - **Core Classes** — the shared interface every reader and writer implements, regardless of format
-     - [`TecplotReader`](api/reader.md)
-     - [`TecplotZoneReader`](api/zone.md), incl. [`TecplotOrderedZoneReader`, `TecplotFEZoneReader`](api/zone.md)
-     - [`TecplotVariableReader`](api/variable.md)
-     - [`TecplotAuxDataReader`](api/auxdata.md)
-     - [`TecplotWriter`](api/writer.md)
-   - **[Containers](api/containers.md)** — `ZoneList` and `VariableList`
-   - **[Format-Specific Classes](api/formats.md)** — one reader and one writer per format
-     - [`TecplotSzlReader`](api/szl_reader.md) / [`TecplotSzlWriter`](api/szl_writer.md)
-     - [`TecplotPltReader`](api/plt_reader.md) / [`TecplotPltWriter`](api/plt_writer.md)
-     - [`TecplotDatReader`](api/dat_reader.md) / [`TecplotDatWriter`](api/dat_writer.md)
-   - **Submodules**
-     - [`tecio.libtecio`](api/libtecio.md) — low-level C library bindings and enums
-       - [Enums](api/libtecio_enums.md)
-       - [SZL Read Functions](api/libtecio_szl_read.md)
-       - [SZL Write Functions](api/libtecio_szl_write.md)
-       - [Classic API Functions](api/libtecio_classic.md)
+   - **[Readers](api/readers.md)** — the shared reader interface, `ZoneList`/`VariableList`, and each format's reader class
+   - **[Writers](api/writers.md)** — the shared writer interface, order-of-operations, and each format's writer class
+   - **[Constants](api/constants.md)** — `ZoneType`, `DataType`, and the rest of Tecplot's enumerated constants
+   - **[C Function Wrappers](api/libtecio.md)** — low-level TecIO C library bindings
+     - [SZL Read Functions](api/libtecio_szl_read.md)
+     - [SZL Write Functions](api/libtecio_szl_write.md)
+     - [Classic API Functions](api/libtecio_classic.md)
 
 4. **[Console Scripts](api/cli.md)** — command-line tools
 

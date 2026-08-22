@@ -29,14 +29,13 @@ Design notes:
       FE node map that may hold millions of entries) or that a caller may never
       touch (aux data) stays lazily loaded on first access, exactly matching each
       format's existing behaviour.
-    * Unlike :mod:`~tecio._meta`, this module imports :mod:`~tecio.libtecio`
+    * Unlike :mod:`~tecio._meta`, this module imports :mod:`~tecio._constants`
       at runtime rather than only under ``TYPE_CHECKING``. ``_meta`` only ever
       needs the enums as type annotations (erased at runtime by ``from __future__
       import annotations``); ``nodes_per_cell`` below needs the actual
       ``ZoneType`` members to key a lookup table, so a runtime import is
-      unavoidable. ``libtecio`` does not import from this module, so this
-      introduces no cycle, the same reasoning already applies to ``_io.py``,
-      which imports the same enums at runtime for the same reason.
+      unavoidable. ``_constants`` is a dependency-free leaf module (no C library,
+      no other ``tecio`` submodule), so this introduces no cycle regardless.
 """
 
 from __future__ import annotations
@@ -48,8 +47,8 @@ from typing import Any, overload
 import numpy as np
 import numpy.typing as npt
 
+from ._constants import DataPacking, DataType, FileType, ValueLocation, ZoneType
 from ._containers import VariableList, ZoneList, select_variable_arrays
-from .libtecio import DataPacking, DataType, FileType, ValueLocation, ZoneType
 
 # Nodes per element for the standard finite-element zone types. ORDERED zones are
 # computed from active dimensions instead, see TecplotZoneReader.nodes_per_cell.
@@ -512,7 +511,7 @@ class TecplotOrderedZoneReader(TecplotZoneReader):
         return f"I={self._i}, J={self._j}, K={self._k}"
 
     @property
-    def I(self) -> int:  # noqa: E743 - matches Tecplot's own IJK convention
+    def I(self) -> int:  # noqa: E743 - match Tecplot IJK convention
         """Nodal I dimension."""
         return self._i
 
@@ -538,14 +537,17 @@ class TecplotOrderedZoneReader(TecplotZoneReader):
 
     @property
     def num_elements(self) -> int:
-        """Number of cells.
-
-        Currently ``I * J * K``, matching every existing format reader.
-        Note this counts *nodes*, not the ``(I-1)(J-1)(K-1)`` cells a grid of
-        that many nodes actually forms; flagged here rather than silently
-        changed, since it's a semantic question separate from this split.
-        """
-        return self._i * self._j * self._k
+        """Number of cells."""
+        # Normalize to proper dimension
+        if self._k == 1 and self._j == 1:
+            # 1D case
+            return self._i - 1
+        elif self._k == 1 and self._j > 1:
+            # 2D case
+            return (self._i - 1) * (self._j - 1)
+        else:
+            # 3D case
+            return (self._i - 1) * (self._j - 1) * (self._k - 1)
 
 
 # ======================================================================================
@@ -556,18 +558,17 @@ class TecplotOrderedZoneReader(TecplotZoneReader):
 class TecplotFEZoneReader(TecplotZoneReader):
     """Read-only handle to one finite-element zone.
 
-    Covers every non-ORDERED zone type, including FEPOLYGON, FEPOLYHEDRON,
-    and FEMIXED: :attr:`num_nodes`/:attr:`num_elements`/:attr:`variable`/
-    :attr:`auxdata` are meaningful for all of them today. :attr:`nodes_per_cell`
-    only has a fixed answer for the classic types (FELINESEG through FEBRICK)
-    and raises for the rest, and :attr:`node_map` may legitimately be None for
-    a zone type whose connectivity a format can't yet resolve (e.g. PLT's
-    FEPOLYGON/FEPOLYHEDRON, face-map reading isn't implemented there), the
-    same contract this class already had before the Ordered/FE split. A
-    dedicated poly reader with real face-map support (a `facemap` property,
-    variable-length per-face connectivity) is a reasonable future split once
-    some format actually implements it, informed by a real implementation
-    rather than a guess, not before.
+    Covers every non-ORDERED zone type, including FEPOLYGON, FEPOLYHEDRON, and FEMIXED:
+    :attr:`num_nodes`/:attr:`num_elements`/:attr:`variable`/ :attr:`auxdata` are
+    meaningful for all of them today. :attr:`nodes_per_cell` only has a fixed answer for
+    the classic types (FELINESEG through FEBRICK) and raises for the rest, and
+    :attr:`node_map` may legitimately be None for a zone type whose connectivity a
+    format can't yet resolve (e.g. PLT's FEPOLYGON/FEPOLYHEDRON, face-map reading isn't
+    implemented there), the same contract this class already had before the Ordered/FE
+    split. A dedicated poly reader with real face-map support (a `facemap` property,
+    variable-length per-face connectivity) is a reasonable future split once some format
+    actually implements it, informed by a real implementation rather than a guess, not
+    before.
 
     Args:
         zone_index: 1-based zone index within the dataset.
@@ -644,10 +645,10 @@ class TecplotFEZoneReader(TecplotZoneReader):
         """Nodes per cell, fixed by zone type.
 
         Raises:
-            ValueError: For a zone type without a fixed nodes-per-cell count
-                (not expected here, :class:`TecplotFEZoneReader` is only ever
-                constructed for the classic FE types, but kept as a defensive
-                check rather than an unchecked KeyError).
+            ValueError: For a zone type without a fixed nodes-per-cell count (not
+                expected here, :class:`TecplotFEZoneReader` is only ever constructed for
+                the classic FE types, but kept as a defensive check rather than an
+                unchecked KeyError).
         """
         zt = self.zone_type
         if zt in _NODES_PER_ELEM:
@@ -658,10 +659,10 @@ class TecplotFEZoneReader(TecplotZoneReader):
     def node_map(self) -> npt.NDArray[np.int64] | None:
         """Node connectivity array ``(num_elements, nodes_per_cell)``.
 
-        None only if a format cannot yet resolve connectivity for this zone's
-        type (e.g. PLT's FEPOLYGON/FEPOLYHEDRON, face-map reading not yet
-        implemented there; such zones would need a future, dedicated poly
-        reader, not this class, once that's built).
+        None only if a format cannot yet resolve connectivity for this zone's type
+        (e.g. PLT's FEPOLYGON/FEPOLYHEDRON, face-map reading not yet implemented there;
+        such zones would need a future, dedicated poly reader, not this class, once
+        that's built).
         """
         if not self._node_map_loaded:
             node_map = self._load_node_map()
@@ -683,11 +684,11 @@ class TecplotFEZoneReader(TecplotZoneReader):
 class TecplotReader(ABC):
     """Shared interface for all Tecplot file readers (SZL, PLT, DAT).
 
-    Concrete subclasses (:class:`TecplotSzlReader`, ...) differ in how a file is
-    opened and parsed, SZL keeps a live C file handle and queries it on demand,
-    PLT and DAT parse eagerly and hold no handle, but expose an identical
-    interface once open, so code (including the ParaView plugin) can be written
-    against this base without caring which format produced a given file.
+    Concrete subclasses (:class:`TecplotSzlReader`, ...) differ in how a file is opened
+    and parsed, SZL keeps a live C file handle and queries it on demand, PLT and DAT
+    parse eagerly and hold no handle, but expose an identical interface once open, so
+    code (including the ParaView plugin) can be written against this base without caring
+    which format produced a given file.
     """
 
     __slots__ = ()
@@ -697,11 +698,10 @@ class TecplotReader(ABC):
         """Open *path* for reading.
 
         Declared here so that ``ReaderCls(path)`` type-checks against
-        ``type[TecplotReader]``, e.g. in :func:`~tecio._io.open`'s dispatch
-        table, without needing a cast. Each format's actual constructor may
-        accept a broader path type (PLT also takes ``os.PathLike``); ``str``
-        is the narrowest common signature, matching how every call site in
-        this package already invokes it.
+        ``type[TecplotReader]``, e.g. in :func:`~tecio._io.open`'s dispatch table,
+        without needing a cast. Each format's actual constructor may accept a broader
+        path type (PLT also takes ``os.PathLike``); ``str`` is the narrowest common
+        signature, matching how every call site in this package already invokes it.
         """
 
     # -- Abstract: resolved differently per format -------------------------------------
@@ -740,11 +740,11 @@ class TecplotReader(ABC):
     def _var_auxdata_at(self, var_index: int) -> TecplotAuxDataReader:
         """Return aux data for variable *var_index* (1-based, unchecked)."""
 
-    def close(self) -> None:  # noqa: B027 - default is deliberate, see docstring
+    def close(self) -> None:  # noqa: B027
         """Release any open resources. No-op unless overridden.
 
-        SZL overrides this to close its C file handle; PLT and DAT hold no
-        handle between accesses and use this default.
+        SZL overrides this to close its C file handle; PLT and DAT hold no handle
+        between accesses and use this default.
         """
 
     # -- Shared ------------------------------------------------------------------------
@@ -778,8 +778,8 @@ class TecplotReader(ABC):
     def var_auxdata(self) -> list[TecplotAuxDataReader | None]:
         """Per-variable auxiliary data, 1-based (index 0 is a placeholder).
 
-        Derived from :meth:`get_var_auxdata`, a subclass never implements
-        this separately.
+        Derived from :meth:`get_var_auxdata`, a subclass never implements this
+        separately.
         """
         return [None] + [self.get_var_auxdata(i) for i in range(1, self.num_vars + 1)]
 

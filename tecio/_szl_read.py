@@ -1,11 +1,11 @@
 """Read Tecplot SZL (``.szplt``) files via the TecIO C library.
 
-Small scalar zone metadata (title, type, dimensions or node/element counts,
-solution time, strand ID, shared connectivity) is queried once, at zone
-construction, and frozen by :class:`~tecio._reader.TecplotOrderedZoneReader` /
-:class:`~tecio._reader.TecplotFEZoneReader`. Variable metadata is queried live,
-on each access, it's a single cheap C call either way. Variable data arrays and
-node maps are read lazily, on first access, straight from the C library.
+Small scalar zone metadata (title, type, dimensions or node/element counts, solution
+time, strand ID, shared connectivity) is queried once, at zone construction, and frozen
+by :class:`~tecio._reader.TecplotOrderedZoneReader` /
+:class:`~tecio._reader.TecplotFEZoneReader`. Variable metadata is queried live, on each
+access, it's a single cheap C call either way. Variable data arrays and node maps are
+read lazily, on first access, straight from the C library.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import numpy as np
 import numpy.typing as npt
 
 from . import libtecio
+from ._constants import DataPacking, DataType, FileType, ValueLocation, ZoneType
 from ._containers import ZoneList
 from ._reader import (
     TecplotAuxDataReader,
@@ -27,14 +28,10 @@ from ._reader import (
     TecplotVariableReader,
     TecplotZoneReader,
 )
-from .libtecio import DataPacking, DataType, FileType, ValueLocation, ZoneType
 
 # ======================================================================================
 # Auxiliary data
 # ======================================================================================
-# Split by level rather than a single class with a string discriminator, each level
-# uses a different pair of libtecio calls and this keeps every subclass a plain,
-# direct implementation. Resolves the file's own prior TODO to make this split.
 
 
 class TecplotSzlDatasetAuxDataReader(TecplotAuxDataReader):
@@ -114,9 +111,9 @@ class TecplotSzlZoneAuxDataReader(TecplotAuxDataReader):
 class TecplotSzlVariableReader(TecplotVariableReader):
     """Variable reader for SZL files.
 
-    Every metadata property queries the C library directly on each access, one
-    call is already cheap and callers don't typically re-read the same metadata
-    field in a hot loop the way they do :attr:`values`.
+    Every metadata property queries the C library directly on each access, one call is
+    already cheap and callers don't typically re-read the same metadata field in a hot
+    loop the way they do :attr:`values`.
     """
 
     __slots__ = ("_handle", "zone_index", "var_index")
@@ -185,20 +182,19 @@ class TecplotSzlVariableReader(TecplotVariableReader):
     ) -> npt.NDArray[Any] | None:
         """Get variable values with optional range specification.
 
-        For ordered zones a full read returns the array shaped ``(I, J, K)`` for
-        nodal variables, or ``(I-1, J-1, K-1)`` for cell-centered, so zone
-        dimensions can be inferred directly from the array shape. Partial reads
-        always return a flat 1-D array.
+        For ordered zones a full read returns the array shaped ``(I, J, K)`` for nodal
+        variables, or ``(I-1, J-1, K-1)`` for cell-centered, so zone dimensions can be
+        inferred directly from the array shape. Partial reads always return a flat 1-D
+        array.
 
         Args:
-            value_range: 1-based ``(start, end)``. ``(None, None)`` reads all
-                values.
+            value_range: 1-based ``(start, end)``. ``(None, None)`` reads all values.
 
         Returns:
-            NumPy array with the dtype matching :attr:`data_type`, reshaped for
-            full reads of ordered zones, flat for FE zones and partial reads. A
-            shared variable resolves to its source zone's array. None only if
-            the variable is passive.
+            NumPy array with the dtype matching :attr:`data_type`, reshaped for full
+            reads of ordered zones, flat for FE zones and partial reads. A shared
+            variable resolves to its source zone's array. None only if the variable is
+            passive.
 
         Raises:
             ValueError: If only one of start/end is specified.
@@ -289,9 +285,8 @@ def _szl_zone_is_enabled(handle: ctypes.c_void_p, zone_index: int) -> bool:
 class TecplotSzlOrderedZoneReader(TecplotOrderedZoneReader):
     """Ordered (IJK) zone reader for SZL files.
 
-    Scalar metadata is queried from the C library once, at construction, and
-    frozen by the base class. The variable list and aux data stay lazily
-    loaded on first access.
+    Scalar metadata is queried from the C library once, at construction, and frozen by
+    the base class. The variable list and aux data stay lazily loaded on first access.
     """
 
     __slots__ = ("_handle", "num_vars")
@@ -331,9 +326,9 @@ class TecplotSzlOrderedZoneReader(TecplotOrderedZoneReader):
 class TecplotSzlFEZoneReader(TecplotFEZoneReader):
     """Finite-element zone reader for SZL files.
 
-    Scalar metadata is queried from the C library once, at construction, and
-    frozen by the base class. The variable list, node map, and aux data stay
-    lazily loaded on first access.
+    Scalar metadata is queried from the C library once, at construction, and frozen by
+    the base class. The variable list, node map, and aux data stay lazily loaded on
+    first access.
     """
 
     __slots__ = ("_handle", "num_vars")
@@ -363,8 +358,8 @@ class TecplotSzlFEZoneReader(TecplotFEZoneReader):
     def is_enabled(self) -> bool:
         """True if the zone is enabled (queried live).
 
-        SZL is the only format with a genuine per-zone enabled flag; PLT and
-        DAT use the base class default of always True.
+        SZL is the only format with a genuine per-zone enabled flag; PLT and DAT use the
+        base class default of always True.
         """
         return _szl_zone_is_enabled(self._handle, self.zone_index)
 
@@ -401,9 +396,9 @@ def _build_szl_zone(
 ) -> TecplotZoneReader:
     """Construct the right concrete zone reader for zone *zone_index*.
 
-    A single ``.szplt`` file commonly holds a mix of ORDERED and FE zones, so
-    this queries the C library for the zone type first, cheap, one call, then
-    dispatches to the matching class.
+    A single ``.szplt`` file commonly holds a mix of ORDERED and FE zones, so this
+    queries the C library for the zone type first, cheap, one call, then dispatches to
+    the matching class.
     """
     zone_type = ZoneType(libtecio.tec_zone_get_type(handle, zone_index))
     if zone_type == ZoneType.ORDERED:
@@ -419,10 +414,10 @@ def _build_szl_zone(
 class TecplotSzlReader(TecplotReader):
     """Reader for Tecplot ``.szplt`` files.
 
-    Keeps a live C file handle for the reader's lifetime. Zones are constructed,
-    and their scalar metadata resolved, on first access to :attr:`zone`, not at
-    open time, so opening a file with many zones stays cheap if the caller only
-    wants dataset-level information.
+    Keeps a live C file handle for the reader's lifetime. Zones are constructed, and
+    their scalar metadata resolved, on first access to :attr:`zone`, not at open time,
+    so opening a file with many zones stays cheap if the caller only wants dataset-level
+    information.
 
     Args:
         file_name: Path to the ``.szplt`` file.

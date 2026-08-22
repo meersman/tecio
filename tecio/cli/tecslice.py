@@ -135,9 +135,10 @@ from .. import (
     TecplotOrderedZoneReader,
     TecplotWriter,
     TecplotZoneReader,
+    ValueLocation,
+    ZoneType,
 )
 from .. import open as tecio_open
-from ..libtecio import ZoneType
 
 # ---------------------------------------------------------------------------
 # Slice spec types
@@ -745,8 +746,6 @@ def _slice_and_write_ordered(
         ``True`` if the zone was written, ``False`` if the slice was empty.
 
     """
-    from ..libtecio import ValueLocation  # local import to avoid circular
-
     ni, nj, nk = zone.dimensions
 
     # Compute output dimensions.
