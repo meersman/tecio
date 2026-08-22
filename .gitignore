@@ -71,6 +71,8 @@ instance/
 docs/_build/
 docs/_autosummary/
 docs/api/cli/
+docs/api/readers/
+docs/api/writers/
 
 # PyBuilder
 target/
