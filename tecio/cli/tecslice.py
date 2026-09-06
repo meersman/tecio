@@ -133,6 +133,7 @@ import numpy as np
 from .. import (
     TecplotFEZoneReader,
     TecplotOrderedZoneReader,
+    TecplotSzlWriter,
     TecplotWriter,
     TecplotZoneReader,
     ValueLocation,
@@ -644,12 +645,20 @@ def _write_zone_verbatim(
         writer.write_ijk_zone(data=writer_data, **kw)
     elif isinstance(zone, TecplotFEZoneReader):
         con_sharing = zone.shared_connectivity
+        fe_kw = kw.copy()
+
+        # Face-neighbor connections
+        if zone.face_neighbor_mode is not None and not isinstance(
+            writer, TecplotSzlWriter
+        ):
+            fe_kw["face_neighbors"] = zone.get_face_connections()
+            fe_kw["face_neighbor_mode"] = zone.face_neighbor_mode
         writer.write_fe_zone(
             zone_type=zone.zone_type,
             data=writer_data,
             node_map=None if con_sharing else zone.node_map,
             con_sharing=con_sharing,
-            **kw,
+            **fe_kw,
         )
     else:
         raise NotImplementedError(
@@ -707,12 +716,20 @@ def _write_zone_protected(
         writer.write_ijk_zone(data=writer_data, **kw)
     elif isinstance(zone, TecplotFEZoneReader):
         con_sharing = zone.shared_connectivity
+        fe_kw = kw.copy()
+
+        # Face-neighbor connections
+        if zone.face_neighbor_mode is not None and not isinstance(
+            writer, TecplotSzlWriter
+        ):
+            fe_kw["face_neighbors"] = zone.get_face_connections()
+            fe_kw["face_neighbor_mode"] = zone.face_neighbor_mode
         writer.write_fe_zone(
             zone_type=zone.zone_type,
             data=writer_data,
             node_map=None if con_sharing else zone.node_map,
             con_sharing=con_sharing,
-            **kw,
+            **fe_kw,
         )
     else:
         raise NotImplementedError(

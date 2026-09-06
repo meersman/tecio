@@ -105,6 +105,7 @@ from .. import (
     TecplotFEZoneReader,
     TecplotOrderedZoneReader,
     TecplotReader,
+    TecplotSzlWriter,
     TecplotWriter,
     TecplotZoneReader,
     ZoneType,
@@ -409,12 +410,20 @@ def _write_zone(
     elif isinstance(zone, TecplotFEZoneReader):
         con_src = zone.shared_connectivity
         con_remapped = zone_index_map.get(con_src) if con_src is not None else None
+        fe_kw = common_kw.copy()
+
+        # Face-neighbor connections
+        if zone.face_neighbor_mode is not None and not isinstance(
+            writer, TecplotSzlWriter
+        ):
+            fe_kw["face_neighbors"] = zone.get_face_connections()
+            fe_kw["face_neighbor_mode"] = zone.face_neighbor_mode
         writer.write_fe_zone(
             zone_type=zt,
             data=writer_data,
             node_map=None if con_remapped else zone.node_map,
             con_sharing=con_remapped,
-            **common_kw,
+            **fe_kw,
         )
     else:
         raise NotImplementedError(

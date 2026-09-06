@@ -89,6 +89,7 @@ from .. import (
     TecplotFEZoneReader,
     TecplotOrderedZoneReader,
     TecplotReader,
+    TecplotSzlWriter,
     TecplotWriter,
     ZoneType,
 )
@@ -204,8 +205,9 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
     """Stream all zones from *reader* into the open *writer*.
 
     Each zone is reproduced at its original data type and value location.
-    Connectivity (node maps) is copied verbatim for FE zones. Zone-level
-    auxiliary data is forwarded as well.
+    Connectivity (node maps) is copied verbatim for FE zones, along with
+    face-neighbor connections where present. Zone-level auxiliary data is
+    forwarded as well.
 
     Args:
         reader: An open reader instance (SZL, PLT, or DAT).
@@ -276,12 +278,20 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
             writer.write_ijk_zone(data=active_data, **common_kw)
         elif isinstance(zone, TecplotFEZoneReader):
             con_sharing = zone.shared_connectivity
+            fe_kw = common_kw.copy()
+
+            # Face-neighbor connections
+            if zone.face_neighbor_mode is not None and not isinstance(
+                writer, TecplotSzlWriter
+            ):
+                fe_kw["face_neighbors"] = zone.get_face_connections()
+                fe_kw["face_neighbor_mode"] = zone.face_neighbor_mode
             writer.write_fe_zone(
                 zone_type=zt,
                 data=active_data,
                 node_map=None if con_sharing else zone.node_map,
                 con_sharing=con_sharing,
-                **common_kw,
+                **fe_kw,
             )
         else:
             raise NotImplementedError(

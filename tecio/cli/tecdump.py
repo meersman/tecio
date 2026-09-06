@@ -227,6 +227,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                             )
                             print(f"  Node Map             : {value_str}")
 
+                        # Face-neighbor connections
+                        print(f"  Face Neighbor Mode   : {zone.face_neighbor_mode}")
+                        print(f"  Num Face Connections : {zone.num_face_connections}")
+                        if zone.num_face_connections is not None:
+                            value_str = np.array2string(
+                                zone.get_face_connections(),
+                                prefix="  Face Connections     : ",
+                                separator=", ",
+                            )
+                            print(f"  Face Connections     : {value_str}")
+
                     # Print variable record
                     if args.print_vars:
                         for j in range(tec.num_vars):

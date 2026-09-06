@@ -73,6 +73,12 @@ Output structure:
                                           omitted if connectivity is shared
           .node_map_shared_from   double  1-based source zone, FE only, present only
                                           if this zone shares its connectivity
+          .face_neighbor_mode     char    'LOCAL_ONE_TO_ONE' | ..., FE only, present
+                                          only if the zone has face-neighbor data
+          .num_face_connections   double  FE only, present only alongside
+                                          face_neighbor_mode
+          .face_connections       array   flat, FE only, present only alongside
+                                          face_neighbor_mode
 
     Variable arrays are stored at their on-disk NumPy dtype, so single/double/integer
     precision is preserved. The real variable names are kept only in ``info.var_names``
@@ -398,6 +404,12 @@ def _zone_to_dict(zone: TecplotZoneReader, num_vars: int) -> dict[str, Any]:
             node_map = zone.node_map
             if node_map is not None:
                 d["node_map"] = node_map
+
+        # Face-neighbor connections
+        if zone.face_neighbor_mode is not None:
+            d["face_neighbor_mode"] = zone.face_neighbor_mode.name
+            d["num_face_connections"] = np.int64(zone.num_face_connections)
+            d["face_connections"] = zone.get_face_connections()
 
     return d
 

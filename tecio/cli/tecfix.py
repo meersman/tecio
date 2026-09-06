@@ -100,7 +100,13 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from .. import DataType, TecplotFEZoneReader, TecplotOrderedZoneReader, ZoneType
+from .. import (
+    DataType,
+    TecplotFEZoneReader,
+    TecplotOrderedZoneReader,
+    TecplotSzlWriter,
+    ZoneType,
+)
 from .. import open as tecio_open
 
 # ---------------------------------------------------------------------------
@@ -509,12 +515,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                         writer.write_ijk_zone(data=writer_data, **common_kw)
                     elif isinstance(zone, TecplotFEZoneReader):
                         con_sharing = zone.shared_connectivity
+                        fe_kw = common_kw.copy()
+
+                        # Face-neighbor connections
+                        if zone.face_neighbor_mode is not None and not isinstance(
+                            writer, TecplotSzlWriter
+                        ):
+                            fe_kw["face_neighbors"] = zone.get_face_connections()
+                            fe_kw["face_neighbor_mode"] = zone.face_neighbor_mode
                         writer.write_fe_zone(
                             zone_type=zt,
                             data=writer_data,
                             node_map=None if con_sharing else zone.node_map,
                             con_sharing=con_sharing,
-                            **common_kw,
+                            **fe_kw,
                         )
                     else:
                         raise NotImplementedError(
