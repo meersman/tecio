@@ -47,7 +47,14 @@ from typing import Any, overload
 import numpy as np
 import numpy.typing as npt
 
-from ._constants import DataPacking, DataType, FileType, ValueLocation, ZoneType
+from ._constants import (
+    DataPacking,
+    DataType,
+    FaceNeighborMode,
+    FileType,
+    ValueLocation,
+    ZoneType,
+)
 from ._containers import VariableList, ZoneList, select_variable_arrays
 
 # Nodes per element for the standard finite-element zone types. ORDERED zones are
@@ -59,6 +66,60 @@ _NODES_PER_ELEM: dict[ZoneType, int] = {
     ZoneType.FETETRAHEDRON: 4,
     ZoneType.FEBRICK: 8,
 }
+
+
+def reshape_face_connections(
+    flat: npt.NDArray[np.int64],
+    mode: FaceNeighborMode,
+    num_connections: int,
+) -> npt.NDArray[np.int64] | list[npt.NDArray[np.int64]]:
+    """Reshape flat face-neighbor connection values per ``FaceNeighborMode``.
+
+    Shared across formats, any reader whose C/binary layer returns face
+    connections as a flat array can call this to get the structured form
+    :attr:`TecplotFEZoneReader.face_connections` documents.
+
+    ``LOCAL_ONE_TO_ONE`` (3 values/connection: ``cz1, fz, cz2``) and
+    ``GLOBAL_ONE_TO_ONE`` (4 values/connection: ``cz, fz, ZZ, CZ``) are
+    uniform, reshaped directly into a 2D array of shape
+    ``(num_connections, 3 or 4)``.
+
+    ``LOCAL_ONE_TO_MANY``/``GLOBAL_ONE_TO_MANY`` are ragged: each record
+    starts with a fixed 4-value header (``cz, fz, oz, nz``), where ``nz``
+    (the record's own 4th value) gives the count of additional neighbor
+    references that follow, ``nz`` cell indices for local, ``2*nz``
+    zone/cell index pairs for global. Since no single rectangular shape
+    fits, each record is returned as its own 1D array, walking the flat
+    buffer using each record's own ``nz`` to find where the next one
+    starts. This ragged case is rare in practice for the classic FE element
+    types this reader targets, "many" typically comes from polygon zones
+    instead.
+
+    Args:
+        flat: The raw flat array as read from the file/library.
+        mode: This zone's face-neighbor mode.
+        num_connections: Number of connections, from a dedicated count
+            (e.g. ``tecZoneFaceNbrGetNumConnections``), not inferred from
+            *flat*'s length, which isn't reliable for the ragged modes.
+
+    Returns:
+        A ``(num_connections, 3 or 4)`` array for the one-to-one modes, or
+        a list of ``num_connections`` 1D arrays for the one-to-many modes.
+    """
+    if mode is FaceNeighborMode.LOCAL_ONE_TO_ONE:
+        return flat.reshape(num_connections, 3)
+    if mode is FaceNeighborMode.GLOBAL_ONE_TO_ONE:
+        return flat.reshape(num_connections, 4)
+
+    is_global = mode is FaceNeighborMode.GLOBAL_ONE_TO_MANY
+    connections: list[npt.NDArray[np.int64]] = []
+    i = 0
+    for _ in range(num_connections):
+        nz = int(flat[i + 3])
+        record_len = 4 + (2 * nz if is_global else nz)
+        connections.append(flat[i : i + record_len])
+        i += record_len
+    return connections
 
 
 def _immutable_setattr(instance: object, name: str, value: object) -> None:
@@ -589,12 +650,20 @@ class TecplotFEZoneReader(TecplotZoneReader):
         "_shared_connectivity",
         "_node_map_cache",
         "_node_map_loaded",
+        "_face_neighbor_meta_cache",
+        "_face_neighbor_meta_loaded",
+        "_face_connections_cache",
+        "_face_connections_loaded",
     )
     _num_nodes: int
     _num_elements: int
     _shared_connectivity: int | None
     _node_map_cache: npt.NDArray[np.int64] | None
     _node_map_loaded: bool
+    _face_neighbor_meta_cache: tuple[FaceNeighborMode, int, bool | None] | None
+    _face_neighbor_meta_loaded: bool
+    _face_connections_cache: npt.NDArray[np.int64] | None
+    _face_connections_loaded: bool
 
     def __init__(
         self,
@@ -621,6 +690,10 @@ class TecplotFEZoneReader(TecplotZoneReader):
         object.__setattr__(self, "_shared_connectivity", shared_connectivity)
         object.__setattr__(self, "_node_map_cache", None)
         object.__setattr__(self, "_node_map_loaded", False)
+        object.__setattr__(self, "_face_neighbor_meta_cache", None)
+        object.__setattr__(self, "_face_neighbor_meta_loaded", False)
+        object.__setattr__(self, "_face_connections_cache", None)
+        object.__setattr__(self, "_face_connections_loaded", False)
 
     def _repr_size(self) -> str:
         return f"N={self._num_nodes}, E={self._num_elements}"
@@ -674,6 +747,150 @@ class TecplotFEZoneReader(TecplotZoneReader):
     @abstractmethod
     def _load_node_map(self) -> npt.NDArray[np.int64] | None:
         """Read this zone's node connectivity. Called at most once, lazily."""
+
+    def _resolve_face_neighbor_meta(
+        self,
+    ) -> tuple[FaceNeighborMode, int, bool | None] | None:
+        if not self._face_neighbor_meta_loaded:
+            result = self._load_face_neighbor_meta()
+            object.__setattr__(self, "_face_neighbor_meta_cache", result)
+            object.__setattr__(self, "_face_neighbor_meta_loaded", True)
+            return result
+        return self._face_neighbor_meta_cache
+
+    @property
+    def face_neighbor_mode(self) -> FaceNeighborMode | None:
+        """This zone's face-neighbor connection mode.
+
+        None if the zone has no face-neighbor connections, or if this format
+        doesn't (yet) support reading them, unstructured connectivity alone
+        already implies node adjacency; face neighbors only exist to state
+        adjacency explicitly for non-conformal or multi-zone-connected
+        meshes, which most FE zones don't need. Cheap: reading this never
+        loads the connections themselves, only the small metadata it's
+        paired with, so it's safe to check on every zone without cost.
+        """
+        result = self._resolve_face_neighbor_meta()
+        return result[0] if result is not None else None
+
+    @property
+    def num_face_connections(self) -> int | None:
+        """Number of face-neighbor connections in this zone, else None.
+
+        Not derivable from :meth:`get_face_connections`'s result without
+        loading it, and for the "many" modes, not derivable from its flat
+        length at all, a variable number of neighbor cells per connection
+        means the array's length isn't a fixed multiple of this count.
+        Cheap either way: this never loads the connections themselves.
+        """
+        result = self._resolve_face_neighbor_meta()
+        return result[1] if result is not None else None
+
+    @property
+    def face_neighbors_complete(self) -> bool | None:
+        """Whether this zone's explicit face-neighbor data is exhaustive.
+
+        Tecplot can auto-detect ordinary conformal adjacency from the node
+        map alone; explicit face-neighbor data exists for what auto-detection
+        can't find (non-conformal interfaces, cross-zone adjacency). ``True``
+        means the explicit data is the entire adjacency picture, nothing
+        else to auto-detect. ``False`` means it's a supplement, Tecplot
+        still auto-detects the rest. ``None`` means either this zone has no
+        face-neighbor data at all (see :attr:`face_neighbor_mode`), or this
+        format has no way to represent the distinction: only DAT's ASCII
+        format actually carries this flag (``FEFACENEIGHBORSCOMPLETE``);
+        neither the classic nor new C APIs have an equivalent, so PLT and
+        SZL always report ``None`` here even when face-neighbor data exists.
+        """
+        result = self._resolve_face_neighbor_meta()
+        return result[2] if result is not None else None
+
+    def _load_face_neighbor_meta(
+        self,
+    ) -> tuple[FaceNeighborMode, int, bool | None] | None:
+        """Read this zone's face-neighbor mode, count, and completeness.
+
+        Called at most once, lazily, and never triggers loading the
+        connections themselves. Default: None (not implemented for this
+        format). A format that overrides this to return real data must
+        also override :meth:`_load_face_connections`.
+        """
+        return None
+
+    def get_face_connections(
+        self, reshape: bool = False
+    ) -> npt.NDArray[np.int64] | None:
+        """This zone's face-neighbor connections, else None.
+
+        Loaded and cached on first access (flat form), independently of
+        :attr:`face_neighbor_mode`/:attr:`num_face_connections`, reading
+        those never triggers this.
+
+        Args:
+            reshape: If True, and :attr:`face_neighbor_mode` is
+                ``LOCAL_ONE_TO_ONE`` or ``GLOBAL_ONE_TO_ONE``, reshape into
+                a 2D array of shape ``(num_face_connections, 3 or 4)``
+                instead of the raw flat array. Raises for the "many" modes,
+                a variable number of neighbor cells per connection means
+                there's no single rectangular shape to reshape into.
+
+        Returns:
+            Flat array (dtype int64) if *reshape* is False (the default),
+            or a 2D array if *reshape* is True and the mode supports it.
+            None if the zone has no face-neighbor connections.
+
+        Raises:
+            ValueError: If *reshape* is True and :attr:`face_neighbor_mode`
+                is ``LOCAL_ONE_TO_MANY`` or ``GLOBAL_ONE_TO_MANY``. Call
+                without *reshape*, or use :func:`reshape_face_connections`
+                directly, which handles the "many" modes too, returning a
+                list of per-connection arrays instead of raising.
+        """
+        if self.num_face_connections is None:
+            return None
+        if not self._face_connections_loaded:
+            connections = self._load_face_connections()
+            object.__setattr__(self, "_face_connections_cache", connections)
+            object.__setattr__(self, "_face_connections_loaded", True)
+        else:
+            connections = self._face_connections_cache
+        assert connections is not None  # narrowed: num_face_connections was not None
+        if not reshape:
+            return connections
+
+        mode = self.face_neighbor_mode
+        assert mode is not None  # narrowed: num_face_connections was not None above
+        if mode not in (
+            FaceNeighborMode.LOCAL_ONE_TO_ONE,
+            FaceNeighborMode.GLOBAL_ONE_TO_ONE,
+        ):
+            raise ValueError(
+                "get_face_connections(reshape=True) requires a one-to-one "
+                f"FaceNeighborMode, this zone's mode is {mode.name}, which "
+                "is ragged (a variable number of neighbor cells per "
+                "connection) and has no single rectangular shape. Call "
+                "without reshape to get the flat array, or use "
+                "reshape_face_connections() directly, which returns a "
+                "list of per-connection arrays for the many modes instead "
+                "of raising."
+            )
+        result = reshape_face_connections(connections, mode, self.num_face_connections)
+        assert isinstance(result, np.ndarray)  # narrowed: one-to-one modes above
+        return result
+
+    def _load_face_connections(self) -> npt.NDArray[np.int64]:
+        """Read this zone's flat face-neighbor connection values.
+
+        Called at most once, lazily, and only when
+        :attr:`num_face_connections` is already known to be non-None, so a
+        format overriding :meth:`_load_face_neighbor_meta` to return real
+        data must also override this; the default raises to make a missing
+        override obvious rather than silently returning nothing.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} reports face-neighbor metadata but "
+            "does not implement _load_face_connections."
+        )
 
 
 # ======================================================================================

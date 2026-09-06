@@ -32,7 +32,13 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ._constants import DataType, FileType, ValueLocation, ZoneType
+    from ._constants import (
+        DataType,
+        FaceNeighborMode,
+        FileType,
+        ValueLocation,
+        ZoneType,
+    )
 
 
 # =====================================================================================
@@ -50,20 +56,25 @@ class ZoneMeta:
     variable-type arrays of a ``TECZNE142`` zone header.
 
     Attributes:
-        index:           1-based zone index returned by the C library.
-        title:           Zone title.
-        zone_type:       The zone's :class:`~tecio.libtecio.ZoneType`.
-        solution_time:   Solution time (``0.0`` for static zones).
-        strand_id:       Strand ID (``0`` for static zones).
-        num_aux_items:   Number of zone-level auxiliary items written.
-        dimensions:      Nodal ``(imax, jmax, kmax)`` for ORDERED zones, else ``None``.
-        num_nodes:       Node count for FE zones, else ``None``.
-        num_elements:    Element count for FE zones, else ``None``.
-        value_locations: Per-variable value location, full dataset length.
-        passive_vars:    Per-variable passive flags, full dataset length.
-        shared_vars:     Per-variable share-from zone index (1-based; ``0`` for not
-                         shared), full dataset length.
-        data_types:      Per-variable data type, full dataset length.
+        index:                1-based zone index returned by the C library.
+        title:                Zone title.
+        zone_type:            The zone's :class:`~tecio.libtecio.ZoneType`.
+        solution_time:        Solution time (``0.0`` for static zones).
+        strand_id:            Strand ID (``0`` for static zones).
+        num_aux_items:        Number of zone-level auxiliary items written.
+        dimensions:           Nodal ``(imax, jmax, kmax)`` for ORDERED zones, else
+                              ``None``.
+        num_nodes:            Node count for FE zones, else ``None``.
+        num_elements:         Element count for FE zones, else ``None``.
+        face_neighbor_mode:   The zone's :class:`~tecio.FaceNeighborMode`, else
+                              ``None`` if it has no face-neighbor connections.
+        num_face_connections: Number of face-neighbor connections written,
+                              else ``None`` if it has none.
+        value_locations:      Per-variable value location, full dataset length.
+        passive_vars:         Per-variable passive flags, full dataset length.
+        shared_vars:          Per-variable share-from zone index (1-based; ``0`` for not
+                              shared), full dataset length.
+        data_types:           Per-variable data type, full dataset length.
 
     """
 
@@ -77,6 +88,8 @@ class ZoneMeta:
     dimensions: tuple[int, int, int] | None = None
     num_nodes: int | None = None
     num_elements: int | None = None
+    face_neighbor_mode: FaceNeighborMode | None = None
+    num_face_connections: int | None = None
     # Per-variable descriptors (length == dataset variable count).
     value_locations: tuple[ValueLocation, ...] = ()
     passive_vars: tuple[bool, ...] = ()

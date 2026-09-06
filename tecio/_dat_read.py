@@ -23,6 +23,7 @@ import numpy.typing as npt
 from ._constants import (
     DataPacking,
     DataType,
+    FaceNeighborMode,
     FileType,
     ValueLocation,
     ZoneType,
@@ -88,6 +89,14 @@ _STR_TO_FILETYPE: dict[str, FileType] = {
 _STR_TO_DATAPACKING: dict[str, DataPacking] = {
     "point": DataPacking.POINT,
     "block": DataPacking.BLOCK,
+}
+
+# ASCII keyword to FaceNeighborMode
+_STR_TO_FACENEIGHBORMODE: dict[str, FaceNeighborMode] = {
+    "localonetoone": FaceNeighborMode.LOCAL_ONE_TO_ONE,
+    "localonetomany": FaceNeighborMode.LOCAL_ONE_TO_MANY,
+    "globalonetoone": FaceNeighborMode.GLOBAL_ONE_TO_ONE,
+    "globalonetomany": FaceNeighborMode.GLOBAL_ONE_TO_MANY,
 }
 
 # Legacy F= (format) keyword to (is_fe, DataPacking)
@@ -933,10 +942,22 @@ class TecplotDatFEZoneReader(TecplotFEZoneReader):
     ASCII reader.
     """
 
-    __slots__ = ("_variables", "_node_map", "_aux_raw")
+    __slots__ = (
+        "_variables",
+        "_node_map",
+        "_aux_raw",
+        "_face_neighbor_mode",
+        "_num_face_connections",
+        "_face_connections",
+        "_face_neighbors_complete",
+    )
     _variables: list[TecplotVariableReader]
     _node_map: npt.NDArray[Any] | None
     _aux_raw: dict[str, str]
+    _face_neighbor_mode: FaceNeighborMode | None
+    _num_face_connections: int | None
+    _face_connections: npt.NDArray[np.int64] | None
+    _face_neighbors_complete: bool | None
 
     def __init__(
         self,
@@ -952,6 +973,10 @@ class TecplotDatFEZoneReader(TecplotFEZoneReader):
         node_map: npt.NDArray[Any] | None = None,
         datapacking: DataPacking = DataPacking.BLOCK,
         shared_connectivity: int | None = None,
+        face_neighbor_mode: FaceNeighborMode | None = None,
+        num_face_connections: int | None = None,
+        face_connections: npt.NDArray[np.int64] | None = None,
+        face_neighbors_complete: bool | None = None,
     ) -> None:
         super().__init__(
             zone_index=zone_index,
@@ -967,12 +992,31 @@ class TecplotDatFEZoneReader(TecplotFEZoneReader):
         object.__setattr__(self, "_variables", variables)
         object.__setattr__(self, "_node_map", node_map)
         object.__setattr__(self, "_aux_raw", auxdata)
+        object.__setattr__(self, "_face_neighbor_mode", face_neighbor_mode)
+        object.__setattr__(self, "_num_face_connections", num_face_connections)
+        object.__setattr__(self, "_face_connections", face_connections)
+        object.__setattr__(self, "_face_neighbors_complete", face_neighbors_complete)
 
     def _load_variables(self) -> list[TecplotVariableReader]:
         return self._variables
 
     def _load_node_map(self) -> npt.NDArray[Any] | None:
         return self._node_map
+
+    def _load_face_neighbor_meta(
+        self,
+    ) -> tuple[FaceNeighborMode, int, bool | None] | None:
+        if self._face_neighbor_mode is None or self._num_face_connections is None:
+            return None
+        return (
+            self._face_neighbor_mode,
+            self._num_face_connections,
+            self._face_neighbors_complete,
+        )
+
+    def _load_face_connections(self) -> npt.NDArray[np.int64]:
+        assert self._face_connections is not None  # narrowed: meta already confirmed
+        return self._face_connections
 
     def _load_auxdata(self) -> TecplotAuxDataReader:
         return TecplotDatAuxDataReader(self._aux_raw)
@@ -1295,6 +1339,26 @@ class TecplotDatReader(TecplotReader):
         else:
             packing = DataPacking.BLOCK
 
+        # Face-neighbor connections (finite-element zones only; ordered zones
+        # don't need them, adjacency is already implicit in the I/J/K
+        # structure). FACENEIGHBORCONNECTIONS is authoritative for how many
+        # values to expect; FEFACENEIGHBORSCOMPLETE says whether that's the
+        # entire adjacency picture or a supplement to Tecplot's own
+        # auto-detection, read below for face_neighbors_complete.
+        declared_face_connections = 0
+        face_neighbor_mode: FaceNeighborMode | None = None
+        face_neighbors_complete: bool | None = None
+        if zone_type != ZoneType.ORDERED and "FACENEIGHBORCONNECTIONS" in kv:
+            declared_face_connections = int(kv["FACENEIGHBORCONNECTIONS"] or "0")
+            if declared_face_connections > 0:
+                mode_raw = kv.get("FACENEIGHBORMODE", "LOCALONETOONE").strip().lower()
+                face_neighbor_mode = _STR_TO_FACENEIGHBORMODE.get(
+                    mode_raw, FaceNeighborMode.LOCAL_ONE_TO_ONE
+                )
+                if "FEFACENEIGHBORSCOMPLETE" in kv:
+                    complete_raw = kv["FEFACENEIGHBORSCOMPLETE"].strip().upper()
+                    face_neighbors_complete = complete_raw == "YES"
+
         # Variable locations (0-based index → ValueLocation)
         var_locs: dict[int, ValueLocation] = {}
         if "VARLOCATION" in kv:
@@ -1374,6 +1438,39 @@ class TecplotDatReader(TecplotReader):
                 flat = self._read_int_block(tokens, num_cells * nodes_per_cell)
                 node_map = flat.reshape(num_cells, nodes_per_cell)
 
+        # -- Read face-neighbor connections (FE zones only, if declared) ---------------
+        #
+        # Immediately follows connectivity in the file. Values are already
+        # 1-based in ASCII (unlike PLT's binary layout, no +1 needed here).
+
+        face_connections: npt.NDArray[np.int64] | None = None
+        one_to_one = (
+            FaceNeighborMode.LOCAL_ONE_TO_ONE,
+            FaceNeighborMode.GLOBAL_ONE_TO_ONE,
+        )
+        if face_neighbor_mode in one_to_one:
+            values_per = (
+                3 if face_neighbor_mode is FaceNeighborMode.LOCAL_ONE_TO_ONE else 4
+            )
+            face_connections = self._read_int_block(
+                tokens, declared_face_connections * values_per
+            )
+        elif face_neighbor_mode is not None:
+            # "Many" modes: ragged, each record's own 4th value (nz) gives the
+            # count of additional neighbor references that follow it.
+            is_global = face_neighbor_mode is FaceNeighborMode.GLOBAL_ONE_TO_MANY
+            pieces: list[npt.NDArray] = []
+            for _ in range(declared_face_connections):
+                header = self._read_int_block(tokens, 4)
+                nz = int(header[3])
+                rest_count = 2 * nz if is_global else nz
+                rest = self._read_int_block(tokens, rest_count)
+                pieces.append(header)
+                pieces.append(rest)
+            face_connections = (
+                np.concatenate(pieces) if pieces else np.empty(0, dtype=np.int64)
+            )
+
         # -- Build ReadVariable and ReadZone objects -----------------------------------
 
         # For ordered zones, reshape each variable array from flat 1-D to (I, J, K) for
@@ -1435,6 +1532,10 @@ class TecplotDatReader(TecplotReader):
                 node_map=node_map,
                 datapacking=packing,
                 shared_connectivity=con_share_zone if con_share_zone else None,
+                face_neighbor_mode=face_neighbor_mode,
+                num_face_connections=declared_face_connections or None,
+                face_connections=face_connections,
+                face_neighbors_complete=face_neighbors_complete,
             )
         )
 
@@ -1453,6 +1554,10 @@ class TecplotDatReader(TecplotReader):
         node_map: npt.NDArray[Any] | None,
         datapacking: DataPacking,
         shared_connectivity: int | None,
+        face_neighbor_mode: FaceNeighborMode | None = None,
+        num_face_connections: int | None = None,
+        face_connections: npt.NDArray[np.int64] | None = None,
+        face_neighbors_complete: bool | None = None,
     ) -> TecplotZoneReader:
         """Construct the right concrete zone reader for one parsed zone."""
         if zone_type == ZoneType.ORDERED:
@@ -1481,6 +1586,10 @@ class TecplotDatReader(TecplotReader):
             node_map=node_map,
             datapacking=datapacking,
             shared_connectivity=shared_connectivity,
+            face_neighbor_mode=face_neighbor_mode,
+            num_face_connections=num_face_connections,
+            face_connections=face_connections,
+            face_neighbors_complete=face_neighbors_complete,
         )
 
     # -- Block readers -----------------------------------------------------------------

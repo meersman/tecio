@@ -36,7 +36,14 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from ._constants import DataPacking, DataType, FileType, ValueLocation, ZoneType
+from ._constants import (
+    DataPacking,
+    DataType,
+    FaceNeighborMode,
+    FileType,
+    ValueLocation,
+    ZoneType,
+)
 from ._containers import ZoneList
 from ._reader import (
     TecplotAuxDataReader,
@@ -73,6 +80,15 @@ _NODES_PER_ELEMENT: dict[ZoneType, int] = {
     ZoneType.FEQUADRILATERAL: 4,
     ZoneType.FETETRAHEDRON: 4,
     ZoneType.FEBRICK: 8,
+}
+
+# Faces per element
+_FACES_PER_ELEMENT: dict[ZoneType, int] = {
+    ZoneType.FELINESEG: 2,
+    ZoneType.FETRIANGLE: 3,
+    ZoneType.FEQUADRILATERAL: 4,
+    ZoneType.FETETRAHEDRON: 4,
+    ZoneType.FEBRICK: 6,
 }
 
 # Map from PLT DataType integer to (numpy dtype string, itemsize).
@@ -229,7 +245,19 @@ class _ZoneMeta:
     value_locations: list[ValueLocation] = field(default_factory=list)
     connectivity_shared_zone: int = -1
     has_raw_face_neighbors: bool = False
+    # As declared by the header: whether/how many "miscellaneous" (explicit,
+    # non-raw) face-neighbor connections this zone's data block has on disk.
+    # Only used to decide whether to invoke _record_face_connections, never
+    # read as the final result, that's num_face_connections below, since a
+    # zone can have has_raw_face_neighbors instead, which doesn't touch this.
+    declared_misc_face_connections: int = 0
+    # Final, public-facing face-neighbor result, set by whichever mechanism
+    # a zone actually uses (_record_face_connections or the _raw variant).
     num_face_connections: int = 0
+    face_neighbor_mode: FaceNeighborMode | None = None
+    face_connections_offset: int | None = None
+    face_connections_flat_count: int = 0  # int32 values to read from that offset
+    face_connections_eager: npt.NDArray[np.int64] | None = None  # ragged "many" modes
 
     # Zone-level aux data  {name: value}
     auxdata: dict[str, str] = field(default_factory=dict)
@@ -416,11 +444,11 @@ class _PltParser:
         # Raw local 1-to-1 face neighbours supplied flag
         meta.has_raw_face_neighbors = bool(_read_int32(fp, byte_order))
 
-        # Number of miscellaneous face-neighbour connections
-        meta.num_face_connections = _read_int32(fp, byte_order)
-        if meta.num_face_connections != 0:
+        # Number of miscellaneous (non-raw) face-neighbour connections
+        meta.declared_misc_face_connections = _read_int32(fp, byte_order)
+        if meta.declared_misc_face_connections != 0:
             # face neighbour mode
-            _read_int32(fp, byte_order)
+            meta.face_neighbor_mode = FaceNeighborMode(_read_int32(fp, byte_order))
             zt = meta.zone_type
             fe_types = (
                 ZoneType.FELINESEG,
@@ -675,12 +703,11 @@ class _PltParser:
 
         if zt == ZoneType.ORDERED:
             # Ordered zones can have miscellaneous face-neighbor connections
-            if meta.connectivity_shared_zone < 0 and meta.num_face_connections > 0:
-                # Skip: N = num_face_connections * P (mode-dependent). We do not parse
-                # face neighbors, so just skip them. Safe approximation: each connection
-                # record is at least 3 INT32 values (LocalOneToOne), but the actual
-                # length is mode-dependent. Since we do not use them, skip naively.
-                pass
+            if (
+                meta.connectivity_shared_zone < 0
+                and meta.declared_misc_face_connections > 0
+            ):
+                self._record_face_connections(fp, meta)
             return
 
         if zt in (ZoneType.FEPOLYGON, ZoneType.FEPOLYHEDRON):
@@ -706,11 +733,104 @@ class _PltParser:
 
         # Raw local face neighbors (if supplied)
         if meta.has_raw_face_neighbors:
-            faces_per_element = nodes_per_cell  # same count for supported types
-            fp.seek(meta.num_elements * faces_per_element * 4, os.SEEK_CUR)
+            faces_per_element = _FACES_PER_ELEMENT.get(zt, nodes_per_cell)
+            self._record_face_connections_raw(fp, meta, faces_per_element)
 
-        # Miscellaneous face-neighbor connections (skip; not needed for data) We do not
-        # parse the mode-dependent records here.
+        # Miscellaneous face-neighbor connections
+        if meta.declared_misc_face_connections > 0:
+            self._record_face_connections(fp, meta)
+
+    def _record_face_connections(
+        self,
+        fp: io.BufferedIOBase,
+        meta: _ZoneMeta,
+    ) -> None:
+        """Record/read this zone's miscellaneous face-neighbor connections.
+
+        Must always fully advance past the block, or the file position would
+        be wrong for whatever is read next, this isn't optional bookkeeping.
+        ``LOCAL_ONE_TO_ONE``/``GLOBAL_ONE_TO_ONE`` have a byte length known in
+        advance (a fixed 3 or 4 values per connection), so are recorded
+        lazily here (offset + count), matching how connectivity itself is
+        handled. The "many" modes are ragged, no closed-form length exists,
+        correctness already requires reading through every record's own
+        length field to find where the next one starts, so they're read and
+        cached here rather than walked once now and read again later.
+        """
+        mode = meta.face_neighbor_mode
+        one_to_one = (
+            FaceNeighborMode.LOCAL_ONE_TO_ONE,
+            FaceNeighborMode.GLOBAL_ONE_TO_ONE,
+        )
+        if mode in one_to_one:
+            values_per = 3 if mode is FaceNeighborMode.LOCAL_ONE_TO_ONE else 4
+            flat_count = meta.declared_misc_face_connections * values_per
+            meta.face_connections_offset = fp.tell()
+            meta.face_connections_flat_count = flat_count
+            meta.num_face_connections = meta.declared_misc_face_connections
+            fp.seek(flat_count * 4, os.SEEK_CUR)
+            return
+
+        # "Many" modes: ragged, walk record-by-record using each record's own
+        # nz (the record's own 4th value) to find where the next one starts.
+        # Plain fp.read()+frombuffer, not np.fromfile(fp, ...): this file
+        # handle is shared with the rest of the metadata scan, which reads
+        # via plain fp.read() throughout, mixing that with np.fromfile's own
+        # internal buffering desyncs the file position.
+        is_global = mode is FaceNeighborMode.GLOBAL_ONE_TO_MANY
+        dt = np.dtype(f"{self.byte_order}i4")
+        values: list[int] = []
+        for _ in range(meta.declared_misc_face_connections):
+            header = np.frombuffer(fp.read(16), dtype=dt)
+            nz = int(header[3])
+            rest_count = 2 * nz if is_global else nz
+            rest = np.frombuffer(fp.read(rest_count * 4), dtype=dt)
+            values.extend(header.tolist())
+            values.extend(rest.tolist())
+        meta.num_face_connections = meta.declared_misc_face_connections
+        meta.face_connections_eager = np.array(values, dtype=np.int64)
+
+    def _record_face_connections_raw(
+        self,
+        fp: io.BufferedIOBase,
+        meta: _ZoneMeta,
+        faces_per_element: int,
+    ) -> None:
+        """Read and convert the "raw" one-to-one face-neighbor block.
+
+        Dense ``(num_elements, faces_per_element)`` array of 1-based
+        neighbor element indices, 0 meaning boundary (no neighbor). Face
+        index within each element is implicit, its position in the row.
+        Converted to the same ``(cz1, fz, cz2)`` triple shape the explicit
+        "miscellaneous" ``LOCAL_ONE_TO_ONE`` storage produces, so both
+        on-disk mechanisms present identically through the public API, a
+        caller shouldn't need to know or care which one a given file used.
+
+        Read here rather than recorded lazily by offset, unlike the
+        "miscellaneous" one-to-one case: the real connection count isn't
+        known until the boundary (zero) entries are filtered out, so cheap
+        metadata isn't possible without reading the block anyway.
+        """
+        dt = np.dtype(f"{self.byte_order}i4")
+        count = meta.num_elements * faces_per_element
+        raw = np.frombuffer(fp.read(count * 4), dtype=dt).astype(np.int64)
+        raw = raw.reshape(meta.num_elements, faces_per_element)
+
+        # "No neighbor" is marked -1 (boundary face), not 0; 0 does appear,
+        # rarely, as a separate, genuinely-unassigned-looking case, exclude
+        # both, only strictly positive values are real neighbor references.
+        elem_idx, face_idx = np.nonzero(raw > 0)
+        if elem_idx.size == 0:
+            return  # flag was set, but every entry is a boundary face
+
+        cz1 = elem_idx + 1
+        fz = face_idx + 1
+        cz2 = raw[elem_idx, face_idx]
+        triples = np.stack([cz1, fz, cz2], axis=1).ravel()
+
+        meta.face_neighbor_mode = FaceNeighborMode.LOCAL_ONE_TO_ONE
+        meta.num_face_connections = int(elem_idx.size)
+        meta.face_connections_eager = triples
 
     def _skip_poly_face_map(self, fp: io.BufferedIOBase, meta: _ZoneMeta) -> None:
         """Skip the face-map block for FEPOLYGON / FEPOLYHEDRON zones."""
@@ -1196,6 +1316,40 @@ class TecplotPltFEZoneReader(TecplotFEZoneReader):
             flat = np.fromfile(fp, dtype=dt, count=count)
 
         return flat.reshape(self.num_elements, -1).astype(np.int64) + 1
+
+    def _load_face_neighbor_meta(
+        self,
+    ) -> tuple[FaceNeighborMode, int, bool | None] | None:
+        meta = self._meta
+        if meta.num_face_connections == 0 or meta.face_neighbor_mode is None:
+            return None
+        # PLT has no completeness concept: neither the classic API
+        # (TECZNE142/TECZNEFEMIXED142) nor the new API (tecZoneCreateFE/
+        # tecZoneCreateFEMixed) has a parameter for it. Always None here,
+        # not a gap in this reader, the binary format genuinely can't
+        # express the distinction.
+        return (meta.face_neighbor_mode, meta.num_face_connections, None)
+
+    def _load_face_connections(self) -> npt.NDArray[np.int64]:
+        meta = self._meta
+        if meta.face_connections_eager is not None:
+            # Eager cache is either the "raw" mechanism (already confirmed
+            # correctly 1-based on disk, no adjustment) or a "many" mode
+            # record from the offset-based mechanism below (not validated
+            # against real data either way, left as-is rather than guessing).
+            return meta.face_connections_eager
+
+        assert meta.face_connections_offset is not None  # narrowed: one-to-one modes
+        count = meta.face_connections_flat_count
+        dt = np.dtype(f"{self._byte_order}i4")
+        with open(self._file_path, "rb") as fp:
+            fp.seek(meta.face_connections_offset)
+            flat = np.fromfile(fp, dtype=dt, count=count)
+        # Confirmed 0-based on disk against known-good data (cross-checked
+        # triple-for-triple against the equivalent hand-written DAT file),
+        # same convention as node_map, +1 for every value: cell, face, and
+        # neighbor-cell references are all indices here, none are counts.
+        return flat.astype(np.int64) + 1
 
     def _load_auxdata(self) -> TecplotAuxDataReader:
         return TecplotPltAuxDataReader(self._meta.auxdata)

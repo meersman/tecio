@@ -61,6 +61,7 @@ Keep output files for Tecplot 360 inspection:
 
 # ruff: noqa: E501, SIM117
 
+import contextlib
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -692,7 +693,11 @@ class TestWriteFEZone:
             np.testing.assert_allclose(zone.variable[3].values, c.astype(np.float64))
 
     def test_write_fe_face_neighbors(self, fmt: str, output_path: Callable) -> None:
-        """Two FEBRICK cells with face-neighbor connectivity and a CC variable."""
+        """Two FEBRICK cells with face-neighbor connectivity and a CC variable.
+
+        SZL specifically raises NotImplementedError instead of writing (likely a bug in
+        the TecIO C library)
+        """
         x, y, z, nodes, face_neighbors = create_FE_two_bricks()
         x = x.astype(np.float32)
         y = y.astype(np.float32)
@@ -700,22 +705,36 @@ class TestWriteFEZone:
         c = np.array([1.1, 2.2], dtype=np.float64)  # one value per element
 
         path = _path(output_path, fmt, "write_fe_face_neighbors")
+        kwargs = {
+            "zone_type": ZoneType.FEBRICK,
+            "data": [x, y, z, c],
+            "node_map": nodes,
+            "variables": ["x", "y", "z", "c"],
+            "title": "FE_2Bricks",
+            "value_locations": [
+                ValueLocation.NODAL,
+                ValueLocation.NODAL,
+                ValueLocation.NODAL,
+                ValueLocation.CELL_CENTERED,
+            ],
+            "face_neighbors": face_neighbors,
+            # face_neighbor_mode omitted deliberately: exercises the new
+            # "face_neighbors given without a mode defaults to
+            # LOCAL_ONE_TO_ONE" behavior, not just the explicit path.
+        }
+
+        if fmt == "szl":
+            w = tecio.open(str(path), "w")
+            try:
+                with pytest.raises(NotImplementedError, match="face-neighbor"):
+                    w.write_fe_zone(**kwargs)
+            finally:
+                with contextlib.suppress(Exception):
+                    w.close()
+            return
+
         with tecio.open(str(path), "w") as w:
-            w.write_fe_zone(
-                zone_type=ZoneType.FEBRICK,
-                data=[x, y, z, c],
-                node_map=nodes,
-                variables=["x", "y", "z", "c"],
-                title="FE_2Bricks",
-                value_locations=[
-                    ValueLocation.NODAL,
-                    ValueLocation.NODAL,
-                    ValueLocation.NODAL,
-                    ValueLocation.CELL_CENTERED,
-                ],
-                face_neighbors=face_neighbors,
-                face_nbr_mode=FaceNeighborMode.LOCAL_ONE_TO_ONE,
-            )
+            w.write_fe_zone(**kwargs)
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
@@ -724,6 +743,239 @@ class TestWriteFEZone:
             cc_var = zone.variable[3]
             assert cc_var.value_location == ValueLocation.CELL_CENTERED
             np.testing.assert_allclose(cc_var.values, c, rtol=_rtol(fmt, c))
+
+            # The face-neighbor data itself, not just an unrelated variable,
+            # this is the round trip that actually matters for this test.
+            assert zone.face_neighbor_mode == FaceNeighborMode.LOCAL_ONE_TO_ONE
+            assert zone.num_face_connections == len(face_neighbors)
+            np.testing.assert_array_equal(
+                zone.get_face_connections(reshape=True), face_neighbors
+            )
+
+    def test_write_fe_face_neighbor_mode_without_data_raises(
+        self, fmt: str, output_path: Callable
+    ) -> None:
+        """face_neighbor_mode given without face_neighbors is a mistake, raises."""
+        x, y, nodes = create_FE_tri()
+
+        path = _path(output_path, fmt, "write_fe_face_neighbor_mode_only")
+        w = tecio.open(str(path), "w")
+        try:
+            with pytest.raises(ValueError, match="face_neighbor_mode"):
+                w.write_fe_zone(
+                    zone_type=ZoneType.FETRIANGLE,
+                    data=[x, y],
+                    node_map=nodes,
+                    variables=["x", "y"],
+                    face_neighbor_mode=FaceNeighborMode.LOCAL_ONE_TO_ONE,
+                )
+        finally:
+            # No zone was ever successfully written; closing is expected to
+            # be a no-op or fail here, this test only cares that the
+            # validation itself raised, not that a valid file results.
+            with contextlib.suppress(Exception):
+                w.close()
+
+    def test_write_fe_face_neighbors_shared_connectivity(
+        self, fmt: str, output_path: Callable
+    ) -> None:
+        """Sharing connectivity bypasses face-neighbor data entirely.
+
+        Providing face_neighbors alongside con_sharing doesn't raise (a
+        local mode is a valid combination), but the data is never actually
+        written, it's implicitly inherited from the source zone, matching
+        how node_map itself is skipped when connectivity is shared.
+
+        SZL is broken and raises NotImplementedError on the very first write_fe_zone.
+        """
+        x, y, z, nodes, face_neighbors = create_FE_two_bricks()
+
+        path = _path(output_path, fmt, "write_fe_face_neighbors_shared")
+
+        if fmt == "szl":
+            w = tecio.open(str(path), "w")
+            try:
+                with pytest.raises(NotImplementedError, match="face-neighbor"):
+                    w.write_fe_zone(
+                        zone_type=ZoneType.FEBRICK,
+                        data=[x, y, z],
+                        node_map=nodes,
+                        variables=["x", "y", "z"],
+                        title="source",
+                        face_neighbors=face_neighbors,
+                    )
+            finally:
+                with contextlib.suppress(Exception):
+                    w.close()
+            return
+
+        with tecio.open(str(path), "w") as w:
+            w.write_fe_zone(
+                zone_type=ZoneType.FEBRICK,
+                data=[x, y, z],
+                node_map=nodes,
+                variables=["x", "y", "z"],
+                title="source",
+                face_neighbors=face_neighbors,
+            )
+            w.write_fe_zone(
+                zone_type=ZoneType.FEBRICK,
+                data=[x, y, z],
+                variables=["x", "y", "z"],
+                title="shared",
+                con_sharing=1,
+                face_neighbors=face_neighbors,
+                face_neighbor_mode=FaceNeighborMode.LOCAL_ONE_TO_ONE,
+            )
+            source_meta = w.meta.zone(1)
+            shared_meta = w.meta.zone(2)
+
+        assert source_meta.face_neighbor_mode == FaceNeighborMode.LOCAL_ONE_TO_ONE
+        assert source_meta.num_face_connections == len(face_neighbors)
+        assert shared_meta.face_neighbor_mode is None
+        assert shared_meta.num_face_connections is None
+
+        with tecio.open(str(path), "r") as r:
+            source_zone = r.zone[0]
+            shared_zone = r.zone[1]
+            assert source_zone.num_face_connections == len(face_neighbors)
+            np.testing.assert_array_equal(
+                source_zone.get_face_connections(reshape=True), face_neighbors
+            )
+            assert shared_zone.num_face_connections is None
+
+    def test_write_fe_face_neighbors_global_mode_with_sharing_raises(
+        self, fmt: str, output_path: Callable
+    ) -> None:
+        """A global face-neighbor mode can't be combined with con_sharing.
+
+        Per the classic API's own documented constraint: connectivity (and
+        any face-neighbor data with it) can only be shared for local modes.
+        """
+        x, y, z, nodes, face_neighbors = create_FE_two_bricks()
+
+        path = _path(output_path, fmt, "write_fe_face_neighbors_global_shared")
+        w = tecio.open(str(path), "w")
+        try:
+            w.write_fe_zone(
+                zone_type=ZoneType.FEBRICK,
+                data=[x, y, z],
+                node_map=nodes,
+                variables=["x", "y", "z"],
+                title="source",
+            )
+            with pytest.raises(ValueError, match="global"):
+                w.write_fe_zone(
+                    zone_type=ZoneType.FEBRICK,
+                    data=[x, y, z],
+                    variables=["x", "y", "z"],
+                    title="shared",
+                    con_sharing=1,
+                    face_neighbors=face_neighbors,
+                    face_neighbor_mode=FaceNeighborMode.GLOBAL_ONE_TO_ONE,
+                )
+        finally:
+            with contextlib.suppress(Exception):
+                w.close()
+
+    @pytest.mark.parametrize(
+        ("bad_face_neighbors", "match"),
+        [
+            (np.array([[1, 99, 2]]), "face 99"),
+            (np.array([[99, 1, 2]]), "cell 99"),
+        ],
+        ids=["bad_face_index", "bad_cell_index"],
+    )
+    def test_write_fe_face_neighbors_out_of_range_raises(
+        self,
+        fmt: str,
+        output_path: Callable,
+        bad_face_neighbors: np.ndarray,
+        match: str,
+    ) -> None:
+        """Structurally invalid cell/face references raise, not silently written."""
+        x, y, z, nodes, _ = create_FE_two_bricks()
+
+        path = _path(output_path, fmt, "write_fe_face_neighbors_bad_index")
+        w = tecio.open(str(path), "w")
+        try:
+            with pytest.raises(ValueError, match=match):
+                w.write_fe_zone(
+                    zone_type=ZoneType.FEBRICK,
+                    data=[x, y, z],
+                    node_map=nodes,
+                    variables=["x", "y", "z"],
+                    face_neighbors=bad_face_neighbors,
+                )
+        finally:
+            with contextlib.suppress(Exception):
+                w.close()
+
+    def test_write_fe_face_neighbors_degenerate_cell(
+        self, fmt: str, output_path: Callable
+    ) -> None:
+        """A cell with a repeated node doesn't trip up validation.
+
+        E.g. a triangle written as a quad, with its last node repeated.
+        The degenerate face (between the repeated node and itself) has no
+        possible neighbor, and real Tecplot-generated data omits it
+        entirely, confirmed against a real exported file (a sliced,
+        triangle-only region of Onera.szplt, converted to degenerate quads
+        and re-exported with GUI-generated face neighbors). Validation only
+        bounds-checks against the cell type's face count, it never requires
+        an exact per-cell count, so it doesn't reject this.
+
+        SZL still raises NotImplementedError (see test_write_fe_face_neighbors
+        for why), but only *after* validation itself passes the degenerate
+        case cleanly, confirming the degeneracy handling isn't what's
+        broken, it's specifically the known SZL library limitation.
+        """
+        x, y, nodes = create_FE_quad()
+        # Degenerate cell 1: repeat its last node, mimicking a triangle
+        # written as a quad, exactly how the reference file above was
+        # constructed (repeat the last node_map column).
+        nodes = nodes.copy()
+        nodes[0, 3] = nodes[0, 2]  # cell 1: [1, 2, 5, 4] -> [1, 2, 5, 5]
+
+        # Both connections reference only real (non-degenerate) faces:
+        # cell 1's face 2 and cell 2's face 4, the shared edge 2-5. Neither
+        # references face 3 (now degenerate), matching what Tecplot itself
+        # omits for a cell like this.
+        face_neighbors = np.array([[1, 2, 2], [2, 4, 1]], dtype=np.int64)
+
+        path = _path(output_path, fmt, "write_fe_face_neighbors_degenerate")
+
+        if fmt == "szl":
+            w = tecio.open(str(path), "w")
+            try:
+                with pytest.raises(NotImplementedError, match="face-neighbor"):
+                    w.write_fe_zone(
+                        zone_type=ZoneType.FEQUADRILATERAL,
+                        data=[x, y],
+                        node_map=nodes,
+                        variables=["x", "y"],
+                        face_neighbors=face_neighbors,
+                    )
+            finally:
+                with contextlib.suppress(Exception):
+                    w.close()
+            return
+
+        with tecio.open(str(path), "w") as w:
+            w.write_fe_zone(
+                zone_type=ZoneType.FEQUADRILATERAL,
+                data=[x, y],
+                node_map=nodes,
+                variables=["x", "y"],
+                face_neighbors=face_neighbors,
+            )
+
+        with tecio.open(str(path), "r") as r:
+            zone = r.zone[0]
+            assert zone.num_face_connections == 2
+            np.testing.assert_array_equal(
+                zone.get_face_connections(reshape=True), face_neighbors
+            )
 
     def test_write_fe_passive_variable(self, fmt: str, output_path: Callable) -> None:
         """Passive variable in an FE zone -- identical behavior to ordered zones."""

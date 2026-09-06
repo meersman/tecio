@@ -27,7 +27,14 @@ from ._constants import (
     ZoneType,
 )
 from ._meta import ZoneMeta
-from ._writer import TecplotWriter, normalize_precision
+from ._writer import (
+    PreparedFEZone,
+    PreparedOrderedZone,
+    TecplotWriter,
+    normalize_precision,
+    prepare_fe_zone,
+    prepare_ordered_zone,
+)
 
 # -------------------------------------------------------------------------------------
 # Module-level constants
@@ -393,10 +400,7 @@ class TecplotPltWriter(TecplotWriter):
         if variables is None:
             variables = [f"V{i}" for i in range(1, len(arrays) + 1)]
 
-        # Open the file if lazily loaded; flush buffered aux data before the
-        # first zone regardless of whether the file was opened eagerly (in
-        # __init__) or lazily (just now), since add_auxdataset_dict()/
-        # add_auxvar_dict() are normally called after construction, not before.
+        # Open the file if lazily loaded and flush buffered aux data
         if not self._opened:
             self._open(variables)
         if self.current_zone == 0:
@@ -410,144 +414,21 @@ class TecplotPltWriter(TecplotWriter):
         if value_locations is None:
             value_locations = [ValueLocation.NODAL] * len(arrays)
 
-        # Default passive / sharing arrays — length equals dataset variable count
-        if passive_vars is None:
-            passive_vars = [False] * len(self._check_variables())
-        if var_sharing is None:
-            var_sharing = [0] * len(self._check_variables())
-
-        # Validate active variable count
-        if len(arrays) != len(self._check_variables()):
-            expected_vars = sum(
-                1
-                for is_passive, share_zone in zip(
-                    passive_vars, var_sharing, strict=True
-                )
-                if not is_passive and not share_zone
-            )
-            if expected_vars == 0:
-                raise ValueError(
-                    "No active variables to write — all variables are either "
-                    "passive or shared."
-                )
-            if len(arrays) == 0:
-                raise ValueError(
-                    f"No data arrays provided. Expected {expected_vars} active "
-                    "variable arrays based on passive_vars and var_sharing."
-                )
-            if len(arrays) != expected_vars:
-                raise ValueError(
-                    f"Expected {expected_vars} data arrays, got {len(arrays)}."
-                )
-
-        # Determine which dataset variables are supplied locally (not passive or shared)
-        # and translate to 0-based local index
-        active_var_idx = [
-            var_idx
-            for var_idx, (is_passive, share_zone) in enumerate(
-                zip(passive_vars, var_sharing, strict=True),
-                start=1,
-            )
-            if not is_passive and not share_zone
-        ]
-        active_local_idx = {var_idx: i for i, var_idx in enumerate(active_var_idx)}
-
-        # Determine validation reference data array shape. NODAL local or shared
-        # variable arrays gives shape dimensions directly. CELL_CENTERED arrays can be
-        # ambiguous if there is a degenerate axis (2D cells vs 3D with only 1 cell along
-        # an axis appear the same). Therefore CELL_CENTERED is only used as fallback
-        # method if no NODAL variables are available.
-        nodal_shape: tuple[int, ...] | None = None
-        ndims: int | None = None  # set only when nodal_shape came from a local array
-        cell_fallback: tuple[int, ...] | None = None
-        cell_fallback_ndims: int | None = None
-
-        for var_idx in range(1, len(self._check_variables()) + 1):
-            if passive_vars[var_idx - 1]:
-                continue
-            src = var_sharing[var_idx - 1]
-            if src:
-                if nodal_shape is None:
-                    src_zone = self._meta.zone(src)
-                    if src_zone is None or src_zone.dimensions is None:
-                        raise ValueError(
-                            f"Variable {var_idx} shares from zone {src}, "
-                            "which has not been written yet, or is not an "
-                            "ORDERED zone."
-                        )
-                    nodal_shape = src_zone.dimensions
-                continue
-
-            arr = arrays[active_local_idx[var_idx]]
-            loc = value_locations[active_local_idx[var_idx]]
-            arr_ndims = arr.ndim
-            if arr_ndims not in (1, 2, 3):
-                raise ValueError(
-                    f"Arrays must be 1D, 2D, or 3D; got {arr_ndims}-D array.  "
-                    "For time-dependent data, write each time step as a separate zone."
-                )
-            shape = arr.shape + (1,) * (3 - arr_ndims)
-            if loc == ValueLocation.NODAL:
-                if nodal_shape is None:
-                    nodal_shape, ndims = shape, arr_ndims
-            elif cell_fallback is None:
-                cell_fallback, cell_fallback_ndims = shape, arr_ndims
-
-        if nodal_shape is None:
-            if cell_fallback is not None:
-                nodal_shape = tuple(n + 1 for n in cell_fallback)
-                ndims = cell_fallback_ndims
-            else:
-                raise ValueError("Could not determine zone dimensions.")
-
-        cell_shape = tuple(max(n - 1, 1) for n in nodal_shape)
-        imax, jmax, kmax = nodal_shape
-
-        # Validate every non-passive dataset variable array (including shared vars)
-        # against reference
-        for var_idx in range(1, len(self._check_variables()) + 1):
-            if passive_vars[var_idx - 1]:
-                continue
-            src = var_sharing[var_idx - 1]
-            if src:
-                src_zone = self._meta.zone(src)
-                if src_zone is None or src_zone.dimensions is None:
-                    raise ValueError(
-                        f"Variable {var_idx} shares from zone {src}, which "
-                        "has not been written yet, or is not an ORDERED "
-                        "zone."
-                    )
-                if src_zone.dimensions != nodal_shape:
-                    raise ValueError(
-                        f"Variable {var_idx} shares from zone {src} with "
-                        f"dimensions {src_zone.dimensions}, which does not "
-                        f"match this zone's dimensions {nodal_shape}."
-                    )
-                continue
-
-            i = active_local_idx[var_idx]
-            arr, loc = arrays[i], value_locations[i]
-            if ndims is not None and arr.ndim != ndims:
-                raise ValueError(f"Array {i} is {arr.ndim}D, expected {ndims}D.")
-            shape = arr.shape + (1,) * (3 - arr.ndim)
-            if loc == ValueLocation.NODAL and shape != nodal_shape:
-                raise ValueError(
-                    f"Array {i} is NODAL but has shape {shape}, expected {nodal_shape}."
-                )
-            if loc == ValueLocation.CELL_CENTERED and shape != cell_shape:
-                raise ValueError(
-                    f"Array {i} is CELL_CENTERED but has shape {shape}, "
-                    f"expected {cell_shape}."
-                )
-
-        # Define global var type and value locations using active variable index
-        variable_types_global = [DataType.DOUBLE] * len(self._check_variables())
-        value_locations_global = [ValueLocation.NODAL] * len(self._check_variables())
-
-        # Replace the active indices with the real types/locations
-        for local_idx, var_idx in enumerate(active_var_idx):
-            variable_types_global[var_idx - 1] = variable_types[local_idx]
-            value_locations_global[var_idx - 1] = value_locations[local_idx]
+        prepared: PreparedOrderedZone = prepare_ordered_zone(
+            arrays,
+            variable_types,
+            value_locations=value_locations,
+            passive_vars=passive_vars,
+            var_sharing=var_sharing,
+            dataset_variables=self._check_variables(),
+            meta=self._meta,
+        )
+        passive_vars = prepared.passive_vars
+        var_sharing = prepared.var_sharing
+        active_var_idx = prepared.active_var_idx
+        imax, jmax, kmax = prepared.imax, prepared.jmax, prepared.kmax
+        value_locations_global = prepared.value_locations_global
+        variable_types_global = prepared.variable_types_global
 
         # Write zone header
         libtecio.teczne142(
@@ -610,7 +491,7 @@ class TecplotPltWriter(TecplotWriter):
         var_sharing: Sequence[int] | None = None,
         con_sharing: int | None = None,
         face_neighbors: npt.ArrayLike | None = None,
-        face_nbr_mode: FaceNeighborMode = FaceNeighborMode.LOCAL_ONE_TO_ONE,
+        face_neighbor_mode: FaceNeighborMode | None = None,
         solution_time: float = 0.0,
         strand_id: int = 0,
         aux: dict[str, Any] | None = None,
@@ -669,10 +550,21 @@ class TecplotPltWriter(TecplotWriter):
                              neighbor mode is set to global. Connectivity cannot be
                              shared between cell-based and face-based finite element
                              zones.
-            face_neighbors:  Optional face-neighbour connection array. Its length sets
-                             ``num_face_connections`` in the zone header automatically.
-            face_nbr_mode:   Face-neighbour mode; used only when *face_neighbors* is
-                             provided.
+            face_neighbors:  Optional face-neighbor connectivity, always a
+                             flat array (whatever shape you pass is
+                             flattened before writing). The number of
+                             values per connection depends on
+                             ``face_neighbor_mode``, a fixed 3 or 4 for the
+                             one-to-one modes, a variable, self-describing
+                             count per record for the "many" modes. The
+                             connection count is always derived from this
+                             array, never a separate parameter.
+            face_neighbor_mode: None (the default) means no face-neighbor
+                             data, matching the read side. If
+                             ``face_neighbors`` is given without this,
+                             treated as LOCAL_ONE_TO_ONE. Given *without*
+                             ``face_neighbors``, raises, that combination is
+                             almost certainly a mistake.
             solution_time:   Solution time for transient data.
             strand_id:       Strand ID for transient data.
             aux:             Zone-level auxiliary data as ``{name: value}``.
@@ -726,10 +618,7 @@ class TecplotPltWriter(TecplotWriter):
         if variables is None:
             variables = [f"V{i}" for i in range(1, len(arrays) + 1)]
 
-        # Open the file if lazily loaded; flush buffered aux data before the
-        # first zone regardless of whether the file was opened eagerly (in
-        # __init__) or lazily (just now), since add_auxdataset_dict()/
-        # add_auxvar_dict() are normally called after construction, not before.
+        # Open the file if lazily loaded and flush buffered aux data
         if not self._opened:
             self._open(variables)
         if self.current_zone == 0:
@@ -743,130 +632,36 @@ class TecplotPltWriter(TecplotWriter):
         if value_locations is None:
             value_locations = [ValueLocation.NODAL] * len(arrays)
 
-        # Default passive / sharing arrays
-        if passive_vars is None:
-            passive_vars = [False] * len(self._check_variables())
-        if var_sharing is None:
-            var_sharing = [0] * len(self._check_variables())
-        if con_sharing is None:
-            con_sharing = 0
-
-        # Validate active variable count
-        if len(arrays) != len(self._check_variables()):
-            expected_vars = sum(
-                1
-                for is_passive, share_zone in zip(
-                    passive_vars, var_sharing, strict=True
-                )
-                if not is_passive and not share_zone
-            )
-            if expected_vars == 0:
-                raise ValueError(
-                    "No active variables to write — all variables are either "
-                    "passive or shared."
-                )
-            if len(arrays) == 0:
-                raise ValueError(
-                    f"No data arrays provided. Expected {expected_vars} active "
-                    "variable arrays based on passive_vars and var_sharing."
-                )
-            if len(arrays) != expected_vars:
-                raise ValueError(
-                    f"Expected {expected_vars} data arrays for active variables, "
-                    f"got {len(arrays)}."
-                )
-
-        # Derive num_nodes and num_cells from node_map (read meta if shared)
-        if node_map is not None:
-            node_map_arr = np.asarray(node_map)
-            num_cells = node_map_arr.shape[0]
-            num_nodes = int(node_map_arr.max())
-        elif con_sharing:
-            src_zone = self._meta.zone(con_sharing)
-            if (
-                src_zone is None
-                or src_zone.num_nodes is None
-                or src_zone.num_elements is None
-            ):
-                raise ValueError(
-                    f"con_sharing={con_sharing} references a zone that has "
-                    "not been written yet, or is not a finite-element zone."
-                )
-            num_nodes = src_zone.num_nodes
-            num_cells = src_zone.num_elements
-        else:
-            raise ValueError(
-                "node_map must be provided unless connectivity is shared "
-                "from another zone via con_sharing."
-            )
-
-        # Shared variable data shape validation
-        for var_idx, src in enumerate(var_sharing, start=1):
-            if not src:
-                continue
-            src_zone = self._meta.zone(src)
-            if src_zone is None:
-                raise ValueError(
-                    f"Variable {var_idx} shares from zone {src}, which has "
-                    "not been written yet."
-                )
-            # Check shared variable value location to determine validation reference
-            src_loc = (
-                src_zone.value_locations[var_idx - 1]
-                if var_idx - 1 < len(src_zone.value_locations)
-                else ValueLocation.NODAL
-            )
-            if src_loc == ValueLocation.CELL_CENTERED:
-                if src_zone.num_elements != num_cells:
-                    raise ValueError(
-                        f"Variable {var_idx} shares from zone {src} with "
-                        f"{src_zone.num_elements} cells, which does not "
-                        f"match this zone's cell count of {num_cells}."
-                    )
-            elif src_zone.num_nodes != num_nodes:
-                raise ValueError(
-                    f"Variable {var_idx} shares from zone {src} with "
-                    f"{src_zone.num_nodes} nodes, which does not match "
-                    f"this zone's node count of {num_nodes}."
-                )
-
-        # Validate per-variable array lengths
-        for i, (arr, loc) in enumerate(zip(arrays, value_locations, strict=True)):
-            if loc == ValueLocation.NODAL and arr.size != num_nodes:
-                raise ValueError(
-                    f"Array {i} is NODAL but has {arr.size} values; "
-                    f"expected {num_nodes}."
-                )
-            if loc == ValueLocation.CELL_CENTERED and arr.size != num_cells:
-                raise ValueError(
-                    f"Array {i} is CELL_CENTERED but has {arr.size} values; "
-                    f"expected {num_cells}."
-                )
-
-        # Face-neighbour count for zone header
-        face_neighbors_arr: npt.NDArray | None = (
-            np.asarray(face_neighbors) if face_neighbors is not None else None
+        prepared: PreparedFEZone = prepare_fe_zone(
+            arrays,
+            variable_types,
+            zone_type,
+            node_map=node_map,
+            value_locations=value_locations,
+            passive_vars=passive_vars,
+            var_sharing=var_sharing,
+            con_sharing=con_sharing,
+            face_neighbors=face_neighbors,
+            face_neighbor_mode=face_neighbor_mode,
+            dataset_variables=self._check_variables(),
+            meta=self._meta,
         )
-        num_face_cons = len(face_neighbors_arr) if face_neighbors_arr is not None else 0
-
-        # Determine active variable indices (1-based, dataset-level)
-        active_var_idx = [
-            var_idx
-            for var_idx, (is_passive, share_zone) in enumerate(
-                zip(passive_vars, var_sharing, strict=True),
-                start=1,
-            )
-            if not is_passive and not share_zone
-        ]
-
-        # Define global var type and value locations using active variable index
-        variable_types_global = [DataType.DOUBLE] * len(self._check_variables())
-        value_locations_global = [ValueLocation.NODAL] * len(self._check_variables())
-
-        # Replace the active indices with the real types/locations
-        for local_idx, var_idx in enumerate(active_var_idx):
-            variable_types_global[var_idx - 1] = variable_types[local_idx]
-            value_locations_global[var_idx - 1] = value_locations[local_idx]
+        passive_vars = prepared.passive_vars
+        var_sharing = prepared.var_sharing
+        con_sharing = prepared.con_sharing
+        active_var_idx = prepared.active_var_idx
+        num_nodes = prepared.num_nodes
+        num_cells = prepared.num_cells
+        value_locations_global = prepared.value_locations_global
+        variable_types_global = prepared.variable_types_global
+        face_neighbor_mode = prepared.face_neighbor_mode
+        num_face_cons = prepared.num_face_connections
+        # PLT's classic API only supports 32-bit face-neighbor writes, so
+        # the dtype cast (not forced by the shared preparation step, which
+        # leaves it to each format) happens here, right before dispatch.
+        face_neighbors_arr: npt.NDArray | None = None
+        if prepared.face_neighbors_arr is not None:
+            face_neighbors_arr = prepared.face_neighbors_arr.astype(np.int32)
 
         # Write zone header.
         # imax = num_nodes, jmax = num_cells, kmax = 0 for simple FE zones.
@@ -883,9 +678,7 @@ class TecplotPltWriter(TecplotWriter):
             strand=strand_id,
             solution_time=solution_time,
             num_face_connections=num_face_cons,
-            face_nbr_mode=face_nbr_mode
-            if num_face_cons > 0
-            else FaceNeighborMode.LOCAL_ONE_TO_ONE,
+            face_nbr_mode=face_neighbor_mode or FaceNeighborMode.LOCAL_ONE_TO_ONE,
         )
         self.current_zone += 1
 
@@ -922,5 +715,9 @@ class TecplotPltWriter(TecplotWriter):
                 passive_vars=tuple(bool(p) for p in passive_vars),
                 shared_vars=tuple(int(s) for s in var_sharing),
                 data_types=tuple(variable_types_global),
+                face_neighbor_mode=(
+                    face_neighbor_mode if face_neighbors_arr is not None else None
+                ),
+                num_face_connections=num_face_cons or None,
             )
         )

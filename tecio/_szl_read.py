@@ -18,7 +18,14 @@ import numpy as np
 import numpy.typing as npt
 
 from . import libtecio
-from ._constants import DataPacking, DataType, FileType, ValueLocation, ZoneType
+from ._constants import (
+    DataPacking,
+    DataType,
+    FaceNeighborMode,
+    FileType,
+    ValueLocation,
+    ZoneType,
+)
 from ._containers import ZoneList
 from ._reader import (
     TecplotAuxDataReader,
@@ -385,6 +392,32 @@ class TecplotSzlFEZoneReader(TecplotFEZoneReader):
             connectivity_zone,
             self.num_elements,
             self.nodes_per_cell,
+        ).astype(np.int64)
+
+    def _load_face_neighbor_meta(
+        self,
+    ) -> tuple[FaceNeighborMode, int, bool | None] | None:
+        num_connections = libtecio.tec_zone_face_nbr_get_num_connections(
+            self._handle, self.zone_index
+        )
+        if num_connections == 0:
+            return None
+        mode = libtecio.tec_zone_face_nbr_get_mode(self._handle, self.zone_index)
+        # SZL has no completeness concept: no tecZoneFaceNbr* function reports
+        # it, and none exists to write it either. Always None here, not a gap
+        # in this reader, the C API genuinely has nothing to query.
+        return (mode, num_connections, None)
+
+    def _load_face_connections(self) -> npt.NDArray[np.int64]:
+        num_values = libtecio.tec_zone_face_nbr_get_num_values(
+            self._handle, self.zone_index
+        )
+        if libtecio.tec_zone_face_nbrs_are_64bit(self._handle, self.zone_index):
+            return libtecio.tec_zone_face_nbr_get_connections_64(
+                self._handle, self.zone_index, num_values
+            )
+        return libtecio.tec_zone_face_nbr_get_connections(
+            self._handle, self.zone_index, num_values
         ).astype(np.int64)
 
     def _load_auxdata(self) -> TecplotAuxDataReader:
