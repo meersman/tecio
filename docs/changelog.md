@@ -9,27 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+---
 
-- Added face neightbor support for PLT and DAT file formats. Hooks
-  are in place for SZL format, but current version of TecIO library
-  has a bug that does not read or write face neighbors correctly.
-- **Breaking:** `TecplotWriter.write_ijk_zone` renamed to
-  `write_ordered_zone`, for symmetry with `write_fe_zone`.
-- **Breaking:** Reader container properties renamed for clarity:
-  `.zone` → `.zones` and `.variable` → `.variables`, on every reader and
-  zone reader class.
-- Variable names are now supported as an additional input option for CLI tools
-  wherever previously only variable index was accepted.
-- **Breaking:** CLI tool flags are updated for better consistency between tools.
-  Use `-h` to see the available flags for each tool.
-- `pragma: no cover` added wherever there is environment dependent or
-  non-converable code execution so coverage report is more accurate.
-
-### Fixed
-
-- The number of values in ordered zones without point counts are now inferred
-  instead of defaulting to one.
+```{include} changelog/v0.3.2.md
+```
 
 ---
 
@@ -78,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/meersman/tecio/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/meersman/tecio/compare/v0.3.2...HEAD
 
 ```{toctree}
 :hidden:
