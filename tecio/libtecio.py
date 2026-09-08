@@ -1210,7 +1210,7 @@ bind_ctypes(
     ],
 )
 
-if UNAVAILABLE_FUNCTIONS:
+if UNAVAILABLE_FUNCTIONS:  # pragma: no cover - environment-dependent
     if LIBRARY_LOAD_ERROR is not None:
         _reason = f"no TecIO shared library could be loaded ({LIBRARY_LOAD_ERROR})"
     else:

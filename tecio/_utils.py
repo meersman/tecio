@@ -310,7 +310,9 @@ def requires_symbol(
         pyname = getattr(func, "__name__", name)
 
         @functools.wraps(func)
-        def unavailable_func(*args: object, **kwargs: object) -> Any:
+        def unavailable_func(
+            *args: object, **kwargs: object
+        ) -> Any:  # pragma: no cover - environment-dependent
             if load_error is not None:
                 reason = f"no TecIO shared library could be loaded ({load_error})"
             else:

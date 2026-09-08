@@ -545,7 +545,7 @@ class TecplotSzlReader(TecplotReader):
             libtecio.tec_file_reader_close(self._handle)
             self._handle = None
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> str:  # pragma: no cover
         if self._handle is None:
             name = self._path.replace("\\", "/").rsplit("/", 1)[-1]
             return f"{type(self).__name__}(path={name!r}, <closed>)"

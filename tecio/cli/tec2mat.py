@@ -437,7 +437,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # is actually run.
     try:
         from scipy import io as scipy_io
-    except ImportError:
+    except ImportError:  # pragma: no cover - environment-dependent
         print(
             "Error: tec2mat requires SciPy, which is not installed.  "
             "Install it with: pip install scipy",
@@ -498,5 +498,5 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     sys.exit(main())

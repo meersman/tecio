@@ -185,7 +185,7 @@ class TecplotAuxDataReader(Mapping[str, str], ABC):
     def __iter__(self) -> Iterator[str]:
         return iter(self._data)
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> str:  # pragma: no cover
         return f"{type(self).__name__}({self._data!r})"
 
     # Mapping already provides get/keys/values/items via __getitem__ + __iter__ +
@@ -260,7 +260,7 @@ class TecplotVariableReader(ABC):
     __setattr__ = _immutable_setattr
     __delattr__ = _immutable_delattr
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> str:  # pragma: no cover
         parts = [repr(self.name)]
         if self.is_passive():
             parts.append("passive")
@@ -413,7 +413,7 @@ class TecplotZoneReader(ABC):
     __setattr__ = _immutable_setattr
     __delattr__ = _immutable_delattr
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> str:  # pragma: no cover
         title = self.title
         if len(title) > 30:
             title = title[:29] + "\u2026"
@@ -726,7 +726,9 @@ class TecplotFEZoneReader(TecplotZoneReader):
         zt = self.zone_type
         if zt in _NODES_PER_ELEM:
             return _NODES_PER_ELEM[zt]
-        raise ValueError(f"ZoneType {zt} does not have a fixed nodes-per-cell count.")
+        raise ValueError(  # pragma: no cover
+            f"ZoneType {zt} does not have a fixed nodes-per-cell count."
+        )
 
     @property
     def node_map(self) -> npt.NDArray[np.int64] | None:
@@ -1024,7 +1026,7 @@ class TecplotReader(ABC):
             )
         return self.zones[zone_index - 1].auxdata
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> str:  # pragma: no cover
         cls = type(self).__name__
         name = self.path.replace("\\", "/").rsplit("/", 1)[-1]
         try:

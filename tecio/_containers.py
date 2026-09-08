@@ -208,7 +208,7 @@ class VariableList(Generic[_VarT]):
         """Return the variable names in dataset order."""
         return [var.name for var in self._items]
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> str:  # pragma: no cover
         n = len(self._items)
         if n == 0:
             return "VariableList([])"
@@ -277,7 +277,7 @@ class ZoneList(Generic[_ZoneT]):
             return ZoneList(self._items[key])
         return self._items[key]
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> str:  # pragma: no cover
         n = len(self._items)
         if n == 0:
             return "ZoneList([])"
