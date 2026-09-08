@@ -4,7 +4,7 @@ Supported ``DATAPACKING`` modes for writing:
     * ``BLOCK`` -- one contiguous value block per variable (default).
     * ``POINT`` -- one row of all active nodal variable values per node,
       followed by a separate row-per-cell section for cell-centred variables.
-      Pass ``datapacking="POINT"`` to :meth:`~TecplotDatWriter.write_ijk_zone`
+      Pass ``datapacking="POINT"`` to :meth:`~TecplotDatWriter.write_ordered_zone`
       or :meth:`~TecplotDatWriter.write_fe_zone`.
 """
 
@@ -396,7 +396,7 @@ class TecplotDatWriter(TecplotWriter):
 
     # -- Structured zone writer --------------------------------------------------------
 
-    def write_ijk_zone(
+    def write_ordered_zone(
         self,
         data: Sequence[npt.ArrayLike],
         *,

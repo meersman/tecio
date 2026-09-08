@@ -23,7 +23,7 @@ x = np.linspace(0.0, 2.0 * np.pi, 256)
 y = np.sin(x)
 
 with tecio.open("line.szplt", "w", title="Sine Curve") as w:
-    w.write_ijk_zone(
+    w.write_ordered_zone(
         title="sin(x)",
         variables=["x", "y"],
         data=[x, y],
@@ -37,15 +37,15 @@ with tecio.open("line.szplt", "r") as r:
     print(r.title)  # 'Sine Curve'
     print(r.variables)  # ['x', 'y']
 
-    zone = r.zone[0]
-    x_read = zone.variable[0].values  # NumPy array, shape (256, 1, 1)
-    y_read = zone.variable[1].values
+    zone = r.zones[0]
+    x_read = zone.variables[0].values  # NumPy array, shape (256, 1, 1)
+    y_read = zone.variables[1].values
 ```
 
 :::{note}
-**Python objects are 0-indexed.** The `zone` list and `variable` list on a
-reader both use standard Python (zero-based) indexing: `r.zone[0]` is the
-first zone, `zone.variable[1]` is the second variable.
+**Python objects are 0-indexed.** The `zones` list and `variables` list on a
+reader both use standard Python (zero-based) indexing: `r.zones[0]` is the
+first zone, `zone.variables[1]` is the second variable.
 
 **TecIO inputs and outputs are 1-indexed.** Whenever a function in
 `tecio.libtecio` accepts a zone or variable index as an integer argument — for
@@ -232,7 +232,7 @@ with tecio.open("transient.szplt", "w", title="Travelling Wave") as w:
 
         if i == 0:
             # First zone: write grid coordinates and solution
-            w.write_ijk_zone(
+            w.write_ordered_zone(
                 title=f"t = {t:.3f}",
                 variables=["x", "y", "phi"],
                 data=[X, Y, phi],
@@ -241,7 +241,7 @@ with tecio.open("transient.szplt", "w", title="Travelling Wave") as w:
             )
         else:
             # Subsequent zones: share x and y from zone 1, write phi only
-            w.write_ijk_zone(
+            w.write_ordered_zone(
                 title=f"t = {t:.3f}",
                 data=[phi],
                 var_sharing=[1, 1, 0],  # x←zone1, y←zone1, phi=new
@@ -258,12 +258,12 @@ with tecio.open("transient.szplt", "r") as r:
     print(r.num_zones)  # 60
 
     # Solution times across all zones
-    times_read = [r.zone[i].solution_time for i in range(r.num_zones)]
+    times_read = [r.zones[i].solution_time for i in range(r.num_zones)]
 
     # Grid is only stored in zone 0; later zones return None for shared vars
-    phi_t0 = r.zone[0].variable[2].values  # shape (128, 128, 1)
-    phi_t1 = r.zone[1].variable[2].values  # shape (128, 128, 1)
-    x_shared = r.zone[1].variable[0].values  # None — shared from zone 0
+    phi_t0 = r.zones[0].variables[2].values  # shape (128, 128, 1)
+    phi_t1 = r.zones[1].variables[2].values  # shape (128, 128, 1)
+    x_shared = r.zones[1].variables[0].values  # None — shared from zone 0
 ```
 
 ---
@@ -329,7 +329,7 @@ new code unless PLT format is specifically required.
 
 | Context | Indexing | Example |
 |---------|----------|---------|
-| Python reader objects (`zone`, `variable`) | **0-based** | `r.zone[0]`, `zone.variable[2]` |
+| Python reader objects (`zone`, `variable`) | **0-based** | `r.zones[0]`, `zone.variables[2]` |
 | `libtecio` function arguments (zone, var) | **1-based** | `tec_zone_var_write_float_values(h, 1, 3, arr)` |
 | `var_sharing` list entries | **1-based** zone number | `var_sharing=[1, 1, 0]` → share from zone 1 |
 | `node_map` connectivity arrays | **1-based** node indices | `np.array([[1, 2, 3]])` |

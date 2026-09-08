@@ -449,7 +449,7 @@ class TecplotReader(VTKPythonAlgorithmBase):
 
         self._zone_selection.RemoveAllArrays()
         self._zone_keys.clear()
-        for zone in reader.zone:
+        for zone in reader.zones:
             title = zone.title or f"Zone {zone.zone_index}"
             key = f"{zone.zone_index}: {title}"
             self._zone_keys[zone.zone_index] = key
@@ -677,7 +677,7 @@ class TecplotReader(VTKPythonAlgorithmBase):
         static/always-present geometry, so they're excluded from the time axis and
         instead included at every requested time (see :meth:`RequestData`).
         """
-        times = {zone.solution_time for zone in reader.zone if zone.strand_id != 0}
+        times = {zone.solution_time for zone in reader.zones if zone.strand_id != 0}
         return sorted(times)
 
     @smproperty.doublevector(
@@ -760,7 +760,7 @@ class TecplotReader(VTKPythonAlgorithmBase):
         self._add_variable_aux_field_data(output.GetFieldData(), reader)
 
         block_index = 0
-        for zone in reader.zone:
+        for zone in reader.zones:
             key = self._zone_keys.get(zone.zone_index)
             if key is not None and not self._zone_selection.ArrayIsEnabled(key):
                 continue
@@ -990,7 +990,7 @@ class TecplotReader(VTKPythonAlgorithmBase):
         n_points = dataset.GetNumberOfPoints()
         n_cells = dataset.GetNumberOfCells()
 
-        for var in zone.variable:
+        for var in zone.variables:
             if not self._array_selection.ArrayIsEnabled(var.name):
                 continue
             values = var.values
@@ -1039,7 +1039,7 @@ class TecplotReader(VTKPythonAlgorithmBase):
             if name is None:
                 flat_components.append(None)
                 continue
-            var = zone.variable[name]
+            var = zone.variables[name]
             values = var.values
             if values is None:  # passive, or absent in this specific zone
                 flat_components.append(None)

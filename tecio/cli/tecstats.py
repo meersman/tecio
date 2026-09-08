@@ -359,7 +359,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             _print_header()
 
-            for i, zone in enumerate(tec.zone):
+            for i, zone in enumerate(tec.zones):
                 zone_num = i + 1
                 if args.zone is not None and zone_num != args.zone:
                     continue
@@ -371,7 +371,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if args.variable is not None and var_num != args.variable:
                         continue
 
-                    var = zone.variable[j]
+                    var = zone.variables[j]
                     loc = (
                         var.value_location.name
                         if var.value_location is not None

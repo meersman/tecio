@@ -52,7 +52,7 @@ def _write_simple_szplt(path: Path, n_zones: int = 1) -> dict:
 
     with tecio.open(str(path), "w", variables=["x", "c"], title="test") as w:
         for i in range(n_zones):
-            w.write_ijk_zone(
+            w.write_ordered_zone(
                 data=[x, c],
                 title=f"zone_{i + 1}",
                 solution_time=float(i),
@@ -68,7 +68,7 @@ def _write_simple_plt(path: Path, n_zones: int = 1) -> dict:
 
     with tecio.open(str(path), "w", variables=["x", "c"], title="test_plt") as w:
         for i in range(n_zones):
-            w.write_ijk_zone(
+            w.write_ordered_zone(
                 data=[x, c],
                 title=f"zone_{i + 1}",
                 solution_time=float(i),
@@ -84,7 +84,7 @@ def _write_simple_dat(path: Path, n_zones: int = 1) -> dict:
 
     with tecio.open(str(path), "w", variables=["x", "c"], title="test_dat") as w:
         for i in range(n_zones):
-            w.write_ijk_zone(data=[x, c], title=f"zone_{i + 1}")
+            w.write_ordered_zone(data=[x, c], title=f"zone_{i + 1}")
     return {"x": x, "c": c}
 
 
@@ -145,7 +145,7 @@ class TestOpenWrite:
         assert not path.exists()
         with tecio.open(str(path), "w") as w:
             x = np.array([0.0, 1.0], dtype=np.float32)
-            w.write_ijk_zone(data=[x], variables=["x"])
+            w.write_ordered_zone(data=[x], variables=["x"])
         assert path.exists()
 
     def test_overwrites_existing_file(self, tmp_path: Path) -> None:
@@ -155,7 +155,7 @@ class TestOpenWrite:
 
         with tecio.open(str(path), "w") as w:
             x = np.array([0.0, 1.0], dtype=np.float32)
-            w.write_ijk_zone(data=[x], variables=["x"])
+            w.write_ordered_zone(data=[x], variables=["x"])
 
         with tecio.open(str(path), "r") as r:
             assert r.num_zones == 1  # not 3
@@ -189,7 +189,7 @@ class TestOpenExclusive:
         path = tmp_path / "exclusive.szplt"
         with tecio.open(str(path), "x") as w:
             x = np.array([0.0, 1.0], dtype=np.float32)
-            w.write_ijk_zone(data=[x], variables=["x"])
+            w.write_ordered_zone(data=[x], variables=["x"])
         assert path.exists()
 
     def test_raises_if_file_exists(self, tmp_path: Path) -> None:
@@ -204,11 +204,11 @@ class TestOpenExclusive:
         path = tmp_path / "xwrite.szplt"
         x_in = np.linspace(0.0, 1.0, 5, dtype=np.float32)
         with tecio.open(str(path), "x") as w:
-            w.write_ijk_zone(data=[x_in], variables=["x"])
+            w.write_ordered_zone(data=[x_in], variables=["x"])
 
         with tecio.open(str(path), "r") as r:
             np.testing.assert_allclose(
-                r.zone[0].variable[0].values.ravel(), x_in, rtol=_RTOL_F32
+                r.zones[0].variables[0].values.ravel(), x_in, rtol=_RTOL_F32
             )
 
 
@@ -234,7 +234,7 @@ class TestAppendWrite:
 
         with tecio.open(str(path), "a") as w:
             assert w.current_zone == 1  # one zone was copied from original
-            w.write_ijk_zone(
+            w.write_ordered_zone(
                 data=[arrays["x"], arrays["c"]],
                 title="appended_zone",
                 solution_time=99.0,
@@ -243,8 +243,8 @@ class TestAppendWrite:
 
         with tecio.open(str(path), "r") as r:
             assert r.num_zones == 2
-            assert r.zone[1].title == "appended_zone"
-            assert r.zone[1].solution_time == pytest.approx(99.0)
+            assert r.zones[1].title == "appended_zone"
+            assert r.zones[1].solution_time == pytest.approx(99.0)
 
     def test_zone_count_after_append_plt(self, tmp_path: Path) -> None:
         """Appending one zone to a 2-zone PLT file produces 3 zones."""
@@ -253,7 +253,7 @@ class TestAppendWrite:
 
         with tecio.open(str(path), "a") as w:
             assert w.current_zone == 2  # two zones copied
-            w.write_ijk_zone(
+            w.write_ordered_zone(
                 data=[arrays["x"], arrays["c"]],
                 title="new_zone",
             )
@@ -268,12 +268,12 @@ class TestAppendWrite:
 
         with tecio.open(str(path), "a") as w:
             extra = np.ones(10, dtype=np.float32) * 9.9
-            w.write_ijk_zone(data=[extra, extra], title="extra")
+            w.write_ordered_zone(data=[extra, extra], title="extra")
 
         with tecio.open(str(path), "r") as r:
             # Original zone 1 values must be unchanged.
             np.testing.assert_allclose(
-                r.zone[0].variable[0].values.ravel(),
+                r.zones[0].variables[0].values.ravel(),
                 orig["x"],
                 rtol=_RTOL_F32,
             )
@@ -286,7 +286,7 @@ class TestAppendWrite:
         with tecio.open(str(path), "a") as w:
             original_vars = w.variables
             x = np.linspace(0.0, 1.0, 10, dtype=np.float32)
-            w.write_ijk_zone(data=[x, x], title="z2")
+            w.write_ordered_zone(data=[x, x], title="z2")
 
         with tecio.open(str(path), "r") as r:
             assert r.variables == original_vars
@@ -296,7 +296,7 @@ class TestAppendWrite:
         path = tmp_path / "title.szplt"
         with tecio.open(str(path), "w", title="MyTitle") as w:
             x = np.linspace(0.0, 1.0, 5, dtype=np.float32)
-            w.write_ijk_zone(data=[x], variables=["x"])
+            w.write_ordered_zone(data=[x], variables=["x"])
 
         with tecio.open(str(path), "a") as w:
             assert w.title == "MyTitle"
@@ -309,7 +309,7 @@ class TestAppendWrite:
 
         with tecio.open(str(path), "a") as w:
             for i in range(3):
-                w.write_ijk_zone(data=[x, x], title=f"new_{i}")
+                w.write_ordered_zone(data=[x, x], title=f"new_{i}")
 
         with tecio.open(str(path), "r") as r:
             assert r.num_zones == 4  # 1 original + 3 appended
@@ -335,7 +335,7 @@ class TestAppendWrite:
 
         with tecio.open(str(path), "r") as r:
             assert r.num_zones == 2
-            assert r.zone[1].zone_type == ZoneType.FETRIANGLE
+            assert r.zones[1].zone_type == ZoneType.FETRIANGLE
 
     def test_append_to_missing_file_raises(self, tmp_path: Path) -> None:
         """Appending to a non-existent file raises :exc:`FileNotFoundError`."""
@@ -350,7 +350,7 @@ class TestAppendWrite:
 
         with tecio.open(str(path), "a") as w:
             x = np.linspace(0.0, 1.0, 10, dtype=np.float32)
-            w.write_ijk_zone(data=[x, x], title="z2")
+            w.write_ordered_zone(data=[x, x], title="z2")
 
         # mtime must have changed because the file was atomically replaced.
         assert path.stat().st_mtime != mtime_before
@@ -362,7 +362,7 @@ class TestAppendWrite:
 
         with tecio.open(str(src), "r") as r:
             orig_vars = r.variables
-            # r.zone[0].num_nodes
+            # r.zones[0].num_nodes
 
         np.zeros(10, dtype=np.float32)
         with tecio.open(str(src), "a") as w:
@@ -406,7 +406,7 @@ class TestAppendWrite:
 
         with tecio.open(str(src), "r") as r:
             # Zone 2 (WingSurface) has BoundaryCondition aux data.
-            aux = r.zone[1].auxdata
+            aux = r.zones[1].auxdata
             assert aux["Common.BoundaryCondition"] == "Wall"
 
 
@@ -433,7 +433,7 @@ class TestAppendReadWrite:
         with tecio.open(str(path), "a+") as rw:
             assert rw.num_zones == 1
             np.testing.assert_allclose(
-                rw.zone[0].variable[0].values.ravel(),
+                rw.zones[0].variables[0].values.ravel(),
                 orig["x"],
                 rtol=_RTOL_F32,
             )
@@ -445,16 +445,16 @@ class TestAppendReadWrite:
 
         with tecio.open(str(path), "a+") as rw:
             # Read original data.
-            x_orig = rw.zone[0].variable[0].values.ravel().copy()
+            x_orig = rw.zones[0].variables[0].values.ravel().copy()
             # Write a derived zone.
             x_new = (x_orig * 2.0).astype(np.float32)
             c_new = orig["c"] * 0.5
-            rw.write_ijk_zone(data=[x_new, c_new], title="derived")
+            rw.write_ordered_zone(data=[x_new, c_new], title="derived")
 
         with tecio.open(str(path), "r") as r:
             assert r.num_zones == 2
             np.testing.assert_allclose(
-                r.zone[1].variable[0].values.ravel(), x_new, rtol=_RTOL_F32
+                r.zones[1].variables[0].values.ravel(), x_new, rtol=_RTOL_F32
             )
 
     def test_read_interface_exposes_original_metadata(self, tmp_path: Path) -> None:
@@ -462,7 +462,7 @@ class TestAppendReadWrite:
         path = tmp_path / "arw_meta.szplt"
         with tecio.open(str(path), "w", title="MyTitle", file_type=FileType.FULL) as w:
             x = np.linspace(0.0, 1.0, 5, dtype=np.float32)
-            w.write_ijk_zone(data=[x, x], variables=["x", "c"])
+            w.write_ordered_zone(data=[x, x], variables=["x", "c"])
 
         with tecio.open(str(path), "a+") as rw:
             assert rw.title == "MyTitle"
@@ -478,7 +478,7 @@ class TestAppendReadWrite:
         with tecio.open(str(path), "a+") as rw:
             assert rw.num_zones == 3  # original count — new writes not included
             x = np.linspace(0.0, 1.0, 10, dtype=np.float32)
-            rw.write_ijk_zone(data=[x, x], title="extra")
+            rw.write_ordered_zone(data=[x, x], title="extra")
             assert rw.num_zones == 3  # still original count during session
 
         with tecio.open(str(path), "r") as r:
@@ -496,7 +496,7 @@ class TestAppendReadWrite:
                 c = np.sin(x_base + t).astype(np.float32)
                 data = [x_base, c] if i == 0 else [c]
                 sharing = None if i == 0 else [1, 0]
-                w.write_ijk_zone(
+                w.write_ordered_zone(
                     data=data,
                     var_sharing=sharing,
                     solution_time=t,
@@ -506,13 +506,13 @@ class TestAppendReadWrite:
         with tecio.open(str(path), "a+") as rw:
             assert rw.num_zones == len(times)
             c_sum = sum(
-                rw.zone[i].variable[1].values.ravel().astype(np.float64)
+                rw.zones[i].variables[1].values.ravel().astype(np.float64)
                 for i in range(rw.num_zones)
             )
             c_avg = (c_sum / rw.num_zones).astype(np.float32)
-            rw.zone[0].variable[0].values.ravel()
+            rw.zones[0].variables[0].values.ravel()
 
-            rw.write_ijk_zone(
+            rw.write_ordered_zone(
                 data=[c_avg],
                 var_sharing=[1, 0],
                 title="time_average",
@@ -522,7 +522,7 @@ class TestAppendReadWrite:
 
         with tecio.open(str(path), "r") as r:
             assert r.num_zones == len(times) + 1
-            avg_zone = r.zone[-1]
+            avg_zone = r.zones[-1]
             assert avg_zone.title == "time_average"
             assert avg_zone.strand_id == 2
 
@@ -538,7 +538,7 @@ class TestAppendReadWrite:
 
         with tecio.open(str(src), "a+") as rw:
             assert rw.num_zones == 2
-            titles = [rw.zone[i].title for i in range(rw.num_zones)]
+            titles = [rw.zones[i].title for i in range(rw.num_zones)]
             assert titles == ["FluidVolume", "WingSurface"]
 
             n_vars = len(rw.variables)
@@ -556,7 +556,7 @@ class TestAppendReadWrite:
 
         with tecio.open(str(src), "r") as r:
             assert r.num_zones == 3
-            assert r.zone[2].title == "dummy"
+            assert r.zones[2].title == "dummy"
 
 
 # ===========================================================================

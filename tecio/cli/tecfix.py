@@ -273,7 +273,7 @@ def _process_zone(
     var_sharing: list[int] = []
     fix_auxdata: dict[str, str] = {}
 
-    for j, var in enumerate(zone.variable):
+    for j, var in enumerate(zone.variables):
         already_passive = var.is_passive()
         sv = var.shared_zone  # 1-based source zone index, or None
 
@@ -391,9 +391,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"  Zones     : {reader.num_zones}")
 
                 any_bad = False
-                for i, zone in enumerate(reader.zone):
+                for i, zone in enumerate(reader.zones):
                     zone_bad: dict[str, str] = {}
-                    for j, var in enumerate(zone.variable):
+                    for j, var in enumerate(zone.variables):
                         if var.is_passive() or var.shared_zone is not None:
                             continue
                         if var.data_type not in _FLOAT_TYPES:
@@ -446,7 +446,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if auxvar:
                     writer.add_auxvar_dict(auxvar)
 
-                for i, zone in enumerate(reader.zone):
+                for i, zone in enumerate(reader.zones):
                     zt = zone.zone_type
 
                     if zt in _FE_POLY:
@@ -512,7 +512,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
 
                     if isinstance(zone, TecplotOrderedZoneReader):
-                        writer.write_ijk_zone(data=writer_data, **common_kw)
+                        writer.write_ordered_zone(data=writer_data, **common_kw)
                     elif isinstance(zone, TecplotFEZoneReader):
                         con_sharing = zone.shared_connectivity
                         fe_kw = common_kw.copy()

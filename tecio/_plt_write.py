@@ -187,7 +187,7 @@ class TecplotPltWriter(TecplotWriter):
 
     Like :class:`~tecio.TecplotSzlWriter`, the file can be opened *eagerly*
     (when ``variables`` is supplied to ``__init__``) or *lazily* (deferred
-    until the first :meth:`write_ijk_zone` or :meth:`write_fe_zone` call, at
+    until the first :meth:`write_ordered_zone` or :meth:`write_fe_zone` call, at
     which point ``variables`` must be provided to that call).
 
     Args:
@@ -221,13 +221,13 @@ class TecplotPltWriter(TecplotWriter):
         Define file header fields on open.
 
         >>> with tecio.TecplotPltWriter("out.plt", variables=["X", "Y", "P"]) as w:
-        ...     w.write_ijk_zone(data=[x, y, p], title="Zone 1")
+        ...     w.write_ordered_zone(data=[x, y, p], title="Zone 1")
 
         If writer handle is opened with just the file name, the variable name list can
         be provided with the first zone written.
 
         >>> with tecio.TecplotPltWriter("out.plt") as w:
-        ...     w.write_ijk_zone(
+        ...     w.write_ordered_zone(
         ...         data=[x, y, p],
         ...         variables=["X", "Y", "P"],
         ...         title="Zone 1",
@@ -312,7 +312,7 @@ class TecplotPltWriter(TecplotWriter):
 
     # -- Structured zone writer --------------------------------------------------------
 
-    def write_ijk_zone(
+    def write_ordered_zone(
         self,
         data: Sequence[npt.ArrayLike],
         *,

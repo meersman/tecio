@@ -23,29 +23,29 @@ loaded on demand access is preserved).
 
 ## Zones and Variables: `ZoneList` / `VariableList`
 
-`reader.zone` and `zone.variable` return one of two format-agnostic container
+`reader.zones` and `zone.variables` return one of two format-agnostic container
 types:
 
 ```python
 with tecio.open("flow.szplt") as r:
-    r.zone[0]  # -> a zone reader (Ordered or FE, see below)
-    r.zone[1:4]  # -> ZoneList, a sub-range, same kind
-    r.zone[0].variable  # -> VariableList
-    r.zone[0].variable["x"]  # -> TecplotVariableReader, by exact name
-    r.zone[0].variable[2]  # -> TecplotVariableReader, by 0-based index
+    r.zones[0]  # -> a zone reader (Ordered or FE, see below)
+    r.zones[1:4]  # -> ZoneList, a sub-range, same kind
+    r.zones[0].variables  # -> VariableList
+    r.zones[0].variables["x"]  # -> TecplotVariableReader, by exact name
+    r.zones[0].variables[2]  # -> TecplotVariableReader, by 0-based index
 ```
 
 | Class | Returned by | Supports |
 |---|---|---|
-| {class}`~tecio.ZoneList` | `TecplotReader.zone` | `len()`, iteration, `int` index, `slice` (returns another `ZoneList`) |
-| {class}`~tecio.VariableList` | `TecplotZoneReader.variable` | `len()`, iteration, `int` index, exact-name `str` index, `in` |
+| {class}`~tecio.ZoneList` | `TecplotReader.zones` | `len()`, iteration, `int` index, `slice` (returns another `ZoneList`) |
+| {class}`~tecio.VariableList` | `TecplotZoneReader.variables` | `len()`, iteration, `int` index, exact-name `str` index, `in` |
 
 To output NumPy arrays directly at the zone level, use `get_array`:
 
 ```python
-p = r.zone[0].get_array("p")  # ndarray | None
-p = r.zone[0].get_array(2)  # by 0-based index
-x, y, z = r.zone[0].get_array(["x", "y", "z"])  # tuple, for unpacking
+p = r.zones[0].get_array("p")  # ndarray | None
+p = r.zones[0].get_array(2)  # by 0-based index
+x, y, z = r.zones[0].get_array(["x", "y", "z"])  # tuple, for unpacking
 ```
 
 A single key (index or name) returns one array; a list of names returns a
@@ -57,7 +57,7 @@ accessor, to pull one variable across many zones, iterate explicitly so the
 outer axis stays in your code:
 
 ```python
-seq = [z.get_array("p") for z in r.zone]  # list[ndarray | None]
+seq = [z.get_array("p") for z in r.zones]  # list[ndarray | None]
 stack = np.stack(seq)  # only once you know the shapes match
 ```
 
@@ -94,7 +94,7 @@ on its own subclass, and accessing the wrong one raises `AttributeError`
 rather than returning `None`:
 
 ```python
-zone = r.zone[0]
+zone = r.zones[0]
 zone.title, zone.zone_type  # always available
 if isinstance(zone, tecio.TecplotOrderedZoneReader):
     zone.dimensions  # (I, J, K)
@@ -138,7 +138,7 @@ Every concrete variable reader also carries a real, working `var_index`
 shared base class the way `zone_index` was for zones, so it's absent from
 the generated page above and doesn't type-check against code written against
 this abstract interface, but it's there and correct at runtime, since
-`zone.variable[i]` always returns a concrete instance. See {doc}`index` for
+`zone.variables[i]` always returns a concrete instance. See {doc}`index` for
 the full 1-based/0-based picture.
 
 ## `TecplotAuxDataReader`

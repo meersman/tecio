@@ -351,7 +351,7 @@ def _zone_to_dict(zone: TecplotZoneReader, num_vars: int) -> dict[str, Any]:
     shared_from = np.zeros(num_vars, dtype=np.int32)
 
     for j in range(num_vars):
-        var = zone.variable[j]
+        var = zone.variables[j]
 
         loc = var.value_location
         locations.append(loc.name if loc is not None else "")
@@ -407,9 +407,13 @@ def _zone_to_dict(zone: TecplotZoneReader, num_vars: int) -> dict[str, Any]:
 
         # Face-neighbor connections
         if zone.face_neighbor_mode is not None:
+            num_face_connections = zone.num_face_connections
+            face_connections = zone.get_face_connections()
+            assert num_face_connections is not None
+            assert face_connections is not None
             d["face_neighbor_mode"] = zone.face_neighbor_mode.name
-            d["num_face_connections"] = np.int64(zone.num_face_connections)
-            d["face_connections"] = zone.get_face_connections()
+            d["num_face_connections"] = np.int64(num_face_connections)
+            d["face_connections"] = face_connections
 
     return d
 
@@ -467,7 +471,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             mdict: dict[str, Any] = {"info": _build_info_dict(reader)}
 
-            for i, zone in enumerate(reader.zone, start=1):
+            for i, zone in enumerate(reader.zones, start=1):
                 if zone.zone_type in _FE_POLY:
                     print(
                         f"Warning: zone {i} ('{zone.title}') is "

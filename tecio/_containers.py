@@ -1,35 +1,35 @@
 """Index- and name-based container types for Tecplot data collections.
 
-These containers are shared by the ``tecio`` readers: ``Read.zone`` returns a
-:class:`ZoneList` of ``ReadZone`` and ``ReadZone.variable`` returns a
+These containers are shared by the ``tecio`` readers: ``Read.zones`` returns a
+:class:`ZoneList` of ``ReadZone`` and ``ReadZone.variables`` returns a
 :class:`VariableList` of ``ReadVariable`` for every supported format (SZL, PLT, DAT).
-They depend only on small structural protocols (``.name`` for variables, ``.variable``
+They depend only on small structural protocols (``.name`` for variables, ``.variables``
 for zones) so they import nothing from either hierarchy and cannot introduce a circular
 dependency.
 
 Access model:
 
-    reader.zone                  # ZoneList
-    reader.zone[0]               # ReadZone            (element)
-    reader.zone[1:4]             # ZoneList            (sub-collection, same kind)
-    reader.zone[0].variable      # VariableList
-    reader.zone[0].variable["x"] # ReadVariable        (object: .values, .is_passive)
-    reader.zone[0].variable[2]   # ReadVariable        (0-based index)
+    reader.zones                  # ZoneList
+    reader.zones[0]               # ReadZone            (element)
+    reader.zones[1:4]             # ZoneList            (sub-collection, same kind)
+    reader.zones[0].variables      # VariableList
+    reader.zones[0].variables["x"] # ReadVariable        (object: .values, .is_passive)
+    reader.zones[0].variables[2]   # ReadVariable        (0-based index)
 
 Subscripting always returns an element or a sub-collection *of the same kind* (never a
 raw array). The underlying NumPy data is pulled with ``get_array`` on a single zone,
 which mirrors the pandas ``df[...]`` split: a scalar key returns one array, a list of
 names returns a tuple of arrays (for unpacking)::
 
-    p = reader.zone[0].get_array("p")  # ndarray | None
-    p = reader.zone[0].get_array(2)  # ndarray | None  (0-based index)
-    x, y, z = reader.zone[0].get_array(["x", "y", "z"])  # tuple, one per name
+    p = reader.zones[0].get_array("p")  # ndarray | None
+    p = reader.zones[0].get_array(2)  # ndarray | None  (0-based index)
+    x, y, z = reader.zones[0].get_array(["x", "y", "z"])  # tuple, one per name
 
 There is deliberately **no** cross-zone array accessor. To pull one variable across
 many zones (e.g. a transient sequence), iterate explicitly so the outer axis is owned by
 your code, and stack only when you know the result is rectangular::
 
-    seq = [z.get_array("p") for z in reader.zone]  # list[ndarray | None]
+    seq = [z.get_array("p") for z in reader.zones]  # list[ndarray | None]
     stack = np.stack(seq)  # only if shapes all match
 
 Name lookup is exact and case-sensitive throughout, so distinct variables such
@@ -78,7 +78,7 @@ class _HasVariableList(Protocol):
     """A zone element exposing a name/index-addressable variable container."""
 
     @property
-    def variable(self) -> VariableList[Any]: ...
+    def variables(self) -> VariableList[Any]: ...
 
 
 _VarT = TypeVar("_VarT", bound=_HasName)
@@ -137,7 +137,7 @@ def select_variable_arrays(
 class VariableList(Generic[_VarT]):
     """Read-only sequence of variables with positional *and* named access.
 
-    Drop-in for the ``list`` previously returned by ``ReadZone.variable``:
+    Drop-in for the ``list`` previously returned by ``ReadZone.variables``:
     iteration, ``len()``, and integer indexing are unchanged. A string key
     resolves a variable by its exact, case-sensitive name.
 
@@ -229,16 +229,16 @@ class VariableList(Generic[_VarT]):
 class ZoneList(Generic[_ZoneT]):
     """Read-only sequence of zones: positional access and slicing only.
 
-    Drop-in for the ``list`` previously returned by ``Read.zone``: iteration, ``len()``,
-    and integer indexing are unchanged. Slicing returns another :class:`ZoneList` (not a
-    plain ``list``) so navigation composes.
+    Drop-in for the ``list`` previously returned by ``Read.zones``: iteration,
+    ``len()``, and integer indexing are unchanged. Slicing returns another
+    :class:`ZoneList` (not a plain ``list``) so navigation composes.
 
     This container deliberately exposes **no** data-extraction method. Pulling one
     variable across many zones is an explicit loop over the zones, keeping the outer
     (zone) axis owned by the caller (see the module docs).
 
     Args:
-        zones: Ordered list of zone elements (each exposing ``.variable``).
+        zones: Ordered list of zone elements (each exposing ``.variables``).
     """
 
     __slots__ = ("_items",)

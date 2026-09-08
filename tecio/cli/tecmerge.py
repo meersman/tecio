@@ -349,7 +349,7 @@ def _write_zone(
             active_data.append(np.array([], dtype=np.float32))
             continue
 
-        var = zone.variable[local_idx]
+        var = zone.variables[local_idx]
         is_passive = var.is_passive()
         passive_vars.append(is_passive)
         active_locs.append(var.value_location)
@@ -406,7 +406,7 @@ def _write_zone(
     )
 
     if isinstance(zone, TecplotOrderedZoneReader):
-        writer.write_ijk_zone(data=writer_data, **common_kw)
+        writer.write_ordered_zone(data=writer_data, **common_kw)
     elif isinstance(zone, TecplotFEZoneReader):
         con_src = zone.shared_connectivity
         con_remapped = zone_index_map.get(con_src) if con_src is not None else None
@@ -551,7 +551,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # every input file rather than accumulated across the whole merge
                 zone_index_map: dict[int, int] = {}
 
-                for zi, zone in enumerate(reader.zone):
+                for zi, zone in enumerate(reader.zones):
                     zone_num = zi + 1
                     zt = zone.zone_type
                     if zt in (ZoneType.FEPOLYGON, ZoneType.FEPOLYHEDRON):

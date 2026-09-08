@@ -9,8 +9,8 @@ lifecycle:
 
 ```python
 with tecio.open("out.szplt", "w", variables=["x", "y", "p"]) as w:  # 1. open
-    w.add_auxdataset_dict({"Solver": "MyCFD"})                       # 2. stage dataset level aux data
-    w.write_ijk_zone(data=[x, y, p], title="Zone 1")                 # 3. write structured zones
+    w.add_auxdataset_dict({"Solver": "MyCFD"})           # 2. stage dataset level aux data
+    w.write_ordered_zone(data=[x, y, p], title="Zone 1")  # 3. write structured zones
     w.write_fe_zone(data=[...], zone_type=ZoneType.FETRIANGLE, ...)  # 4. write unstructured zones
     # 5. close happens automatically on context-manager exit
 ```
@@ -63,7 +63,7 @@ file for reading.
    TecplotWriter
 ```
 
-## `write_ijk_zone`
+## `write_ordered_zone`
 
 Writes one complete IJK-ordered zone. Dimensions are inferred from the shape
 of the first array (1-D → `(N, 1, 1)`, 2-D → `(I, J, 1)`, missing trailing
@@ -90,7 +90,7 @@ across all three formats.
 
 ## `write_fe_zone`
 
-Writes one complete finite-element zone. All the `write_ijk_zone` parameters
+Writes one complete finite-element zone. All the `write_ordered_zone` parameters
 apply here too (except `datapacking`, which only means something for
 ordered zones), plus:
 

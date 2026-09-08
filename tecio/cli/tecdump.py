@@ -191,7 +191,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("-" * 78)
             for i in range(tec.num_zones):
                 if (args.zone is None) or (i + 1 == args.zone):
-                    zone = tec.zone[i]
+                    zone = tec.zones[i]
                     print(f"\nZone {i + 1:3}")
                     print(f"  Title                : {zone.title}")
                     print(f"  Zone Type            : {zone.zone_type}")
@@ -231,8 +231,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         print(f"  Face Neighbor Mode   : {zone.face_neighbor_mode}")
                         print(f"  Num Face Connections : {zone.num_face_connections}")
                         if zone.num_face_connections is not None:
+                            face_connections = zone.get_face_connections()
+                            assert face_connections is not None
                             value_str = np.array2string(
-                                zone.get_face_connections(),
+                                face_connections,
                                 prefix="  Face Connections     : ",
                                 separator=", ",
                             )
@@ -242,7 +244,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if args.print_vars:
                         for j in range(tec.num_vars):
                             if (args.variable is None) or (j + 1 == args.variable):
-                                var = zone.variable[j]
+                                var = zone.variables[j]
                                 print(f"  Variable {j + 1:3}")
                                 print(f"    Name               : {var.name}")
                                 print(f"    Is Enabled         : {var.is_enabled()}")

@@ -514,12 +514,12 @@ class TecplotSzlReader(TecplotReader):
         """Number of zones in the file.
 
         Queried directly. Cheaper than the base class's default of
-        ``len(self.zone)``, which would build every zone's metadata.
+        ``len(self.zones)``, which would build every zone's metadata.
         """
         return libtecio.tec_data_set_get_num_zones(self._check_handle())
 
     @property
-    def zone(self) -> ZoneList[TecplotZoneReader]:
+    def zones(self) -> ZoneList[TecplotZoneReader]:
         """Zones in this file, by 0-based index or slice."""
         if self._zone_list is None:
             handle = self._check_handle()

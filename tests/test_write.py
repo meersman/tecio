@@ -2,7 +2,7 @@
 """pytest tests for :class:`tecio.{szl,plt,dat}.Write`.
 
 All three ``Write`` classes are deliberately built to an identical public API
-(``write_ijk_zone``, ``write_fe_zone``, aux data, sharing, ...); this suite runs the
+(``write_ordered_zone``, ``write_fe_zone``, aux data, sharing, ...); this suite runs the
 *same* test body against all three formats, parametrized by ``fmt``, so a behavior only
 has to be described once and is verified consistent across every writer.
 
@@ -193,13 +193,13 @@ def _rtol_for_precision(precision: DataType) -> float:
 
 
 class TestWriteIJKZone:
-    """Tests for write_ijk_zone, run against every writer format."""
+    """Tests for write_ordered_zone, run against every writer format."""
 
     def test_write_ijk_3d_mixed_dtypes(self, fmt: str, output_path: Callable) -> None:
         """3-D ordered zone with mixed float32/float64 variables.
 
         Demonstrates:
-        - Basic ``write_ijk_zone`` call structure: ``data``, ``variables``, ``title``
+        - Basic ``write_ordered_zone`` call structure: ``data``, ``variables``, ``title``
         - Zone dimensions ``(imax, jmax, kmax)`` inferred from the first nodal
           array's shape
         - Per-format dtype behavior (see module docstring)
@@ -213,7 +213,7 @@ class TestWriteIJKZone:
 
         path = _path(output_path, fmt, "write_ijk_3d")
         with tecio.open(str(path), "w") as w:
-            w.write_ijk_zone(
+            w.write_ordered_zone(
                 data=[x, y, z, c], variables=["x", "y", "z", "c"], title="zone_3d"
             )
 
@@ -221,16 +221,16 @@ class TestWriteIJKZone:
         with tecio.open(str(path), "r") as r:
             assert r.num_zones == 1
             assert r.num_vars == 4
-            zone = r.zone[0]
+            zone = r.zones[0]
             assert zone.zone_type == ZoneType.ORDERED
             assert zone.dimensions == (i, j, k)
-            assert zone.variable[0].data_type == _expected_dtype(fmt, x)
-            assert zone.variable[1].data_type == _expected_dtype(fmt, y)
+            assert zone.variables[0].data_type == _expected_dtype(fmt, x)
+            assert zone.variables[1].data_type == _expected_dtype(fmt, y)
             np.testing.assert_allclose(
-                zone.variable[0].values.ravel(), x.ravel(), rtol=_rtol(fmt, x)
+                zone.variables[0].values.ravel(), x.ravel(), rtol=_rtol(fmt, x)
             )
             np.testing.assert_allclose(
-                zone.variable[1].values.ravel(), y.ravel(), rtol=_rtol(fmt, y)
+                zone.variables[1].values.ravel(), y.ravel(), rtol=_rtol(fmt, y)
             )
 
     def test_write_ijk_cell_centered(self, fmt: str, output_path: Callable) -> None:
@@ -250,7 +250,7 @@ class TestWriteIJKZone:
 
         path = _path(output_path, fmt, "write_ijk_cc")
         with tecio.open(str(path), "w") as w:
-            w.write_ijk_zone(
+            w.write_ordered_zone(
                 data=[x, y, z, cc],
                 variables=["x", "y", "z", "cc"],
                 value_locations=[
@@ -263,7 +263,7 @@ class TestWriteIJKZone:
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
-            cc_var = r.zone[0].variable[3]
+            cc_var = r.zones[0].variables[3]
             assert cc_var.value_location == ValueLocation.CELL_CENTERED
             assert cc_var.data_type == _expected_dtype(fmt, cc)
             assert cc_var.values.size == (i - 1) * (j - 1) * (k - 1)
@@ -288,25 +288,25 @@ class TestWriteIJKZone:
 
         path = _path(output_path, fmt, "write_ijk_int")
         with tecio.open(str(path), "w") as w:
-            w.write_ijk_zone(
+            w.write_ordered_zone(
                 data=[x, c_i32, c_i16, c_u8],
                 variables=["x", "c_i32", "c_i16", "c_u8"],
             )
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
-            zone = r.zone[0]
-            assert zone.variable[1].data_type == _expected_dtype(fmt, c_i32)
-            assert zone.variable[2].data_type == _expected_dtype(fmt, c_i16)
-            assert zone.variable[3].data_type == _expected_dtype(fmt, c_u8)
+            zone = r.zones[0]
+            assert zone.variables[1].data_type == _expected_dtype(fmt, c_i32)
+            assert zone.variables[2].data_type == _expected_dtype(fmt, c_i16)
+            assert zone.variables[3].data_type == _expected_dtype(fmt, c_u8)
             np.testing.assert_allclose(
-                zone.variable[1].values.ravel(), c_i32.astype(np.float64)
+                zone.variables[1].values.ravel(), c_i32.astype(np.float64)
             )
             np.testing.assert_allclose(
-                zone.variable[2].values.ravel(), c_i16.astype(np.float64)
+                zone.variables[2].values.ravel(), c_i16.astype(np.float64)
             )
             np.testing.assert_allclose(
-                zone.variable[3].values.ravel(), c_u8.astype(np.float64)
+                zone.variables[3].values.ravel(), c_u8.astype(np.float64)
             )
 
     def test_write_ijk_unsteady(self, fmt: str, output_path: Callable) -> None:
@@ -329,7 +329,7 @@ class TestWriteIJKZone:
         with tecio.open(str(path), "w", variables=["x", "y", "z", "c"]) as w:
             for t in solution_times:
                 c = scalar_field(x + t, y + t, z).astype(np.float64)
-                w.write_ijk_zone(
+                w.write_ordered_zone(
                     data=[x, y, z, c] if w.current_zone == 0 else [c],
                     var_sharing=None if w.current_zone == 0 else [1, 1, 1, 0],
                     strand_id=1,
@@ -339,10 +339,10 @@ class TestWriteIJKZone:
         assert path.exists()
         with tecio.open(str(path), "r") as r:
             assert r.num_zones == len(solution_times)
-            assert r.zone[0].solution_time == pytest.approx(0.0)
-            assert r.zone[-1].solution_time == pytest.approx(solution_times[-1])
-            assert r.zone[5].strand_id == 1
-            assert r.zone[1].variable[0].shared_zone is not None
+            assert r.zones[0].solution_time == pytest.approx(0.0)
+            assert r.zones[-1].solution_time == pytest.approx(solution_times[-1])
+            assert r.zones[5].strand_id == 1
+            assert r.zones[1].variables[0].shared_zone is not None
 
     def test_write_ijk_shared_var_dimensions_from_source(
         self, fmt: str, output_path: Callable
@@ -366,24 +366,24 @@ class TestWriteIJKZone:
 
         path = _path(output_path, fmt, "write_ijk_shared_dims")
         with tecio.open(str(path), "w") as w:
-            w.write_ijk_zone(
+            w.write_ordered_zone(
                 data=[x, y, z, c0], variables=["x", "y", "z", "c"], title="zone_1"
             )
-            w.write_ijk_zone(data=[c1], var_sharing=[1, 1, 1, 0], title="zone_2")
+            w.write_ordered_zone(data=[c1], var_sharing=[1, 1, 1, 0], title="zone_2")
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
             assert r.num_zones == 2
-            assert r.zone[1].dimensions == (i, j, k)
-            assert r.zone[1].variable[0].shared_zone is not None
+            assert r.zones[1].dimensions == (i, j, k)
+            assert r.zones[1].variables[0].shared_zone is not None
             # Shared variable forwards the source zone's data, exactly as if
             # it were local.
             np.testing.assert_allclose(
-                r.zone[1].variable[0].values.ravel(), x.ravel(), rtol=_rtol(fmt, x)
+                r.zones[1].variables[0].values.ravel(), x.ravel(), rtol=_rtol(fmt, x)
             )
-            assert r.zone[1].variable[3].shared_zone is None
+            assert r.zones[1].variables[3].shared_zone is None
             np.testing.assert_allclose(
-                r.zone[1].variable[3].values.ravel(), c1.ravel(), rtol=_rtol(fmt, c1)
+                r.zones[1].variables[3].values.ravel(), c1.ravel(), rtol=_rtol(fmt, c1)
             )
 
     def test_write_ijk_passive_variable(self, fmt: str, output_path: Callable) -> None:
@@ -399,11 +399,11 @@ class TestWriteIJKZone:
 
         path = _path(output_path, fmt, "write_ijk_passive")
         with tecio.open(str(path), "w", variables=["x", "unused", "c"]) as w:
-            w.write_ijk_zone(data=[x, c], passive_vars=[False, True, False])
+            w.write_ordered_zone(data=[x, c], passive_vars=[False, True, False])
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
-            assert r.zone[0].variable[1].is_passive()
+            assert r.zones[0].variables[1].is_passive()
 
     def test_write_ijk_dataset_and_zone_aux(
         self, fmt: str, output_path: Callable
@@ -413,7 +413,7 @@ class TestWriteIJKZone:
         Demonstrates:
         - ``add_auxdataset_dict`` buffers dataset-level metadata, flushed before the
           first zone
-        - ``aux={...}`` on ``write_ijk_zone`` attaches zone-level metadata
+        - ``aux={...}`` on ``write_ordered_zone`` attaches zone-level metadata
         """
         x = np.linspace(0.0, 1.0, 5, dtype=np.float32)
         dataset_aux = {"Solver": "TestCode", "Mach": "0.72"}
@@ -422,14 +422,14 @@ class TestWriteIJKZone:
         path = _path(output_path, fmt, "write_ijk_aux")
         with tecio.open(str(path), "w") as w:
             w.add_auxdataset_dict(dataset_aux)
-            w.write_ijk_zone(data=[x], variables=["x"], aux=zone_aux)
+            w.write_ordered_zone(data=[x], variables=["x"], aux=zone_aux)
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
             for k, v in dataset_aux.items():
                 assert r.auxdata[k] == v
             for k, v in zone_aux.items():
-                assert r.zone[0].auxdata[k] == v
+                assert r.zones[0].auxdata[k] == v
 
     def test_write_ijk_file_type_grid(self, fmt: str, output_path: Callable) -> None:
         """``FileType.GRID`` survives the round-trip for every format."""
@@ -437,7 +437,7 @@ class TestWriteIJKZone:
         path = _path(output_path, fmt, "write_ijk_grid")
 
         with tecio.open(str(path), "w", file_type=FileType.GRID) as w:
-            w.write_ijk_zone(data=[x], variables=["x"])
+            w.write_ordered_zone(data=[x], variables=["x"])
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
@@ -457,7 +457,7 @@ class TestWriteIJKZone:
 
         with pytest.raises(ValueError, match="[Ee]xpected"):
             with tecio.open(str(path), "w", variables=["x", "y", "c"]) as w:
-                w.write_ijk_zone(data=[x, y])  # missing c
+                w.write_ordered_zone(data=[x, y])  # missing c
 
     def test_write_ijk_shape_mismatch_raises(
         self, fmt: str, output_path: Callable
@@ -470,7 +470,7 @@ class TestWriteIJKZone:
         path = _path(output_path, fmt, "write_ijk_shape_mismatch")
 
         with pytest.raises(ValueError), tecio.open(str(path), "w") as w:
-            w.write_ijk_zone(data=[x, y_bad], variables=["x", "y"])
+            w.write_ordered_zone(data=[x, y_bad], variables=["x", "y"])
 
     def test_write_ijk_shared_var_shape_mismatch_raises(
         self, fmt: str, output_path: Callable
@@ -495,8 +495,8 @@ class TestWriteIJKZone:
 
         with pytest.raises(ValueError):
             with tecio.open(str(path), "w", variables=["x", "y", "z", "c"]) as w:
-                w.write_ijk_zone(data=[x, y, z, c])
-                w.write_ijk_zone(data=[bad_c], var_sharing=[1, 1, 1, 0])
+                w.write_ordered_zone(data=[x, y, z, c])
+                w.write_ordered_zone(data=[bad_c], var_sharing=[1, 1, 1, 0])
 
 
 # ======================================================================================
@@ -526,11 +526,11 @@ class TestWriteFEZone:
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
-            zone = r.zone[0]
+            zone = r.zones[0]
             assert zone.zone_type == ZoneType.FELINESEG
             assert zone.num_nodes == len(x)
             assert zone.num_elements == len(nodes)
-            np.testing.assert_allclose(zone.variable[0].values, x, rtol=_rtol(fmt, x))
+            np.testing.assert_allclose(zone.variables[0].values, x, rtol=_rtol(fmt, x))
             np.testing.assert_array_equal(zone.node_map, nodes.astype(np.int64))
 
     def test_write_fe_tri(self, fmt: str, output_path: Callable) -> None:
@@ -552,15 +552,15 @@ class TestWriteFEZone:
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
-            zone = r.zone[0]
+            zone = r.zones[0]
             assert zone.zone_type == ZoneType.FETRIANGLE
             assert zone.num_nodes == 4
             assert zone.num_elements == 2
-            assert zone.variable[0].data_type == _expected_dtype(fmt, x)
-            assert zone.variable[2].data_type == _expected_dtype(fmt, c)
-            np.testing.assert_allclose(zone.variable[0].values, x, rtol=_rtol(fmt, x))
-            np.testing.assert_allclose(zone.variable[1].values, y, rtol=_rtol(fmt, y))
-            np.testing.assert_allclose(zone.variable[2].values, c.astype(np.float64))
+            assert zone.variables[0].data_type == _expected_dtype(fmt, x)
+            assert zone.variables[2].data_type == _expected_dtype(fmt, c)
+            np.testing.assert_allclose(zone.variables[0].values, x, rtol=_rtol(fmt, x))
+            np.testing.assert_allclose(zone.variables[1].values, y, rtol=_rtol(fmt, y))
+            np.testing.assert_allclose(zone.variables[2].values, c.astype(np.float64))
 
     def test_write_fe_quad(self, fmt: str, output_path: Callable) -> None:
         """FEQUADRILATERAL -- four-node quadrilateral elements."""
@@ -581,12 +581,12 @@ class TestWriteFEZone:
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
-            zone = r.zone[0]
+            zone = r.zones[0]
             assert zone.zone_type == ZoneType.FEQUADRILATERAL
             assert zone.num_nodes == 6
             assert zone.num_elements == 2
-            assert zone.variable[0].data_type == _expected_dtype(fmt, x)
-            np.testing.assert_allclose(zone.variable[0].values, x, rtol=_rtol(fmt, x))
+            assert zone.variables[0].data_type == _expected_dtype(fmt, x)
+            np.testing.assert_allclose(zone.variables[0].values, x, rtol=_rtol(fmt, x))
 
     def test_write_fe_tet(self, fmt: str, output_path: Callable) -> None:
         """FETETRAHEDRON -- four-node tetrahedral elements (3-D volume mesh)."""
@@ -608,11 +608,11 @@ class TestWriteFEZone:
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
-            zone = r.zone[0]
+            zone = r.zones[0]
             assert zone.zone_type == ZoneType.FETETRAHEDRON
             assert zone.num_nodes == 5
             assert zone.num_elements == 2
-            assert zone.variable[3].data_type == _expected_dtype(fmt, c)
+            assert zone.variables[3].data_type == _expected_dtype(fmt, c)
             np.testing.assert_array_equal(zone.node_map, nodes.astype(np.int64))
 
     def test_write_fe_pyramid(self, fmt: str, output_path: Callable) -> None:
@@ -635,10 +635,10 @@ class TestWriteFEZone:
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
-            zone = r.zone[0]
+            zone = r.zones[0]
             assert zone.zone_type == ZoneType.FEBRICK
-            assert zone.variable[3].data_type == _expected_dtype(fmt, c)
-            np.testing.assert_allclose(zone.variable[3].values, c.astype(np.float64))
+            assert zone.variables[3].data_type == _expected_dtype(fmt, c)
+            np.testing.assert_allclose(zone.variables[3].values, c.astype(np.float64))
 
     def test_write_fe_prism(self, fmt: str, output_path: Callable) -> None:
         """Triangular prism as a degenerate FEBRICK (repeated edge nodes)."""
@@ -660,9 +660,9 @@ class TestWriteFEZone:
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
-            zone = r.zone[0]
-            assert zone.variable[3].data_type == _expected_dtype(fmt, c)
-            np.testing.assert_allclose(zone.variable[3].values, c.astype(np.float64))
+            zone = r.zones[0]
+            assert zone.variables[3].data_type == _expected_dtype(fmt, c)
+            np.testing.assert_allclose(zone.variables[3].values, c.astype(np.float64))
 
     def test_write_fe_brick(self, fmt: str, output_path: Callable) -> None:
         """FEBRICK -- standard 8-node hexahedral elements."""
@@ -684,13 +684,13 @@ class TestWriteFEZone:
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
-            zone = r.zone[0]
+            zone = r.zones[0]
             assert zone.zone_type == ZoneType.FEBRICK
             assert zone.num_nodes == 8
             assert zone.num_elements == 1
-            assert zone.variable[2].data_type == _expected_dtype(fmt, z)
-            np.testing.assert_allclose(zone.variable[2].values, z, rtol=_rtol(fmt, z))
-            np.testing.assert_allclose(zone.variable[3].values, c.astype(np.float64))
+            assert zone.variables[2].data_type == _expected_dtype(fmt, z)
+            np.testing.assert_allclose(zone.variables[2].values, z, rtol=_rtol(fmt, z))
+            np.testing.assert_allclose(zone.variables[3].values, c.astype(np.float64))
 
     def test_write_fe_face_neighbors(self, fmt: str, output_path: Callable) -> None:
         """Two FEBRICK cells with face-neighbor connectivity and a CC variable.
@@ -738,9 +738,9 @@ class TestWriteFEZone:
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
-            zone = r.zone[0]
+            zone = r.zones[0]
             assert zone.num_elements == 2
-            cc_var = zone.variable[3]
+            cc_var = zone.variables[3]
             assert cc_var.value_location == ValueLocation.CELL_CENTERED
             np.testing.assert_allclose(cc_var.values, c, rtol=_rtol(fmt, c))
 
@@ -836,8 +836,8 @@ class TestWriteFEZone:
         assert shared_meta.num_face_connections is None
 
         with tecio.open(str(path), "r") as r:
-            source_zone = r.zone[0]
-            shared_zone = r.zone[1]
+            source_zone = r.zones[0]
+            shared_zone = r.zones[1]
             assert source_zone.num_face_connections == len(face_neighbors)
             np.testing.assert_array_equal(
                 source_zone.get_face_connections(reshape=True), face_neighbors
@@ -971,7 +971,7 @@ class TestWriteFEZone:
             )
 
         with tecio.open(str(path), "r") as r:
-            zone = r.zone[0]
+            zone = r.zones[0]
             assert zone.num_face_connections == 2
             np.testing.assert_array_equal(
                 zone.get_face_connections(reshape=True), face_neighbors
@@ -994,7 +994,7 @@ class TestWriteFEZone:
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
-            assert r.zone[0].variable[1].is_passive()
+            assert r.zones[0].variables[1].is_passive()
 
     def test_write_fe_unsteady(self, fmt: str, output_path: Callable) -> None:
         """FETETRAHEDRON zones with strand ID, solution time, and sharing.
@@ -1031,14 +1031,14 @@ class TestWriteFEZone:
         assert path.exists()
         with tecio.open(str(path), "r") as r:
             assert r.num_zones == len(solution_times)
-            assert r.zone[0].solution_time == pytest.approx(0.0)
-            assert r.zone[-1].solution_time == pytest.approx(solution_times[-1])
-            assert r.zone[0].strand_id == 1
-            assert r.zone[1].shared_connectivity is not None
-            np.testing.assert_array_equal(r.zone[1].node_map, nodes.astype(np.int64))
-            assert r.zone[1].variable[0].shared_zone is not None
+            assert r.zones[0].solution_time == pytest.approx(0.0)
+            assert r.zones[-1].solution_time == pytest.approx(solution_times[-1])
+            assert r.zones[0].strand_id == 1
+            assert r.zones[1].shared_connectivity is not None
+            np.testing.assert_array_equal(r.zones[1].node_map, nodes.astype(np.int64))
+            assert r.zones[1].variables[0].shared_zone is not None
             np.testing.assert_allclose(
-                r.zone[1].variable[0].values, x, rtol=_rtol(fmt, x)
+                r.zones[1].variables[0].values, x, rtol=_rtol(fmt, x)
             )
 
     # ----------------------------------------------------------------------------------
@@ -1146,7 +1146,7 @@ class TestDatapackingPoint:
 
         with pytest.raises(NotImplementedError):
             with tecio.open(str(path), "w") as w:
-                w.write_ijk_zone(
+                w.write_ordered_zone(
                     data=[x], variables=["x"], datapacking=DataPacking.POINT
                 )
 
@@ -1163,7 +1163,7 @@ class TestDatapackingPoint:
 
         for path, packing in ((path_block, "BLOCK"), (path_point, "POINT")):
             with tecio.open(str(path), "w") as w:
-                w.write_ijk_zone(
+                w.write_ordered_zone(
                     data=[x, y, c], variables=["x", "y", "c"], datapacking=packing
                 )
 
@@ -1173,8 +1173,8 @@ class TestDatapackingPoint:
         ):
             for vi in range(3):
                 np.testing.assert_allclose(
-                    rb.zone[0].variable[vi].values.ravel(),
-                    rp.zone[0].variable[vi].values.ravel(),
+                    rb.zones[0].variables[vi].values.ravel(),
+                    rp.zones[0].variables[vi].values.ravel(),
                     rtol=_RTOL_DAT,
                 )
 
@@ -1185,7 +1185,7 @@ class TestDatapackingPoint:
 
         with pytest.raises(ValueError, match="datapacking"):
             with tecio.open(str(path), "w") as w:
-                w.write_ijk_zone(data=[x], variables=["x"], datapacking="CSV")
+                w.write_ordered_zone(data=[x], variables=["x"], datapacking="CSV")
 
 
 # ======================================================================================
@@ -1228,28 +1228,28 @@ class TestPrecisionOverride:
         for precision in (DataType.FLOAT, DataType.DOUBLE):
             path = _path(output_path, fmt, f"precision_override_{precision.name}")
             with tecio.open(str(path), "w", precision=precision) as w:
-                w.write_ijk_zone(
+                w.write_ordered_zone(
                     data=[x_f32, c_f64, cpu_id],
                     variables=["x_f32", "c_f64", "cpu_id"],
                 )
 
             with tecio.open(str(path), "r") as r:
-                zone = r.zone[0]
-                assert zone.variable[0].data_type == _expected_dtype(
+                zone = r.zones[0]
+                assert zone.variables[0].data_type == _expected_dtype(
                     fmt, x_f32, precision
                 )
-                assert zone.variable[1].data_type == _expected_dtype(
+                assert zone.variables[1].data_type == _expected_dtype(
                     fmt, c_f64, precision
                 )
-                assert zone.variable[2].data_type == DataType.INT32, (
+                assert zone.variables[2].data_type == DataType.INT32, (
                     f"cpu_id must stay INT32 under precision={precision.name}"
                 )
                 np.testing.assert_allclose(
-                    zone.variable[1].values.ravel(),
+                    zone.variables[1].values.ravel(),
                     c_f64,
                     rtol=_rtol_for_precision(precision),
                 )
-                np.testing.assert_array_equal(zone.variable[2].values.ravel(), cpu_id)
+                np.testing.assert_array_equal(zone.variables[2].values.ravel(), cpu_id)
 
     def test_invalid_precision_string_raises(
         self, floating_only_fmt: str, output_path: Callable
@@ -1274,9 +1274,9 @@ class TestPrecisionOverride:
         ):
             path = _path(output_path, fmt, f"precision_alias_{alias}")
             with tecio.open(str(path), "w", precision=alias) as w:
-                w.write_ijk_zone(data=[x], variables=["x"])
+                w.write_ordered_zone(data=[x], variables=["x"])
             with tecio.open(str(path), "r") as r:
-                assert r.zone[0].variable[0].data_type == expected
+                assert r.zones[0].variables[0].data_type == expected
 
     def test_dat_default_precision_downcasts_floats(
         self, output_path: Callable
@@ -1290,10 +1290,10 @@ class TestPrecisionOverride:
         path = output_path("dat_default_precision.dat")
 
         with tecio.open(str(path), "w") as w:  # no precision= -- uses the default
-            w.write_ijk_zone(data=[x], variables=["x"])
+            w.write_ordered_zone(data=[x], variables=["x"])
 
         with tecio.open(str(path), "r") as r:
-            var = r.zone[0].variable[0]
+            var = r.zones[0].variables[0]
             assert var.data_type == DataType.FLOAT
             # Downcast to float32 precision, not full float64 fidelity.
             np.testing.assert_allclose(var.values.ravel(), x, rtol=_RTOL_F32)
@@ -1304,12 +1304,12 @@ class TestPrecisionOverride:
         path = output_path("dat_precision_double.dat")
 
         with tecio.open(str(path), "w", precision=DataType.DOUBLE) as w:
-            w.write_ijk_zone(data=[x], variables=["x"])
+            w.write_ordered_zone(data=[x], variables=["x"])
 
         with tecio.open(str(path), "r") as r:
-            assert r.zone[0].variable[0].data_type == DataType.DOUBLE
+            assert r.zones[0].variables[0].data_type == DataType.DOUBLE
             np.testing.assert_allclose(
-                r.zone[0].variable[0].values.ravel(), x, rtol=1e-15
+                r.zones[0].variables[0].values.ravel(), x, rtol=1e-15
             )
 
     def test_szl_precision_none_is_fully_automatic(self, output_path: Callable) -> None:
@@ -1321,13 +1321,15 @@ class TestPrecisionOverride:
 
         with tecio.open(str(path), "w") as w:
             assert w.precision is None
-            w.write_ijk_zone(data=[x_f32, c_f64, cpu_id], variables=["x", "c", "cpu"])
+            w.write_ordered_zone(
+                data=[x_f32, c_f64, cpu_id], variables=["x", "c", "cpu"]
+            )
 
         with tecio.open(str(path), "r") as r:
-            zone = r.zone[0]
-            assert zone.variable[0].data_type == DataType.FLOAT
-            assert zone.variable[1].data_type == DataType.DOUBLE
-            assert zone.variable[2].data_type == DataType.INT32
+            zone = r.zones[0]
+            assert zone.variables[0].data_type == DataType.FLOAT
+            assert zone.variables[1].data_type == DataType.DOUBLE
+            assert zone.variables[2].data_type == DataType.INT32
 
 
 # ======================================================================================
@@ -1362,7 +1364,7 @@ class TestSZLFlush:
         joins and removes them.
 
         Demonstrates:
-        - Calling ``write_ijk_zone(..., flush=True)`` leaves the six ``<path>.sz*``
+        - Calling ``write_ordered_zone(..., flush=True)`` leaves the six ``<path>.sz*``
           intermediate files on disk *while the writer is still open* -- the same files
           an external solver's ``TECFLUSH142``/``tecFileWriterFlush`` calls would leave
           for ``szcombine`` to join later.
@@ -1382,7 +1384,7 @@ class TestSZLFlush:
 
         w = tecio.open(str(path), "w", variables=["x", "y", "z", "c"])
         try:
-            w.write_ijk_zone(data=[x, y, z, c], flush=True)
+            w.write_ordered_zone(data=[x, y, z, c], flush=True)
 
             # With the writer is still open check these files exist on disk
             for f in temp_files:
@@ -1400,10 +1402,10 @@ class TestSZLFlush:
 
         with tecio.open(str(path), "r") as r:
             assert r.num_zones == 1
-            zone = r.zone[0]
+            zone = r.zones[0]
             assert zone.dimensions == (i, j, k)
             np.testing.assert_allclose(
-                zone.variable[3].values.ravel(), c.ravel(), rtol=_RTOL_F64
+                zone.variables[3].values.ravel(), c.ravel(), rtol=_RTOL_F64
             )
 
 

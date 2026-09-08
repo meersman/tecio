@@ -554,7 +554,7 @@ def _collect_all_aux(reader: TecplotReader) -> dict[str, Any]:
         result["AUXDATASET"] = dataset_aux
 
     zone_aux: dict[str, dict[str, str]] = {}
-    for i, zone in enumerate(reader.zone):
+    for i, zone in enumerate(reader.zones):
         entries = dict(zone.auxdata.items())
         if entries:
             zone_aux[str(i + 1)] = entries
@@ -595,7 +595,7 @@ def _process_zone(
     passive_vars: list[bool] = []
     var_sharing: list[int] = []
 
-    for var in zone.variable:
+    for var in zone.variables:
         is_passive = var.is_passive()
         sv = var.shared_zone  # 1-based source zone index, or None
         share_int = sv if sv is not None else 0
@@ -673,7 +673,7 @@ def _write_zone_data(
     )
 
     if isinstance(zone, TecplotOrderedZoneReader):
-        writer.write_ijk_zone(data=writer_data, **common_kw)
+        writer.write_ordered_zone(data=writer_data, **common_kw)
     elif isinstance(zone, TecplotFEZoneReader):
         con_sharing = zone.shared_connectivity
         fe_kw = common_kw.copy()
@@ -762,7 +762,7 @@ def _run_strip_or_export(args: argparse.Namespace, src: Path) -> int:
                     variables=reader.variables,
                     file_type=reader.file_type,
                 ) as writer:
-                    for i, zone in enumerate(reader.zone):
+                    for i, zone in enumerate(reader.zones):
                         zt = zone.zone_type
                         if zt in _FE_POLY:
                             print(
@@ -943,7 +943,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # already open (eager), so that automatic trigger never fires.
                 writer.flush_aux()
 
-                for i, zone in enumerate(reader.zone):
+                for i, zone in enumerate(reader.zones):
                     zone_num = i + 1
                     zt = zone.zone_type
 

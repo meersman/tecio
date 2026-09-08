@@ -312,7 +312,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if auxvar:
                     writer.add_auxvar_dict(auxvar)
 
-                for i, zone in enumerate(reader.zone):
+                for i, zone in enumerate(reader.zones):
                     zone_num = i + 1
                     zt = zone.zone_type
 
@@ -331,7 +331,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     passive_vars: list[bool] = []
                     var_sharing: list[int] = []
 
-                    for j, var in enumerate(zone.variable):
+                    for j, var in enumerate(zone.variables):
                         passive_vars.append(var.is_passive())
                         sv = var.shared_zone
                         var_sharing.append(sv if sv is not None else 0)
@@ -385,7 +385,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
 
                     if isinstance(zone, TecplotOrderedZoneReader):
-                        writer.write_ijk_zone(data=writer_data, **common_kw)
+                        writer.write_ordered_zone(data=writer_data, **common_kw)
                     elif isinstance(zone, TecplotFEZoneReader):
                         con_sharing = zone.shared_connectivity
                         fe_kw = common_kw.copy()

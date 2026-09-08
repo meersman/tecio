@@ -538,7 +538,7 @@ def _build_protected_set(
     # Collect every sharing source referenced by a kept zone.
     required_sources: set[int] = set()
     for zi in keep_indices:
-        for var in zones[zi].variable:
+        for var in zones[zi].variables:
             sv = var.shared_zone  # 1-based, or None
             if sv is not None:
                 required_sources.add(sv - 1)  # -> 0-based, to match keep_indices
@@ -572,7 +572,7 @@ def _collect_zone_arrays(
     var_sharing: list[int] = []
 
     for j in range(num_vars):
-        var = zone.variable[j]
+        var = zone.variables[j]
         passive_vars.append(var.is_passive())
         sv = var.shared_zone  # 1-based source zone index, or None
         share_int = sv if sv is not None else 0
@@ -642,7 +642,7 @@ def _write_zone_verbatim(
     )
 
     if isinstance(zone, TecplotOrderedZoneReader):
-        writer.write_ijk_zone(data=writer_data, **kw)
+        writer.write_ordered_zone(data=writer_data, **kw)
     elif isinstance(zone, TecplotFEZoneReader):
         con_sharing = zone.shared_connectivity
         fe_kw = kw.copy()
@@ -713,7 +713,7 @@ def _write_zone_protected(
     )
 
     if isinstance(zone, TecplotOrderedZoneReader):
-        writer.write_ijk_zone(data=writer_data, **kw)
+        writer.write_ordered_zone(data=writer_data, **kw)
     elif isinstance(zone, TecplotFEZoneReader):
         con_sharing = zone.shared_connectivity
         fe_kw = kw.copy()
@@ -783,7 +783,7 @@ def _slice_and_write_ordered(
             sliced_data.append(arr)
             continue
 
-        var = zone.variable[j]
+        var = zone.variables[j]
 
         if var.value_location == ValueLocation.CELL_CENTERED:
             # Cell array has shape (I-1, J-1, K-1).
@@ -825,7 +825,7 @@ def _slice_and_write_ordered(
         dict(zone.auxdata.items()) if len(zone.auxdata) > 0 else None
     )
 
-    writer.write_ijk_zone(
+    writer.write_ordered_zone(
         data=writer_data,
         title=zone.title,
         value_locations=writer_locs,
@@ -895,7 +895,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             # Materialise zone list to build the time filter before opening
             # the writer (which requires the variable list at open time for
             # SZL format).
-            all_zones: list[TecplotZoneReader] = list(reader.zone)
+            all_zones: list[TecplotZoneReader] = list(reader.zones)
 
             # Build time keep-set.
             if do_time:

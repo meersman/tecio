@@ -146,7 +146,7 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
             encountered, as the ``Write`` API does not yet support them.
 
     """
-    for zone in reader.zone:
+    for zone in reader.zones:
         if isinstance(zone, TecplotFEZoneReader) and zone.zone_type in (
             ZoneType.FEPOLYGON,
             ZoneType.FEPOLYHEDRON,
@@ -162,7 +162,7 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
         passive_vars: list[bool] = []
         var_sharing: list[int] = []
 
-        for var in zone.variable:
+        for var in zone.variables:
             passive_vars.append(var.is_passive())
             sv = var.shared_zone  # None, or the 1-based source-zone index shared from
             # Write API expects 0 = no sharing, positive = 1-based zone source.
@@ -201,7 +201,7 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
         )
 
         if isinstance(zone, TecplotOrderedZoneReader):
-            writer.write_ijk_zone(data=active_data, **common_kw)
+            writer.write_ordered_zone(data=active_data, **common_kw)
         elif isinstance(zone, TecplotFEZoneReader):
             # Forward connectivity sharing: when shared, pass ``con_sharing`` and omit
             # the node map so the writer derives the node/cell counts from the source
@@ -251,7 +251,7 @@ class AppendWrite:
         >>> with tecio.open("flow.szplt", "a") as tec:
         ...     print(tec.variables)  # variable list from the existing file
         ...     print(tec.current_zone)  # number of zones already copied
-        ...     tec.write_ijk_zone(
+        ...     tec.write_ordered_zone(
         ...         data=[x_new, y_new, p_new],
         ...         solution_time=10.0,
         ...         strand_id=1,
@@ -285,11 +285,11 @@ class AppendWrite:
 
     # -- Write delegation --------------------------------------------------------------
 
-    def write_ijk_zone(self, *args: Any, **kwargs: Any) -> None:  # noqa: D417
+    def write_ordered_zone(self, *args: Any, **kwargs: Any) -> None:  # noqa: D417
         """Append a structured IJK-ordered zone.
 
-        Delegates to the underlying format writer's ``write_ijk_zone``
-        (e.g. :meth:`tecio.TecplotWriter.write_ijk_zone`). All parameters from that
+        Delegates to the underlying format writer's ``write_ordered_zone``
+        (e.g. :meth:`tecio.TecplotWriter.write_ordered_zone`). All parameters from that
         method are accepted here with one exception: ``variables`` is not meaningful
         because the variable list is fixed at open time from the existing file.
 
@@ -320,7 +320,7 @@ class AppendWrite:
             Append a time step, sharing the grid from zone 1:
 
             >>> n = len(tec.variables)  # e.g. ["x", "y", "pressure"]
-            >>> tec.write_ijk_zone(
+            >>> tec.write_ordered_zone(
             ...     data=[p_new],  # only the non-shared variable
             ...     passive_vars=[False] * n,
             ...     var_sharing=[1, 1, 0],  # x and y shared from zone 1
@@ -329,7 +329,7 @@ class AppendWrite:
             ... )
 
         """
-        self._writer.write_ijk_zone(*args, **kwargs)
+        self._writer.write_ordered_zone(*args, **kwargs)
 
     def write_fe_zone(self, *args: Any, **kwargs: Any) -> None:  # noqa: D417
         """Append an unstructured finite-element zone.
@@ -443,16 +443,18 @@ class AppendReadWrite(AppendWrite):
     Example:
         >>> with tecio.open("flow.szplt", "a+") as tec:
         ...     # Read from all zones present before this session
-        ...     times = [tec.zone[i].solution_time for i in range(tec.num_zones)]
+        ...     times = [tec.zones[i].solution_time for i in range(tec.num_zones)]
         ...     p_avg = (
-        ...         sum(tec.zone[i].variable["p"].values for i in range(tec.num_zones))
+        ...         sum(
+        ...             tec.zones[i].variables["p"].values for i in range(tec.num_zones)
+        ...         )
         ...         / tec.num_zones
         ...     )
         ...
         ...     # Append a new zone using the computed average
-        ...     x = tec.zone[0].variable["x"].values
-        ...     y = tec.zone[0].variable["y"].values
-        ...     tec.write_ijk_zone(
+        ...     x = tec.zones[0].variables["x"].values
+        ...     y = tec.zones[0].variables["y"].values
+        ...     tec.write_ordered_zone(
         ...         data=[x, y, p_avg],
         ...         title="Time-average",
         ...         solution_time=max(times) + 1.0,
@@ -489,9 +491,9 @@ class AppendReadWrite(AppendWrite):
         return self._reader.num_zones
 
     @property
-    def zone(self) -> ZoneList[TecplotZoneReader]:
+    def zones(self) -> ZoneList[TecplotZoneReader]:
         """Zone list from the *original* file."""
-        return self._reader.zone
+        return self._reader.zones
 
     @property
     def auxdata(self) -> TecplotAuxDataReader:
@@ -728,7 +730,7 @@ def open(
            * - ``variables``
              - ``None``
              - Variable name list. For SZL and PLT this may be deferred to the first
-               :meth:`~tecio.TecplotWriter.write_ijk_zone` or
+               :meth:`~tecio.TecplotWriter.write_ordered_zone` or
                :meth:`~tecio.TecplotWriter.write_fe_zone` call. Required at open time
                for DAT.
            * - ``file_type``
@@ -763,23 +765,23 @@ def open(
         Read a file:
 
         >>> with tecio.open("flow.szplt") as tec:
-        ...     x = tec.zone[0].variable["x"].values
+        ...     x = tec.zones[0].variables["x"].values
 
         Write a new file, deferring variable names to the first zone:
 
         >>> with tecio.open("out.szplt", "w", title="Run 1") as tec:
-        ...     tec.write_ijk_zone(data=[x, y, p], variables=["x", "y", "p"])
+        ...     tec.write_ordered_zone(data=[x, y, p], variables=["x", "y", "p"])
 
         Append a new zone to an existing file:
 
         >>> with tecio.open("out.szplt", "a") as tec:
-        ...     tec.write_ijk_zone(data=[x2, y2, p2], solution_time=2.0)
+        ...     tec.write_ordered_zone(data=[x2, y2, p2], solution_time=2.0)
 
         Append and read in the same session:
 
         >>> with tecio.open("out.szplt", "a+") as tec:
-        ...     prev_p = tec.zone[-1].variable["p"].values
-        ...     tec.write_ijk_zone(data=[x2, y2, prev_p * 0.9])
+        ...     prev_p = tec.zones[-1].variables["p"].values
+        ...     tec.write_ordered_zone(data=[x2, y2, prev_p * 0.9])
     """
     ext = Path(path).suffix.lower()
 

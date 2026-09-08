@@ -133,8 +133,8 @@ def _write_synthetic_ijk(path: Path) -> None:
     p = np.array([10.0, 11.0, 12.0, 13.0], dtype=np.float64)
     p2 = np.array([20.0, 21.0, 22.0, 23.0], dtype=np.float64)
     with tecio.open(str(path), "w", title="syn", variables=["x", "y", "p"]) as w:
-        w.write_ijk_zone(data=[x, y, p], title="Z1")
-        w.write_ijk_zone(
+        w.write_ordered_zone(data=[x, y, p], title="Z1")
+        w.write_ordered_zone(
             data=[p2],
             title="Z2",
             passive_vars=[False, True, False],
@@ -697,8 +697,8 @@ class TestTecmerge:
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             # Zones 0..N-1 from file 0 → time 0.0; zones N..2N-1 from file 1 → 1.0
-            assert r.zone[0].solution_time == pytest.approx(0.0)
-            assert r.zone[_NUM_ZONES].solution_time == pytest.approx(1.0)
+            assert r.zones[0].solution_time == pytest.approx(0.0)
+            assert r.zones[_NUM_ZONES].solution_time == pytest.approx(1.0)
 
     def test_assign_time_strands_with_end(self, tmp_path: Path) -> None:
         """-end computes the step size automatically from start/end/N."""
@@ -722,8 +722,8 @@ class TestTecmerge:
         ])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
-            assert r.zone[0].solution_time == pytest.approx(0.0)
-            assert r.zone[_NUM_ZONES * 2].solution_time == pytest.approx(4.0)
+            assert r.zones[0].solution_time == pytest.approx(0.0)
+            assert r.zones[_NUM_ZONES * 2].solution_time == pytest.approx(4.0)
 
     def test_missing_start_with_assign_ts_returns_1(self, tmp_path: Path) -> None:
         """--assign-time-strands without -start returns exit code 1."""
@@ -881,9 +881,9 @@ class TestTecscale:
             str(src),
         ])
         with tecio.open(str(src), "r") as r_orig:
-            orig = r_orig.zone[0].variable[0].values.ravel().astype(np.float64)
+            orig = r_orig.zones[0].variables[0].values.ravel().astype(np.float64)
         with tecio.open(str(dst), "r") as r_scaled:
-            scaled = r_scaled.zone[0].variable[0].values.ravel().astype(np.float64)
+            scaled = r_scaled.zones[0].variables[0].values.ravel().astype(np.float64)
         np.testing.assert_allclose(scaled, orig * scale, rtol=1e-5)
 
     def test_unscaled_zone_unchanged(self, tmp_path: Path) -> None:
@@ -903,9 +903,9 @@ class TestTecscale:
             str(src),
         ])
         with tecio.open(str(src), "r") as r_src:
-            orig = r_src.zone[1].variable[9].values.ravel().astype(np.float64)
+            orig = r_src.zones[1].variables[9].values.ravel().astype(np.float64)
         with tecio.open(str(dst), "r") as r_dst:
-            copy = r_dst.zone[1].variable[9].values.ravel().astype(np.float64)
+            copy = r_dst.zones[1].variables[9].values.ravel().astype(np.float64)
         np.testing.assert_allclose(copy, orig, rtol=1e-5)
 
     def test_invalid_variable_name_returns_1(
@@ -1236,12 +1236,12 @@ class TestSharingPreservation:
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 3
-            assert r.zone[1].variable[0].shared_zone == 1  # zone 2's x <- zone 1
-            assert r.zone[1].shared_connectivity == 1
-            assert r.zone[2].variable[0].shared_zone == 1  # zone 3's x <- zone 1
-            assert r.zone[2].variable[3].shared_zone == 2  # zone 3's c <- zone 2
+            assert r.zones[1].variables[0].shared_zone == 1  # zone 2's x <- zone 1
+            assert r.zones[1].shared_connectivity == 1
+            assert r.zones[2].variables[0].shared_zone == 1  # zone 3's x <- zone 1
+            assert r.zones[2].variables[3].shared_zone == 2  # zone 3's c <- zone 2
             np.testing.assert_allclose(
-                r.zone[1].variable[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
+                r.zones[1].variables[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
             )
 
     def test_tecextract_remaps_sharing_to_compacted_indices(
@@ -1260,12 +1260,12 @@ class TestSharingPreservation:
             assert r.num_zones == 2
             # Output zone 2 (was source zone 3): x/y/z/connectivity remap to
             # output zone 1 (was source zone 1).
-            assert r.zone[1].variable[0].shared_zone == 1
-            assert r.zone[1].shared_connectivity == 1
+            assert r.zones[1].variables[0].shared_zone == 1
+            assert r.zones[1].shared_connectivity == 1
             # c was shared from zone 2, which isn't in this extraction --
             # must be real, independent data, not an empty placeholder.
-            assert r.zone[1].variable[3].shared_zone is None
-            c_vals = r.zone[1].variable[3].values
+            assert r.zones[1].variables[3].shared_zone is None
+            c_vals = r.zones[1].variables[3].values
             assert c_vals is not None
             np.testing.assert_allclose(c_vals.ravel(), [5.0, 6.0, 7.0, 8.0])
 
@@ -1283,11 +1283,11 @@ class TestSharingPreservation:
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 1
-            zone = r.zone[0]
-            assert zone.variable[0].shared_zone is None
+            zone = r.zones[0]
+            assert zone.variables[0].shared_zone is None
             assert zone.shared_connectivity is None
             np.testing.assert_allclose(
-                zone.variable[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
+                zone.variables[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
             )
             np.testing.assert_array_equal(zone.node_map, [[1, 2, 3, 4]])
 
@@ -1310,12 +1310,12 @@ class TestSharingPreservation:
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 6
             # File 1's block: zones 1-3, unchanged indices.
-            assert r.zone[1].variable[0].shared_zone == 1
-            assert r.zone[2].variable[3].shared_zone == 2
+            assert r.zones[1].variables[0].shared_zone == 1
+            assert r.zones[2].variables[3].shared_zone == 2
             # File 2's block: zones 4-6, offset by 3.
-            assert r.zone[4].variable[0].shared_zone == 4
-            assert r.zone[4].shared_connectivity == 4
-            assert r.zone[5].variable[3].shared_zone == 5
+            assert r.zones[4].variables[0].shared_zone == 4
+            assert r.zones[4].shared_connectivity == 4
+            assert r.zones[5].variables[3].shared_zone == 5
 
     # -- 1:1 zone-copy tools: sharing preserved unchanged ------------------------------
 
@@ -1355,12 +1355,12 @@ class TestSharingPreservation:
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 3
-            assert r.zone[1].variable[0].shared_zone == 1
-            assert r.zone[1].shared_connectivity == 1
-            assert r.zone[2].variable[3].shared_zone == 2
+            assert r.zones[1].variables[0].shared_zone == 1
+            assert r.zones[1].shared_connectivity == 1
+            assert r.zones[2].variables[3].shared_zone == 2
             # Shared values still resolve to the real source data.
             np.testing.assert_allclose(
-                r.zone[1].variable[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
+                r.zones[1].variables[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
             )
 
     # -- tecstats: off-by-one fix ------------------------------------------------------
@@ -1495,9 +1495,9 @@ class TestTec2mat:
         tec2mat(["-o", str(dst), str(onera_path)])
         z1 = _struct(_load_mat(dst), "zone_1")
         with tecio.open(str(onera_path), "r") as r:
-            zone0 = r.zone[0]
+            zone0 = r.zones[0]
             for k in range(1, _NUM_VARS + 1):
-                vals = zone0.variable[k - 1].values
+                vals = zone0.variables[k - 1].values
                 assert vals is not None
                 assert getattr(z1, f"var_{k}").dtype == vals.dtype
 
@@ -1686,8 +1686,8 @@ class TestTecaux:
         ])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
-            assert dict(r.zone[0].auxdata.items())["Description"] == "Wing"
-            assert "Description" not in dict(r.zone[1].auxdata.items())
+            assert dict(r.zones[0].auxdata.items())["Description"] == "Wing"
+            assert "Description" not in dict(r.zones[1].auxdata.items())
 
     def test_zone_aux_repeated_same_zone_merges(
         self, shared_path: Path, tmp_path: Path
@@ -1708,7 +1708,7 @@ class TestTecaux:
         ])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
-            aux = dict(r.zone[0].auxdata.items())
+            aux = dict(r.zones[0].auxdata.items())
             assert aux["Description"] == "Wing"
             assert aux["Area"] == "120sqm"
 
@@ -1729,7 +1729,7 @@ class TestTecaux:
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             for i in range(r.num_zones):
-                assert dict(r.zone[i].auxdata.items())["Batch"] == "2024"
+                assert dict(r.zones[i].auxdata.items())["Batch"] == "2024"
 
     def test_zone_aux_broadcast_and_specific_combine(
         self, shared_path: Path, tmp_path: Path
@@ -1750,8 +1750,8 @@ class TestTecaux:
         ])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
-            aux1 = dict(r.zone[0].auxdata.items())
-            aux2 = dict(r.zone[1].auxdata.items())
+            aux1 = dict(r.zones[0].auxdata.items())
+            aux2 = dict(r.zones[1].auxdata.items())
             assert aux1["Batch"] == "2024"
             assert aux1["Special"] == "true"
             assert aux2["Batch"] == "2024"
@@ -1876,15 +1876,15 @@ class TestTecaux:
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert dict(r.auxdata.items())["Solver"] == "MyCFD"
-            assert dict(r.zone[0].auxdata.items())["Case"] == "A"
-            assert dict(r.zone[1].auxdata.items())["Case"] == "B"
+            assert dict(r.zones[0].auxdata.items())["Case"] == "A"
+            assert dict(r.zones[1].auxdata.items())["Case"] == "B"
             assert dict(r.get_var_auxdata(5).items())["Units"] == "K"
             # The whole point: sharing relationships from the source file
             # are still exactly what they were.
-            assert r.zone[1].variable[0].shared_zone == 1
-            assert r.zone[2].shared_connectivity == 1
+            assert r.zones[1].variables[0].shared_zone == 1
+            assert r.zones[2].shared_connectivity == 1
             np.testing.assert_allclose(
-                r.zone[1].variable[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
+                r.zones[1].variables[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
             )
 
     def test_existing_aux_preserved_across_chained_runs(
@@ -1954,7 +1954,7 @@ class TestTecaux:
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert dict(r.auxdata.items())["Solver"] == "FromJSON"
-            assert dict(r.zone[0].auxdata.items())["Description"] == "Wing"
+            assert dict(r.zones[0].auxdata.items())["Description"] == "Wing"
             assert dict(r.get_var_auxdata(4).items())["Units"] == "Pa"
 
     def test_json_all_sentinel_broadcasts(
@@ -1975,7 +1975,7 @@ class TestTecaux:
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             for i in range(r.num_zones):
-                assert dict(r.zone[i].auxdata.items())["Batch"] == "json-batch"
+                assert dict(r.zones[i].auxdata.items())["Batch"] == "json-batch"
 
     def test_json_cli_override_wins_on_collision(
         self, shared_path: Path, tmp_path: Path
@@ -2100,14 +2100,14 @@ class TestTecaux:
         # Stripped file: nothing left at any level, sharing still intact
         with tecio.open(str(strip_dst), "r") as r:
             assert dict(r.auxdata.items()) == {}
-            assert dict(r.zone[0].auxdata.items()) == {}
-            assert dict(r.zone[2].auxdata.items()) == {}
+            assert dict(r.zones[0].auxdata.items()) == {}
+            assert dict(r.zones[2].auxdata.items()) == {}
             assert dict(r.get_var_auxdata(1).items()) == {}
             assert dict(r.get_var_auxdata(4).items()) == {}
-            assert r.zone[1].variable[0].shared_zone == 1
-            assert r.zone[2].shared_connectivity == 1
+            assert r.zones[1].variables[0].shared_zone == 1
+            assert r.zones[2].shared_connectivity == 1
             np.testing.assert_allclose(
-                r.zone[1].variable[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
+                r.zones[1].variables[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
             )
 
         # JSON: exactly the original (pre-strip) data, sparse
@@ -2131,7 +2131,7 @@ class TestTecaux:
         )
         with tecio.open(str(reimported), "r") as r:
             assert dict(r.auxdata.items())["Solver"] == "MyCFD"
-            assert dict(r.zone[0].auxdata.items())["Description"] == "Wing"
+            assert dict(r.zones[0].auxdata.items())["Description"] == "Wing"
 
     def test_export_json_alone_leaves_source_untouched(
         self, aux_path: Path, tmp_path: Path

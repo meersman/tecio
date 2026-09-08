@@ -46,7 +46,7 @@ x = np.linspace(0, 2 * np.pi, 100)
 y = np.sin(x)
 
 with tecio.open("sine.szplt", "w") as tec:
-    tec.write_ijk_zone(data=[x, y], variables=["x", "y"])
+    tec.write_ordered_zone(data=[x, y], variables=["x", "y"])
 ```
 
 Reading a file:
@@ -54,10 +54,10 @@ Reading a file:
 ```python
 with tecio.open("sine.szplt", "r") as tec:
     print(tec.variables)  # ['x', 'y']
-    x = tec.zone[0].variable[0].values
-    y = tec.zone[0].variable[1].values
+    x = tec.zones[0].variables[0].values
+    y = tec.zones[0].variables[1].values
     # or
-    x, y = tec.zone[0].get_array(["x", "y"])
+    x, y = tec.zones[0].get_array(["x", "y"])
 ```
 
 ## API
@@ -85,7 +85,7 @@ Supported formats:
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+Contributions are welcome (see [CONTRIBUTING.md](CONTRIBUTING.md) for details).
 
 ---
 

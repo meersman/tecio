@@ -467,7 +467,7 @@ class TecplotZoneReader(ABC):
     # -- Lazy: variable list, aux data ------------------------------------------------
 
     @property
-    def variable(self) -> VariableList[TecplotVariableReader]:
+    def variables(self) -> VariableList[TecplotVariableReader]:
         """Variables in this zone, by 0-based index or exact name."""
         variables = self._variable_cache
         if variables is None:
@@ -518,7 +518,7 @@ class TecplotZoneReader(ABC):
             KeyError: If a name does not exist.
             IndexError: If an index is out of range.
         """
-        return select_variable_arrays(self.variable, key)
+        return select_variable_arrays(self.variables, key)
 
 
 # ======================================================================================
@@ -945,7 +945,7 @@ class TecplotReader(ABC):
 
     @property
     @abstractmethod
-    def zone(self) -> ZoneList[TecplotZoneReader]:
+    def zones(self) -> ZoneList[TecplotZoneReader]:
         """Zones in this file, by 0-based index or slice."""
 
     @property
@@ -984,7 +984,7 @@ class TecplotReader(ABC):
     @property
     def num_zones(self) -> int:
         """Number of zones in the file."""
-        return len(self.zone)
+        return len(self.zones)
 
     @property
     def num_auxdata_items(self) -> int:
@@ -1022,7 +1022,7 @@ class TecplotReader(ABC):
             raise IndexError(
                 f"Zone index {zone_index} out of range [1, {self.num_zones}]"
             )
-        return self.zone[zone_index - 1].auxdata
+        return self.zones[zone_index - 1].auxdata
 
     def __repr__(self) -> str:
         cls = type(self).__name__

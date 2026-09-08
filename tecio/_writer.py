@@ -3,7 +3,7 @@
 Every format's writer (SZL, PLT, DAT) exposes the same lifecycle: construct with a path
 and optional variable list (eager or lazy open), buffer auxiliary data with
 :meth:`~TecplotWriter.add_auxdataset_dict`/ :meth:`~TecplotWriter.add_auxvar_dict`,
-write zones with ``write_ijk_zone``/ ``write_fe_zone``, and close (directly or via
+write zones with ``write_ordered_zone``/ ``write_fe_zone``, and close (directly or via
 context manager). This module defines the parts of that lifecycle that are identical
 across formats once, so the three writers can no longer drift apart the way the readers
 had.
@@ -18,11 +18,12 @@ Notes:
       nearly verbatim in all three formats. Each format only implements the two small
       hooks that actually differ, writing one dataset-level item and one variable-level
       item.
-    * ``_open``, ``close``, ``write_ijk_zone``, and ``write_fe_zone`` stay abstract: how
-      a file is opened/closed and how a zone is actually written are genuinely
-      format-specific (a live C handle for SZL, a global implicit context for PLT's
-      classic API, a plain text file for DAT). Their signatures here are the common
-      shape for documentation; Python doesn't enforce exact signature matching on
+    * ``_open``, ``close``, ``write_ordered_zone``, and ``write_fe_zone`` stay
+      abstract: how a file is opened/closed and how a zone is actually written
+      are genuinely format-specific (a live C handle for SZL, a global implicit
+      context for PLT's classic API, a plain text file for DAT). Their
+      signatures here are the common shape for documentation; Python doesn't
+      enforce exact signature matching on
       ``abstractmethod``, so a format may add its own extra keyword-only parameters
       (SZL's ``flush``, for subzone flushing mid-write) without conflict.
 """
@@ -914,7 +915,7 @@ class TecplotWriter(ABC):
     # -- Zone writers: fully format-specific ------------------------------------------
 
     @abstractmethod
-    def write_ijk_zone(
+    def write_ordered_zone(
         self,
         data: Sequence[npt.ArrayLike],
         *,

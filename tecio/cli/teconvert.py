@@ -218,7 +218,7 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
             encountered, because the writer API does not yet support them.
 
     """
-    for zone in reader.zone:
+    for zone in reader.zones:
         zt = zone.zone_type
 
         if zt in (ZoneType.FEPOLYGON, ZoneType.FEPOLYHEDRON):
@@ -233,7 +233,7 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
         passive_vars: list[bool] = []
         var_sharing: list[int] = []
 
-        for var in zone.variable:
+        for var in zone.variables:
             passive_vars.append(var.is_passive())
             sv = var.shared_zone
             # Write API expects 0 = no sharing, positive = 1-based zone source.
@@ -275,7 +275,7 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
         )
 
         if isinstance(zone, TecplotOrderedZoneReader):
-            writer.write_ijk_zone(data=active_data, **common_kw)
+            writer.write_ordered_zone(data=active_data, **common_kw)
         elif isinstance(zone, TecplotFEZoneReader):
             con_sharing = zone.shared_connectivity
             fe_kw = common_kw.copy()

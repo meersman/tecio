@@ -295,7 +295,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 #   genuinely has nowhere to point and must fall back to real data.
                 zone_index_map: dict[int, int] = {}
 
-                for i, zone in enumerate(reader.zone):
+                for i, zone in enumerate(reader.zones):
                     zone_num = i + 1
                     if zone_num not in zone_set:
                         continue
@@ -316,7 +316,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     var_sharing: list[int] = []
 
                     for orig_idx in out_var_indices:
-                        var = zone.variable[orig_idx - 1]
+                        var = zone.variables[orig_idx - 1]
                         is_passive = var.is_passive()
                         passive_vars.append(is_passive)
                         active_locs.append(var.value_location)
@@ -374,7 +374,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
 
                     if isinstance(zone, TecplotOrderedZoneReader):
-                        writer.write_ijk_zone(data=writer_data, **common_kw)
+                        writer.write_ordered_zone(data=writer_data, **common_kw)
                     elif isinstance(zone, TecplotFEZoneReader):
                         con_src = zone.shared_connectivity
                         con_remapped = (

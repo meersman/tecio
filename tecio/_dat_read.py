@@ -1102,7 +1102,7 @@ class TecplotDatReader(TecplotReader):
         return len(self._zones)
 
     @property
-    def zone(self) -> ZoneList[TecplotZoneReader]:
+    def zones(self) -> ZoneList[TecplotZoneReader]:
         """Zones in this file, by index or slice."""
         if self._zone_list is None:
             self._zone_list = ZoneList(self._zones)
@@ -1495,7 +1495,7 @@ class TecplotDatReader(TecplotReader):
         for var_idx, src_zone_1based in share_map.items():
             if 1 <= src_zone_1based <= len(self._zones):
                 var_arrays[var_idx] = (
-                    self._zones[src_zone_1based - 1].variable[var_idx].values
+                    self._zones[src_zone_1based - 1].variables[var_idx].values
                 )
 
         # This zone's own 1-based index

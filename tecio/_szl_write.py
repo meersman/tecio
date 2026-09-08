@@ -440,7 +440,7 @@ class TecplotSzlWriter(TecplotWriter):
 
     # -- Structured zone writer --------------------------------------------------------
 
-    def write_ijk_zone(
+    def write_ordered_zone(
         self,
         data: Sequence[npt.ArrayLike],
         *,

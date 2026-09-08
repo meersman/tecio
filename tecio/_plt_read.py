@@ -1451,13 +1451,13 @@ class TecplotPltReader(TecplotReader):
         """Number of zones in the file.
 
         Queried directly from the already-parsed metadata list. Cheaper than the base
-        class's default of ``len(self.zone)``, which would build every zone's reader
+        class's default of ``len(self.zones)``, which would build every zone's reader
         object first.
         """
         return len(self._zone_metas)
 
     @property
-    def zone(self) -> ZoneList[TecplotZoneReader]:
+    def zones(self) -> ZoneList[TecplotZoneReader]:
         """Zones in this file, by 0-based index or slice."""
         if self._zone_list is None:
             self._zone_list = ZoneList([

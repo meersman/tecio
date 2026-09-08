@@ -60,15 +60,15 @@ which is which for a given property avoids of off-by-one bugs.
 Container indexing is 0-based:
 
 ```python
-r.zone[0]  # the FIRST zone
-r.zone[0].variable[0]  # the FIRST variable in that zone
+r.zones[0]  # the FIRST zone
+r.zones[0].variables[0]  # the FIRST variable in that zone
 ```
 
 For read zones, `zone_index` reports the equivalent Tecplot 1-based index:
 
 ```python
-r.zone[0].zone_index  # == 1
-r.zone[2].zone_index  # == 3
+r.zones[0].zone_index  # == 1
+r.zones[2].zone_index  # == 3
 ```
 
 For read variables, `var_index` reports the equivalent Tecplot 1-based index,
@@ -76,15 +76,15 @@ and `zone_index reports the parent zone Tecplot 1-based index for that
 variable:
 
 ```python
-r.zone[0].variable[0].var_index  # == 1
-r.zone[2].variable[0].zone_index  # == 3
+r.zones[0].variables[0].var_index  # == 1
+r.zones[2].variables[0].zone_index  # == 3
 ```
 
 Data access method `get_array` similary uses 0-based indexing:
 
 ```python
-r.zone[0].get_array(0)  # data array for FIRST variable
-r.zone[0].get_array([1, 3, 5])  # tuple of data arrays for 2nd, 4th and 6th variables
+r.zones[0].get_array(0)  # data array for FIRST variable
+r.zones[0].get_array([1, 3, 5])  # tuple of data arrays for 2nd, 4th and 6th variables
 ```
 
 **Special case** of the indexing rule is auxilary data access. Reader methods
@@ -166,18 +166,18 @@ including per-format memory-model notes and parameter comparison tables.
 
 ## Accessing Variable Data
 
-Every reader's `zone` and `variable` properties return one of two
+Every reader's `zones` and `variables` properties return one of two
 format-agnostic container types rather than a plain `list`. Both support the
 same indexing, iteration, and `len()` you would expect from a list, plus
 name-based and slice-based access:
 
 ```python
 with tecio.open("flow.szplt") as r:
-    r.zone[0]  # -> TecplotOrderedZoneReader or TecplotFEZoneReader
-    r.zone[1:4]  # -> ZoneList (sub-range, same kind)
-    r.zone[0].variable  # -> VariableList
-    r.zone[0].variable["x"]  # -> TecplotVariableReader, by exact name
-    r.zone[0].variable[2]  # -> TecplotVariableReader, by 0-based index
+    r.zones[0]  # -> TecplotOrderedZoneReader or TecplotFEZoneReader
+    r.zones[1:4]  # -> ZoneList (sub-range, same kind)
+    r.zones[0].variables  # -> VariableList
+    r.zones[0].variables["x"]  # -> TecplotVariableReader, by exact name
+    r.zones[0].variables[2]  # -> TecplotVariableReader, by 0-based index
 ```
 
 Indexing a {class}`~tecio.ZoneList` or {class}`~tecio.VariableList` always
@@ -187,9 +187,9 @@ single zone, use `TecplotZoneReader.get_array`, shared by every zone type
 and every format:
 
 ```python
-p = r.zone[0].get_array("p")  # ndarray | None
-p = r.zone[0].get_array(2)  # by 0-based index
-x, y, z = r.zone[0].get_array(["x", "y", "z"])  # tuple, for unpacking
+p = r.zones[0].get_array("p")  # ndarray | None
+p = r.zones[0].get_array(2)  # by 0-based index
+x, y, z = r.zones[0].get_array(["x", "y", "z"])  # tuple, for unpacking
 ```
 
 A single key (index or name) returns one array; a list of names returns a
@@ -199,7 +199,7 @@ zones (e.g. a transient sequence), iterate explicitly so the outer axis stays
 in your code, and stack only when you know the shapes match:
 
 ```python
-seq = [z.get_array("p") for z in r.zone]  # list[ndarray | None]
+seq = [z.get_array("p") for z in r.zones]  # list[ndarray | None]
 stack = np.stack(seq)  # only if every zone matches
 ```
 
@@ -208,8 +208,8 @@ stack = np.stack(seq)  # only if every zone matches
 
 | Class | Returned by | Description |
 |---|---|---|
-| {class}`~tecio.ZoneList` | `TecplotReader.zone` | Sequence of zones; integer index, slice, or iterate |
-| {class}`~tecio.VariableList` | `TecplotZoneReader.variable` | Sequence of variables; index by position or exact name |
+| {class}`~tecio.ZoneList` | `TecplotReader.zones` | Sequence of zones; integer index, slice, or iterate |
+| {class}`~tecio.VariableList` | `TecplotZoneReader.variables` | Sequence of variables; index by position or exact name |
 
 See {doc}`readers` for the full container API.
 

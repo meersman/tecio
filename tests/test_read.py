@@ -138,7 +138,7 @@ class TestReadDump:
         print("\n\nZone Record")
         print("-" * 70)
         for i in range(r.num_zones):
-            zone = r.zone[i]
+            zone = r.zones[i]
             print(f"\nZone {i + 1:3}")
             print(f"  Title           : {zone.title}")
             print(f"  Zone Type       : {zone.zone_type}")
@@ -153,7 +153,7 @@ class TestReadDump:
                     print(f"  {name:>15} : {value}")
 
             for j in range(r.num_vars):
-                var = zone.variable[j]
+                var = zone.variables[j]
                 print(f"  Variable {j + 1:3}")
                 print(f"    Name          : {var.name}")
                 print(f"    Data Type     : {var.data_type}")
@@ -188,44 +188,44 @@ class TestContainers:
         """Verify ``zone``/``variable`` return the new container types.
 
         Demonstrates:
-        - ``Read.zone`` is a :class:`tecio.ZoneList`: an int index returns a
+        - ``Read.zones`` is a :class:`tecio.ZoneList`: an int index returns a
           ``ReadZone``; a slice returns another ``ZoneList`` of the same kind
-        - ``ReadZone.variable`` is a :class:`tecio.VariableList`: index by
+        - ``ReadZone.variables`` is a :class:`tecio.VariableList`: index by
           0-based position or by exact, case-sensitive name
         - Unknown name -> ``KeyError``; out-of-range index -> ``IndexError``
         """
         r = tecio.open(str(onera_file), "r")
 
-        assert isinstance(r.zone, tecio.ZoneList)
-        assert len(r.zone) == r.num_zones
+        assert isinstance(r.zones, tecio.ZoneList)
+        assert len(r.zones) == r.num_zones
 
         if r.num_zones >= 2:
-            sub = r.zone[0:2]
+            sub = r.zones[0:2]
             assert isinstance(sub, tecio.ZoneList)
             assert len(sub) == 2
-            assert sub[0].title == r.zone[0].title
-            assert sub[1].title == r.zone[1].title
+            assert sub[0].title == r.zones[0].title
+            assert sub[1].title == r.zones[1].title
 
-        zone = r.zone[0]
+        zone = r.zones[0]
 
-        assert isinstance(zone.variable, tecio.VariableList)
-        assert len(zone.variable) == r.num_vars
-        assert zone.variable.names() == r.variables
+        assert isinstance(zone.variables, tecio.VariableList)
+        assert len(zone.variables) == r.num_vars
+        assert zone.variables.names() == r.variables
 
         first_name = r.variables[0]
-        assert zone.variable[0].name == zone.variable[first_name].name == first_name
+        assert zone.variables[0].name == zone.variables[first_name].name == first_name
 
         # Name lookup is exact and case-sensitive.
         swapped = first_name.swapcase()
         if swapped != first_name:
             with pytest.raises(KeyError):
-                zone.variable[swapped]
+                zone.variables[swapped]
 
         with pytest.raises(KeyError):
-            zone.variable["__not_a_real_variable__"]
+            zone.variables["__not_a_real_variable__"]
 
         with pytest.raises(IndexError):
-            zone.variable[r.num_vars + 10]
+            zone.variables[r.num_vars + 10]
 
     def test_zone_and_variable_containers_hand_authored(
         self, output_path: Callable
@@ -265,18 +265,18 @@ class TestContainers:
         assert r.num_vars == 3
         assert r.num_zones == 2
 
-        sub = r.zone[0:2]
+        sub = r.zones[0:2]
         assert sub[0].title == "Zone1"
         assert sub[1].title == "Zone2"
 
-        zone = r.zone[0]
-        assert zone.variable.names() == ["x", "y", "p"]
-        assert zone.variable[0].name == zone.variable["x"].name == "x"
+        zone = r.zones[0]
+        assert zone.variables.names() == ["x", "y", "p"]
+        assert zone.variables[0].name == zone.variables["x"].name == "x"
 
         with pytest.raises(KeyError):
-            zone.variable["X"]  # case-sensitive
+            zone.variables["X"]  # case-sensitive
         with pytest.raises(IndexError):
-            zone.variable[10]
+            zone.variables[10]
 
 
 # ======================================================================================
@@ -294,17 +294,17 @@ class TestGetArray:
 
         Demonstrates:
         - Scalar index / scalar name both return the same array as the
-          explicit ``zone.variable[key].values`` path
+          explicit ``zone.variables[key].values`` path
         - A list of names returns a tuple, in order -- never a bare array,
           even for a single-element list
         - Bad keys raise the same errors as ``VariableList``
         """
         r = tecio.open(str(onera_file), "r")
-        zone = r.zone[0]
+        zone = r.zones[0]
         names = r.variables
 
         for i, name in enumerate(names[: min(3, len(names))]):
-            expected = zone.variable[i].values
+            expected = zone.variables[i].values
             if expected is None:
                 continue
             np.testing.assert_array_equal(zone.get_array(i), expected)
@@ -315,7 +315,7 @@ class TestGetArray:
             assert isinstance(pair, tuple)
             assert len(pair) == 2
             for arr, name in zip(pair, names[:2], strict=True):
-                expected = zone.variable[name].values
+                expected = zone.variables[name].values
                 if expected is None:
                     assert arr is None
                 else:
@@ -363,16 +363,16 @@ class TestGetArray:
             y = np.array([0.0, 1.0, 4.0, 9.0])
             path = _path(output_path, fmt, "read_get_array_passive")
             with tecio.open(str(path), "w") as w:
-                w.write_ijk_zone(
+                w.write_ordered_zone(
                     data=[x, y],
                     variables=["x", "y", "p"],
                     passive_vars=[False, False, True],
                 )
 
         with tecio.open(str(path), "r") as r:
-            zone = r.zone[0]
+            zone = r.zones[0]
 
-            assert zone.variable["p"].is_passive()
+            assert zone.variables["p"].is_passive()
             assert zone.get_array("p") is None
             assert zone.get_array(2) is None
 
@@ -424,14 +424,14 @@ class TestDatPointFormat:
         assert r.num_vars == 3
         assert r.num_zones == 1
 
-        zone = r.zone[0]
+        zone = r.zones[0]
         assert zone.zone_type == ZoneType.ORDERED
         assert zone.datapacking == DataPacking.POINT
         assert zone.dimensions == (4, 1, 1)
 
-        np.testing.assert_allclose(zone.variable[0].values.ravel(), expected_x)
-        np.testing.assert_allclose(zone.variable[1].values.ravel(), expected_y)
-        np.testing.assert_allclose(zone.variable[2].values.ravel(), expected_p)
+        np.testing.assert_allclose(zone.variables[0].values.ravel(), expected_x)
+        np.testing.assert_allclose(zone.variables[1].values.ravel(), expected_y)
+        np.testing.assert_allclose(zone.variables[2].values.ravel(), expected_p)
 
     def test_read_point_fe(self, output_path: Callable) -> None:
         """Read a hand-authored DATAPACKING=POINT FE triangle zone."""
@@ -459,14 +459,14 @@ class TestDatPointFormat:
         assert r.num_vars == 3
         assert r.num_zones == 1
 
-        zone = r.zone[0]
+        zone = r.zones[0]
         assert zone.zone_type == ZoneType.FETRIANGLE
         assert zone.datapacking == DataPacking.POINT
         assert zone.num_nodes == 4
         assert zone.num_elements == 2
 
-        np.testing.assert_allclose(zone.variable[0].values, expected_x)
-        np.testing.assert_allclose(zone.variable[2].values, expected_c)
+        np.testing.assert_allclose(zone.variables[0].values, expected_x)
+        np.testing.assert_allclose(zone.variables[2].values, expected_c)
         np.testing.assert_array_equal(zone.node_map, expected_conn)
 
     def test_read_point_mixed_cc(self, output_path: Callable) -> None:
@@ -491,12 +491,12 @@ class TestDatPointFormat:
         r = tecio.open(str(path), "r")
 
         assert r.num_vars == 3
-        zone = r.zone[0]
+        zone = r.zones[0]
         assert zone.datapacking == DataPacking.POINT
 
-        x_var = zone.variable[0]
-        p_var = zone.variable[1]
-        rho_var = zone.variable[2]
+        x_var = zone.variables[0]
+        p_var = zone.variables[1]
+        rho_var = zone.variables[2]
 
         assert x_var.value_location == ValueLocation.NODAL
         assert p_var.value_location == ValueLocation.NODAL
