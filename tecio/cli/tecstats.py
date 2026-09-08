@@ -14,7 +14,7 @@ corrective operation.
 
 .. code:: bash
 
-    tecstats [-h] [-zone INDEX] [-variable INDEX] [-csv] [-f] PATH
+    tecstats [-h] [-zone INDEX] [-variable INDEX_OR_NAME] [-csv] [-f] PATH
 
 :Positional Arguments:
     ``PATH``
@@ -25,15 +25,17 @@ corrective operation.
         Restrict output to the zone at the given one-based index. If omitted, all zones
         are reported.
 
-    ``-variable INDEX``
-        Restrict output to the variable at the given one-based index. If omitted, all
-        variables are reported.
+    ``-variable INDEX_OR_NAME``
+        Restrict output to the variable at the given one-based index or exact variable
+        name (e.g. ``-variable 3`` or ``-variable pressure``). If omitted, all variables
+        are reported.
 
     ``-csv``
         Write statistics to a CSV file in addition to the terminal output. The filename
         is derived automatically from the input file stem with a ``_stats`` suffix,
         preceded by optional ``_zone_N`` and ``_var_N`` segments when the corresponding
-        filters are active. For example:
+        filters are active (the variable segment always uses the resolved index, even
+        when ``-variable`` was given by name). For example:
 
         .. list-table::
            :header-rows: 1
@@ -46,6 +48,8 @@ corrective operation.
            * - ``tecstats -csv -zone 2 flow.szplt``
              - ``flow_zone_2_stats.csv``
            * - ``tecstats -csv -variable 3 flow.szplt``
+             - ``flow_var_3_stats.csv``
+           * - ``tecstats -csv -variable pressure flow.szplt``
              - ``flow_var_3_stats.csv``
            * - ``tecstats -csv -zone 2 -variable 3 flow.szplt``
              - ``flow_zone_2_var_3_stats.csv``
@@ -73,6 +77,10 @@ Examples:
     Restrict to variable 3 across all zones::
 
         $ tecstats -variable 3 flow.szplt
+
+    Restrict to a variable by name::
+
+        $ tecstats -variable pressure flow.szplt
 
     Write results to a CSV file::
 
@@ -135,6 +143,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "    $ tecstats -zone 2 <file>\n"
             "  Print stats for variable 3 only\n"
             "    $ tecstats -variable 3 <file>\n"
+            "  Print stats for a variable by name\n"
+            "    $ tecstats -variable pressure <file>\n"
             "  Write results to a CSV file (auto-named from input stem)\n"
             "    $ tecstats -csv <file>                 # <stem>_stats.csv\n"
             "  CSV with zone/variable filter suffixes\n"
@@ -158,10 +168,14 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "-variable",
-        type=int,
+        type=str,
         default=None,
-        metavar="INDEX",
-        help="1-based variable index to report. Default is all variables.",
+        metavar="INDEX_OR_NAME",
+        help=(
+            "1-based variable index or exact variable name to report "
+            "(e.g. -variable 3 or -variable pressure). Default is all "
+            "variables."
+        ),
     )
     parser.add_argument(
         "-csv",
@@ -169,11 +183,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=False,
         dest="write_csv",
         help=(
-            "Write statistics to a CSV file. The filename is derived "
-            "automatically from the input file stem with a _stats suffix "
-            "always appended, preceded by optional _zone_N and _var_N "
-            "segments when -zone or -variable are active "
-            "(e.g. flow_zone_2_var_3_stats.csv)."
+            "Write statistics to a CSV file. The filename is derived automatically "
+            "from the input file stem with a _stats suffix always appended, preceded "
+            "by optional _zone_N and _var_N segments when -zone or -variable are "
+            "active (e.g. flow_zone_2_var_3_stats.csv)."
         ),
     )
     parser.add_argument(
@@ -184,6 +197,52 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Overwrite the output CSV file if it already exists.",
     )
     return parser.parse_args(argv)
+
+
+# --------------------------------------------------------------------------------------
+# Variable filter resolution
+# --------------------------------------------------------------------------------------
+
+
+def _resolve_variable(
+    token: str | None, num_vars: int, var_names: list[str]
+) -> int | None:
+    """Resolve a ``-variable`` token (an index or a name) into a 1-based index.
+
+    Args:
+        token: Raw ``-variable`` value from argparse, or ``None`` if the flag wasn't
+            given.
+        num_vars: Total variable count in the dataset, for range checks.
+        var_names: Dataset variable names in order, for exact-match lookup.
+
+    Returns:
+        Validated 1-based index, or ``None`` if *token* is ``None`` (no
+        filter, matches "all variables").
+
+    Raises:
+        ValueError: If *token* parses as an integer that's out of range, or doesn't
+            exactly match any variable in *var_names*.
+
+    Example:
+        >>> _resolve_variable("pressure", 3, ["x", "y", "pressure"])
+        3
+    """
+    if token is None:
+        return None
+    try:
+        index = int(token)
+    except ValueError:
+        try:
+            return var_names.index(token) + 1
+        except ValueError:
+            raise ValueError(
+                f"variable name {token!r} not found; available names: "
+                f"{', '.join(var_names)}."
+            ) from None
+    else:
+        if index < 1 or index > num_vars:
+            raise ValueError(f"variable index {index} out of range [1, {num_vars}].")
+        return index
 
 
 # --------------------------------------------------------------------------------------
@@ -206,7 +265,10 @@ def _build_csv_path(
     Args:
         input_path: Path to the input Tecplot file.
         zone:       1-based zone filter index, or ``None``.
-        variable:   1-based variable filter index, or ``None``.
+        variable:   Resolved 1-based variable filter index, or ``None``.
+            Always the *resolved* index, not the raw ``-variable`` value,
+            so a name-based filter still produces a short, filesystem-safe
+            suffix (e.g. ``_var_3``, not ``_var_pressure``).
 
     Returns:
         :class:`~pathlib.Path` with a ``.csv`` suffix in the same directory
@@ -333,25 +395,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     args = _parse_args(argv)
 
-    # Resolve and validate the CSV output path before doing any work so that
-    # a naming conflict fails fast rather than after a potentially long read.
-    csv_path: Path | None = None
-    if args.write_csv:
-        csv_path = _build_csv_path(args.filename, args.zone, args.variable)
-        if csv_path.exists() and not args.force:
-            print(
-                f"Error: output file already exists: {csv_path}\n"
-                "Use --force / -f to overwrite.",
-                file=sys.stderr,
-            )
-            return 1
-
     # Accumulate CSV rows during iteration; written at the end so that a
     # mid-run error never leaves a partial file on disk.
     csv_rows: list[dict] = []
+    csv_path: Path | None = None
 
     try:
         with tecio_open(args.filename, "r") as tec:
+            # Resolve and validate the CSV output path before doing any work so that a
+            # naming conflict fails fast rather than after a potentially long read.
+            resolved_var = _resolve_variable(args.variable, tec.num_vars, tec.variables)
+
+            if args.write_csv:
+                csv_path = _build_csv_path(args.filename, args.zone, resolved_var)
+                if csv_path.exists() and not args.force:
+                    print(
+                        f"Error: output file already exists: {csv_path}\n"
+                        "Use --force / -f to overwrite.",
+                        file=sys.stderr,
+                    )
+                    return 1
+
             print(f"\nFile    : {args.filename}")
             print(f"Title   : {tec.title}")
             print(f"Vars    : {tec.num_vars}")
@@ -368,7 +432,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                 for j in range(tec.num_vars):
                     var_num = j + 1
-                    if args.variable is not None and var_num != args.variable:
+                    if resolved_var is not None and var_num != resolved_var:
                         continue
 
                     var = zone.variables[j]

@@ -25,8 +25,11 @@ subset for use with another tool in a single command.
         1,3,5``). If omitted, all zones are written to the output.
 
     ``-variables LIST``
-        Comma-separated list of one-based variable indices to extract (e.g. ``-variables
-        1,2,5``). If omitted, all variables are written to the output.
+        Comma-separated list of one-based variable indices or exact variable
+        names to extract (e.g. ``-variables 1,2,5`` or ``-variables x,y,pressure``).
+        Indices and names cannot be mixed in the same list. A name containing a
+        comma isn't supported by this syntax. If omitted, all variables are written
+        to the output.
 
     ``-o PATH``, ``--output PATH``
         Output file path. The extension controls the output format: ``.szplt``,
@@ -51,6 +54,10 @@ Examples:
     Extract variables 1, 2, and 5::
 
         $ tecextract -variables 1,2,5 solution.szplt
+
+    Extract variables by name::
+
+        $ tecextract -variables x,y,pressure solution.szplt
 
     Extract a zone subset and convert to ASCII in one step::
 
@@ -119,6 +126,80 @@ def _parse_index_list(value: str) -> list[int]:
         ) from exc
 
 
+def _parse_index_or_name_list(value: str) -> list[int | str]:
+    """Parse a comma-separated string of 1-based integers and/or variable names.
+
+    Each token is parsed as an integer where possible; anything else is kept as a name
+    string, resolved against the dataset's real variable list once the file is open
+    (this function alone can't do that resolution, it doesn't have access to the file
+    yet).
+
+    Args:
+        value: String like ``"1,3,pressure"`` or ``"x,y,z"``.
+
+    Returns:
+        List of ``int`` (1-based index) and/or ``str`` (variable name) tokens, in the
+        order given.
+
+    """
+    tokens: list[int | str] = []
+    for raw in value.split(","):
+        token = raw.strip()
+        try:
+            tokens.append(int(token))
+        except ValueError:
+            tokens.append(token)
+    return tokens
+
+
+def _resolve_variable_tokens(
+    tokens: list[int | str], num_vars: int, var_names: list[str]
+) -> list[int]:
+    """Resolve an index-only or name-only token list into 1-based indices.
+
+    Args:
+        tokens: Output of :func:`_parse_index_or_name_list`.
+        num_vars: Total variable count in the dataset, for range checks.
+        var_names: Dataset variable names in order, for exact-match lookup.
+
+    Returns:
+        List of validated 1-based indices, same order as *tokens*.
+
+    Raises:
+        ValueError: If *tokens* mixes indices and names, an integer token is out of
+            range, or a name token doesn't exactly match any variable in *var_names*.
+
+    Example:
+        >>> _resolve_variable_tokens(["x", "y"], 3, ["x", "y", "z"])
+        [1, 2]
+    """
+    has_int = any(isinstance(t, int) for t in tokens)
+    has_name = any(isinstance(t, str) for t in tokens)
+    if has_int and has_name:
+        raise ValueError(
+            "variable indices and names cannot be mixed in the same "
+            f"-variables list; use all indices or all names, got: "
+            f"{','.join(str(t) for t in tokens)!r}."
+        )
+    resolved: list[int] = []
+    for token in tokens:
+        if isinstance(token, int):
+            if token < 1 or token > num_vars:
+                raise ValueError(
+                    f"variable index {token} out of range [1, {num_vars}]."
+                )
+            resolved.append(token)
+        else:
+            try:
+                resolved.append(var_names.index(token) + 1)
+            except ValueError:
+                raise ValueError(
+                    f"variable name {token!r} not found; available names: "
+                    f"{', '.join(var_names)}."
+                ) from None
+    return resolved
+
+
 # --------------------------------------------------------------------------------------
 # Argument parsing
 # --------------------------------------------------------------------------------------
@@ -139,6 +220,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "    $ tecextract -zones 1,3 <file>\n"
             "  Extract variables 1, 2, 5\n"
             "    $ tecextract -variables 1,2,5 <file>\n"
+            "  Extract variables by name\n"
+            "    $ tecextract -variables x,y,pressure <file>\n"
             "  Extract and convert format\n"
             "    $ tecextract -zones 1,2 -o subset.dat <file>\n"
         ),
@@ -163,12 +246,15 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "-variables",
-        type=_parse_index_list,
+        type=_parse_index_or_name_list,
         default=None,
         metavar="LIST",
         help=(
-            "Comma-separated list of 1-based variable indices to extract "
-            "(e.g. -variables 1,2,5). Default is all variables."
+            # -|--------------------|---------------------------------------------|
+            "Comma-separated list of 1-based variable indices or exact variable "
+            "names to extract. Indices and names cannot be mixed in the same list. "
+            "A name containing a comma isn't supported by this syntax. Default is "
+            "all variables."
         ),
     )
     parser.add_argument(
@@ -243,16 +329,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 zone_set = set(range(1, reader.num_zones + 1))
 
-            # Resolve and validate variable filter.
+            # Resolve and validate variable filter (index or name tokens).
             if args.variables is not None:
-                for v in args.variables:
-                    if v < 1 or v > num_vars:
-                        print(
-                            f"Error: variable index {v} out of range [1, {num_vars}].",
-                            file=sys.stderr,
-                        )
-                        return 1
-                var_set: set[int] = set(args.variables)
+                try:
+                    resolved_vars = _resolve_variable_tokens(
+                        args.variables, num_vars, all_var_names
+                    )
+                except ValueError as exc:
+                    print(f"Error: {exc}", file=sys.stderr)
+                    return 1
+                var_set: set[int] = set(resolved_vars)
                 # Ordered list preserving original index order.
                 out_var_indices: list[int] = [
                     v for v in range(1, num_vars + 1) if v in var_set

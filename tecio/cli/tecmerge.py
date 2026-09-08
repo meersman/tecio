@@ -5,8 +5,11 @@ Post-processing workflows commonly produce results distributed across multiple f
 output, reconciling variable lists across sources by taking their union and writing any
 variable absent from a given source as passive. Input files may be specified explicitly
 or via a quoted glob pattern and may be any mix of supported formats. When merging
-time-step sequences, solution times and strand IDs can be assigned automatically from a
-start time and either a fixed interval or an end time.
+time-step sequences, solution times can be assigned automatically from a start time and
+either a fixed interval or an end time; each zone also gets a strand ID matching its
+1-based position within its source file, so the same physical block (e.g. a wing zone
+present in every timestep) shares one strand across the whole sequence and can be
+animated as a single, continuous entity in the Tecplot GUI.
 
 :Usage:
 
@@ -36,9 +39,12 @@ start time and either a fixed interval or an end time.
         input file.
 
     ``--assign-time-strands``
-        Assign evenly-spaced solution times and a strand ID to all zones, treating each
-        input file as one time step. Requires ``-start`` and either ``-delta`` or
-        ``-end``.
+        Assign evenly-spaced solution times to all zones, treating each input file as
+        one time step. By default, each zone also gets a strand ID matching its 1-based
+        position within its source file (the same block from every timestep shares a
+        strand, letting the Tecplot GUI animate them together). Use ``-strand`` to force
+        a single strand ID for every zone instead. Requires ``-start`` and either
+        ``-delta`` or ``-end``.
 
     ``-start VALUE``
         Solution time of the first input file. Used with ``--assign-time-strands``.
@@ -53,8 +59,9 @@ start time and either a fixed interval or an end time.
         with ``-delta``.
 
     ``-strand INT``
-        Strand ID to assign to all zones when using ``--assign-time-strands``. Defaults
-        to ``1``.
+        Override: force every zone to this single strand ID instead of the default
+        per-zone-position assignment described under ``--assign-time-strands``. Has no
+        effect without ``--assign-time-strands``.
 
 :Returns:
     A new Tecplot file written to the output path containing all zones from every input
@@ -71,9 +78,16 @@ Examples:
 
         $ tecmerg "results_*.szplt" -o combined.szplt
 
-    Merge a time series and assign solution time metadata::
+    Merge a time series, each zone getting a strand matching its position within its
+    file (a wing zone present in every timestep shares one strand, so it animates as a
+    single entity)::
 
         $ tecmerge --assign-time-strands -start 0.0 -delta 0.1 \\
+                   "step_*.szplt" -o transient.szplt
+
+    Same, but force every zone onto a single strand instead::
+
+        $ tecmerge --assign-time-strands -start 0.0 -delta 0.1 -strand 1 \\
                    "step_*.szplt" -o transient.szplt
 
     Call directly from a Python session::
@@ -188,9 +202,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=False,
         dest="assign_ts",
         help=(
-            "Assign evenly-spaced solution times and a strand ID to all "
-            "zones. Each input file corresponds to one time step.  "
-            "Requires -start and one of -delta or -end."
+            "Assign evenly-spaced solution times to all zones, treating each input "
+            "file as one time step. By default strand IDs are automatically set; use "
+            "-strand to force a single strand ID for every zone instead. Requires "
+            "-start and one of -delta or -end."
         ),
     )
     ts.add_argument(
@@ -224,9 +239,13 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     ts.add_argument(
         "-strand",
         type=int,
-        default=1,
+        default=None,
         metavar="ID",
-        help="Strand ID to assign to all zones. Default: 1.",
+        help=(
+            "Override: force every zone to this single strand ID instead "
+            "of the default per-zone-position assignment (see "
+            "--assign-time-strands)."
+        ),
     )
 
     return parser.parse_args(argv)
@@ -491,10 +510,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 step = (args.end - args.start) / (n_files - 1)
                 times = [args.start + i * step for i in range(n_files)]
-        print(
-            f"\nTime assignment: strand={args.strand}, "
-            f"times={[f'{t:.6g}' for t in times]}"
+        strand_desc = (
+            f"fixed strand {args.strand} for all zones"
+            if args.strand is not None
+            else "per-zone-position strand (1, 2, 3, ... by zone order in each file)"
         )
+        print(f"\nTime assignment: {strand_desc}, times={[f'{t:.6g}' for t in times]}")
 
     try:
         # Open all readers
@@ -544,7 +565,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             total_zones = 0
             for fi, (reader, imap) in enumerate(zip(readers, index_maps, strict=False)):
                 sol_time = times[fi] if times is not None else None
-                s_id = args.strand if times is not None else None
 
                 # Sharing is always file-local (a zone can only share from another zone
                 # in the same physical source file), so this map is reset fresh for
@@ -562,6 +582,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                             file=sys.stderr,
                         )
                         continue
+
+                    # Automatically set all. -strand overrides this with a single, fixed
+                    # strand ID for every zone instead.
+                    if times is None:
+                        s_id = None
+                    elif args.strand is not None:
+                        s_id = args.strand
+                    else:
+                        s_id = zone_num
 
                     _write_zone(
                         writer=writer,
