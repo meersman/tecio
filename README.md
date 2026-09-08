@@ -38,6 +38,8 @@ export TECIO_LIB=/path/to/libtecio.dylib  # macOS
 
 ## Quick start
 
+Writing a file:
+
 ```python
 import tecio
 import numpy as np

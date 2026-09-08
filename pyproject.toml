@@ -69,6 +69,9 @@ mat = ["scipy"]
 include = ["tecio*"]
 exclude = ["archive*", "test*"]
 
+[tool.setuptools.data-files]
+"share/tecio/plugins/paraview" = ["plugins/paraview/TecplotTecioReader.py"]
+
 [tool.ruff]
 line-length = 88
 target-version = "py310"
@@ -109,7 +112,7 @@ python-version = "3.11"
 output-format = "concise"
 
 [[tool.ty.overrides]]
-include = ["tecio/plugins/**"]
+include = ["plugins/**"]
 
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"
