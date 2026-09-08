@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.zone` → `.zones` and `.variable` → `.variables`, on every reader and
   zone reader class.
 
+### Fixed
+
+- The number of values in ordered zones without point counts are now inferred
+  instead of defaulting to one.
+
 ---
 
 ```{include} changelog/v0.3.1.md

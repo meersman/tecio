@@ -506,6 +506,64 @@ class TestDatPointFormat:
         np.testing.assert_allclose(p_var.values.ravel(), [1.0, 2.0, 3.0, 4.0])
         np.testing.assert_allclose(rho_var.values.ravel(), [10.0, 20.0, 30.0])
 
+    def test_read_point_ordered_no_dimensions(self, output_path: Callable) -> None:
+        """Legacy ``F=POINT`` with no I/J/K infers the point count from data.
+
+        Some legacy exporters write a bare zone header relying on the reader
+        to count data rows itself, rather than declaring I/J/K explicitly.
+        Two zones in one file confirm the inferred read correctly stops at
+        the next ZONE keyword rather than over-consuming.
+        """
+        point_dat = textwrap.dedent("""\
+            TITLE     = "legacy_no_dims"
+            VARIABLES = "x" "y"
+            ZONE T="First", F=POINT
+            1.0 10.0
+            2.0 20.0
+            3.0 30.0
+            ZONE T="Second", F=POINT
+            100.0 1000.0
+            200.0 2000.0
+            """)
+        path = _write_text_fixture(
+            output_path, "read_point_ordered_no_dims.dat", point_dat
+        )
+        r = tecio.open(str(path), "r")
+
+        assert r.num_zones == 2
+
+        first = r.zones[0]
+        assert first.zone_type == ZoneType.ORDERED
+        assert first.datapacking == DataPacking.POINT
+        assert first.dimensions == (3, 1, 1)
+        np.testing.assert_allclose(first.variables[0].values.ravel(), [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(
+            first.variables[1].values.ravel(), [10.0, 20.0, 30.0]
+        )
+
+        second = r.zones[1]
+        assert second.dimensions == (2, 1, 1)
+        np.testing.assert_allclose(second.variables[0].values.ravel(), [100.0, 200.0])
+        np.testing.assert_allclose(second.variables[1].values.ravel(), [1000.0, 2000.0])
+
+    def test_read_point_ordered_no_dimensions_malformed_raises(
+        self, output_path: Callable
+    ) -> None:
+        """A truncated final row raises a clear error rather than misreading."""
+        point_dat = textwrap.dedent("""\
+            TITLE     = "legacy_malformed"
+            VARIABLES = "x" "y"
+            ZONE F=POINT
+            1.0 10.0
+            2.0 20.0
+            3.0
+            """)
+        path = _write_text_fixture(
+            output_path, "read_point_ordered_malformed.dat", point_dat
+        )
+        with pytest.raises(ValueError, match="not evenly divisible"):
+            tecio.open(str(path), "r")
+
 
 # ======================================================================================
 # Entry point

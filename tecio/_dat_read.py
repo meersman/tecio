@@ -1228,6 +1228,53 @@ class TecplotDatReader(TecplotReader):
                 # _parse() applies these once _var_auxdata is allocated.
                 self._deferred_var_aux_lines.append(line)
 
+    @staticmethod
+    def _infer_ordered_point_count(tokens: _LineBuffer, active_count: int) -> int:
+        """Infer an ordered zone's point count when I/J/K are all omitted.
+
+        Peeks ahead counting numeric tokens up to the next zone/keyword boundary or end
+        of file, using the same boundary rule :meth:`_parse_zone` already uses to know
+        where a header ends and data begins, then restores the original position so the
+        real read (later, driven by the now-known count) starts from the same place.
+
+        Args:
+            tokens: Positioned at the first data line.
+            active_count: Number of active (non-passive, non-shared) variables in
+                dataset order; each data row has exactly this many values.
+
+        Returns:
+            The inferred point count.
+
+        Raises:
+            ValueError: If the total token count isn't evenly divisible by
+                *active_count*, a malformed or truncated data block.
+
+        Example:
+            >>> n = TecplotDatReader._infer_ordered_point_count(tokens, 3)
+        """
+        marker = tokens.position()
+        total = 0
+        while tokens.has_more():
+            line = tokens.peek_stripped()
+            if not line:
+                tokens.next_stripped()
+                continue
+            upper = line.lstrip().upper()
+            if upper.split("=")[0].split()[0] == "ZONE":
+                break
+            if upper.startswith(("DATASETAUXDATA", "VARAUXDATA")):
+                break
+            total += len(tokens.next_stripped().split())
+        tokens.seek(marker)
+
+        if active_count <= 0 or total % active_count != 0:
+            raise ValueError(
+                "Could not infer point count for an ordered zone with no "
+                f"I/J/K: found {total} values, not evenly divisible by "
+                f"{active_count} active variables."
+            )
+        return total // active_count
+
     def _parse_zone(self, tokens: _LineBuffer) -> None:
         """Parse one ZONE block (header + data blocks + connectivity).
 
@@ -1312,11 +1359,29 @@ class TecplotDatReader(TecplotReader):
                 "ASCII reader."
             )
 
+        # Passive/shared variables are parsed here (ahead of var_locs/var_types below,
+        # which don't need this ordering) because the point-count inference just below
+        # needs active_count first.
+        passive_set: set[int] = set()
+        if "PASSIVEVARLIST" in kv:
+            passive_set = set(_parse_index_list(kv["PASSIVEVARLIST"]))
+
+        share_map: dict[int, int] = {}
+        if "VARSHARELIST" in kv:
+            share_map = _parse_varsharelist(kv["VARSHARELIST"])
+
         if zone_type == ZoneType.ORDERED:
-            I = int(kv.get("I", "1") or "1")  # noqa E741
-            J = int(kv.get("J", "1") or "1")
-            K = int(kv.get("K", "1") or "1")
-            num_nodes = I * J * K
+            if "I" not in kv and "J" not in kv and "K" not in kv:
+                # Infer the point count from the data that follows
+                active_count = self.num_vars - len(passive_set) - len(share_map)
+                num_nodes = self._infer_ordered_point_count(tokens, active_count)
+                I = num_nodes  # noqa E741
+                J = K = 1
+            else:
+                I = int(kv.get("I", "1") or "1")  # noqa E741
+                J = int(kv.get("J", "1") or "1")
+                K = int(kv.get("K", "1") or "1")
+                num_nodes = I * J * K
             num_cells = max(I - 1, 1) * max(J - 1, 1) * max(K - 1, 1)
         else:
             # FE zones accept both the modern (NODES/ELEMENTS) and legacy (N/E)
@@ -1375,16 +1440,6 @@ class TecplotDatReader(TecplotReader):
                 )
         else:
             var_types = [DataType.FLOAT] * len(self._variable_names)
-
-        # Passive variables (0-based)
-        passive_set: set[int] = set()
-        if "PASSIVEVARLIST" in kv:
-            passive_set = set(_parse_index_list(kv["PASSIVEVARLIST"]))
-
-        # Shared variables {0-based → 1-based source zone}
-        share_map: dict[int, int] = {}
-        if "VARSHARELIST" in kv:
-            share_map = _parse_varsharelist(kv["VARSHARELIST"])
 
         # Connectivity sharing
         con_share_zone = int(kv.get("CONNECTIVITYSHAREZONE", "0") or "0")
