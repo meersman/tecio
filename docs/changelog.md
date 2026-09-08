@@ -21,13 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   zone reader class.
 - Variable names are now supported as an additional input option for CLI tools
   wherever previously only variable index was accepted.
+- **Breaking:** CLI tool flags are updated for better consistency between tools.
+  Use `-h` to see the available flags for each tool.
+- `pragma: no cover` added wherever there is environment dependent or
+  non-converable code execution so coverage report is more accurate.
 
 ### Fixed
 
 - The number of values in ordered zones without point counts are now inferred
   instead of defaulting to one.
-- `pragma: no cover` added wherever there is environment dependent or
-  non-converable code execution so coverage report is more accurate.
 
 ---
 

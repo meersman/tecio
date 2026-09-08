@@ -15,8 +15,8 @@ animated as a single, continuous entity in the Tecplot GUI.
 
 .. code:: bash
 
-    tecmerge [-h] --output PATH [--force] [--title STRING] [--assign-time-strands]
-             [-start VALUE] [-delta VALUE | -end VALUE] [-strand ID] FILE [FILE ...]
+    tecmerge [-h] -o PATH [-f] [--title STRING] [--assign-time-strands]
+             [-s VALUE] [-d VALUE | -e VALUE] [--strand ID] FILE [FILE ...]
 
 :Positional Arguments:
     ``FILE [FILE ...]``
@@ -42,23 +42,23 @@ animated as a single, continuous entity in the Tecplot GUI.
         Assign evenly-spaced solution times to all zones, treating each input file as
         one time step. By default, each zone also gets a strand ID matching its 1-based
         position within its source file (the same block from every timestep shares a
-        strand, letting the Tecplot GUI animate them together). Use ``-strand`` to force
-        a single strand ID for every zone instead. Requires ``-start`` and either
-        ``-delta`` or ``-end``.
+        strand, letting the Tecplot GUI animate them together). Use ``--strand`` to
+        force a single strand ID for every zone instead. Requires ``-s``/``--start``
+        and either ``-d``/``--delta`` or ``-e``/``--end``.
 
-    ``-start VALUE``
+    ``-s VALUE``, ``--start VALUE``
         Solution time of the first input file. Used with ``--assign-time-strands``.
 
-    ``-delta VALUE``
+    ``-d VALUE``, ``--delta VALUE``
         Constant time increment between successive input files. Mutually exclusive with
-        ``-end``.
+        ``-e``/``--end``.
 
-    ``-end VALUE``
+    ``-e VALUE``, ``--end VALUE``
         Solution time of the last input file. The time step is computed as ``(end -
         start) / (N - 1)`` where ``N`` is the number of input files. Mutually exclusive
-        with ``-delta``.
+        with ``-d``/``--delta``.
 
-    ``-strand INT``
+    ``--strand INT``
         Override: force every zone to this single strand ID instead of the default
         per-zone-position assignment described under ``--assign-time-strands``. Has no
         effect without ``--assign-time-strands``.
@@ -82,12 +82,12 @@ Examples:
     file (a wing zone present in every timestep shares one strand, so it animates as a
     single entity)::
 
-        $ tecmerge --assign-time-strands -start 0.0 -delta 0.1 \\
+        $ tecmerge --assign-time-strands -s 0.0 -d 0.1 \\
                    "step_*.szplt" -o transient.szplt
 
     Same, but force every zone onto a single strand instead::
 
-        $ tecmerge --assign-time-strands -start 0.0 -delta 0.1 -strand 1 \\
+        $ tecmerge --assign-time-strands -s 0.0 -d 0.1 --strand 1 \\
                    "step_*.szplt" -o transient.szplt
 
     Call directly from a Python session::
@@ -143,7 +143,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "  Merge via glob\n"
             '    $ tecmerge -o combined.szplt "results_*.szplt"\n'
             "  Assign time/strand metadata\n"
-            "    $ tecmerge --assign-time-strands -start 0.0 -delta 0.1 \\\n"
+            "    $ tecmerge --assign-time-strands -s 0.0 -d 0.1 \\\n"
             '               -o transient.szplt "step_*.szplt"\n'
         ),
         formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
@@ -166,8 +166,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
     # Output
     parser.add_argument(
-        "--output",
         "-o",
+        "--output",
         type=str,
         required=True,
         metavar="PATH",
@@ -204,30 +204,33 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=(
             "Assign evenly-spaced solution times to all zones, treating each input "
             "file as one time step. By default strand IDs are automatically set; use "
-            "-strand to force a single strand ID for every zone instead. Requires "
-            "-start and one of -delta or -end."
+            "--strand to force a single strand ID for every zone instead. Requires "
+            "-s/--start and one of -d/--delta or -e/--end."
         ),
     )
     ts.add_argument(
-        "-start",
+        "-s",
+        "--start",
         type=float,
         default=None,
         metavar="VALUE",
         help="Solution time of the first input file.",
     )
-    # -delta and -end are mutually exclusive -- either specifies the spacing,
-    # the other specifies the endpoint. Providing both over-constrains the
-    # problem and is therefore disallowed at the parser level.
+    # -d/--delta and -e/--end are mutually exclusive -- either specifies the
+    # spacing, the other specifies the endpoint. Providing both over-constrains
+    # the problem and is therefore disallowed at the parser level.
     step_group = ts.add_mutually_exclusive_group()
     step_group.add_argument(
-        "-delta",
+        "-d",
+        "--delta",
         type=float,
         default=None,
         metavar="VALUE",
         help="Constant time step between successive input files.",
     )
     step_group.add_argument(
-        "-end",
+        "-e",
+        "--end",
         type=float,
         default=None,
         metavar="VALUE",
@@ -237,7 +240,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     ts.add_argument(
-        "-strand",
+        "--strand",
         type=int,
         default=None,
         metavar="ID",
@@ -468,11 +471,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Validate time/strand options
     if args.assign_ts:
         if args.start is None:
-            print("Error: --assign-time-strands requires -start.", file=sys.stderr)
+            print("Error: --assign-time-strands requires -s/--start.", file=sys.stderr)
             return 1
         if args.delta is None and args.end is None:
             print(
-                "Error: --assign-time-strands requires either -delta or -end.",
+                "Error: --assign-time-strands requires either -d/--delta or -e/--end.",
                 file=sys.stderr,
             )
             return 1
@@ -583,8 +586,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         )
                         continue
 
-                    # Automatically set all. -strand overrides this with a single, fixed
-                    # strand ID for every zone instead.
+                    # Automatically set all. --strand overrides this with a single,
+                    # fixed strand ID for every zone instead.
                     if times is None:
                         s_id = None
                     elif args.strand is not None:

@@ -10,15 +10,15 @@ hierarchically: file header and auxiliary data first, followed by per-zone heade
 optionally, the underlying variable and connectivity arrays.
 
 By default all zones and variables are printed. However, the scope can be narrowed to a
-single zone or variable using the ``-zone`` and ``-variable`` flags, or the variable
-arrays can be suppressed entirely to focus on structural metadata.
+single zone or variable using the ``-z``/``--zone`` and ``-v``/``--variable`` flags, or
+the variable arrays can be suppressed entirely to focus on structural metadata.
 
 :Usage:
 
 .. code:: bash
 
-    tecdump [-h] [--ignore-zones] [--ignore-vars] [-zone INDEX] [-variable INDEX]
-            [-maxvals INT] PATH
+    tecdump [-h] [--ignore-zones] [--ignore-variables] [-z INDEX] [-v INDEX]
+            [--maxvals INT] PATH
 
 :Positional Arguments:
     ``PATH``
@@ -32,20 +32,20 @@ arrays can be suppressed entirely to focus on structural metadata.
         metadata such as solver, strand IDs, or global auxiliary entries without the
         overhead of parsing zone data.
 
-    ``--ignore-vars``
+    ``--ignore-variables``
         Print the file header and all zone headers, then exit. Variable arrays and
         connectivity tables are suppressed. Use this to survey zone names, types, and
         dimensions across a large file without printing any data.
 
-    ``-zone INDEX``
+    ``-z INDEX``, ``--zone INDEX``
         Restrict output to the zone at the given one-based index. All other zones are
         skipped. If omitted, every zone is printed.
 
-    ``-variable INDEX``
+    ``-v INDEX``, ``--variable INDEX``
         Restrict variable array output to the variable at the given one-based index. All
         other variable arrays are skipped. If omitted, every variable is printed.
 
-    ``-maxvals INT``
+    ``--maxvals INT``
         Maximum number of values to print from any variable or connectivity array before
         truncating with a summary line. Defaults to a small number suitable for a quick
         preview; set to a large value (e.g. ``1000000``) to print an array in full.
@@ -61,11 +61,11 @@ Examples:
 
     Print only file and zone headers with no variable data::
 
-        $ tecdump --ignore-vars flow.szplt
+        $ tecdump --ignore-variables flow.szplt
 
     Inspect a single zone/variable combination in full::
 
-        $ tecdump -zone 1 -variable 3 -maxvals 1000000 flow.plt
+        $ tecdump -z 1 -v 3 --maxvals 1000000 flow.plt
 
 See Also:
     * :mod:`tecio.cli.tecstats` - Compute per-zone min, max, and mean statistics without
@@ -93,7 +93,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "    $ tecdump <input file>\n"
             "  Print all values from zone 1 variable 3 (set maxval to large\n"
             "  number)\n"
-            "    $ tecdump -zone 1 -variable 3 -maxvals 1e6 <input file>\n"
+            "    $ tecdump -z 1 -v 3 --maxvals 1e6 <input file>\n"
         ),
         formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
             prog, width=70, max_help_position=24
@@ -112,7 +112,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         dest="print_zones",
     )
     parser.add_argument(
-        "--ignore-vars",
+        "--ignore-variables",
         help=(
             "Print file header and zone headers then exits. No variable records "
             "printed."
@@ -122,21 +122,23 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         dest="print_vars",
     )
     parser.add_argument(
-        "-zone",
+        "-z",
+        "--zone",
         help="Zone number to dump data from. Default is all zones.",
         type=int,
         default=None,
         metavar="INDEX",
     )
     parser.add_argument(
-        "-variable",
+        "-v",
+        "--variable",
         help="Variable number to dump data from. Default is all variables.",
         type=int,
         default=None,
         metavar="INDEX",
     )
     parser.add_argument(
-        "-maxvals",
+        "--maxvals",
         help=(
             "Max number of values to print for variable and connectivity arrays before "
             "truncating"

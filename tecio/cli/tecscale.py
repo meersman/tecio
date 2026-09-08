@@ -19,7 +19,7 @@ conversion and format conversion to be performed in a single step.
 
 .. code:: bash
 
-    tecscale [-h] -variable INDEX_OR_NAME [-scale FLOAT] [-offset FLOAT] [-zone INDEX]
+    tecscale [-h] -v INDEX_OR_NAME [-s FLOAT] [--offset FLOAT] [-z INDEX]
              [-o PATH] [-f] PATH
 
 :Positional Arguments:
@@ -27,17 +27,17 @@ conversion and format conversion to be performed in a single step.
         Path to the input Tecplot binary file (``.plt`` or ``.szplt``) to transform.
 
 :Options:
-    ``-variable INDEX_OR_NAME``
+    ``-v INDEX_OR_NAME``, ``--variable INDEX_OR_NAME``
         Variable to transform, specified as either a one-based integer index or a name
         string (case-insensitive). Required.
 
-    ``-scale FLOAT``
+    ``-s FLOAT``, ``--scale FLOAT``
         Multiplicative scale factor :math:`s`. Defaults to ``1.0``.
 
-    ``-offset FLOAT``
+    ``--offset FLOAT``
         Additive offset :math:`b` applied after scaling. Defaults to ``0.0``.
 
-    ``-zone INDEX``
+    ``-z INDEX``, ``--zone INDEX``
         One-based zone index to restrict the transformation to. If omitted, all zones
         are processed.
 
@@ -59,25 +59,25 @@ conversion and format conversion to be performed in a single step.
 Examples:
     Convert pressure from kPa to psi by index::
 
-        $ tecscale -variable 4 -scale 0.145038 flow.szplt
+        $ tecscale -v 4 -s 0.145038 flow.szplt
 
     Same conversion using the variable name::
 
-        $ tecscale -variable Pressure -scale 0.145038 flow.szplt
+        $ tecscale -v Pressure -s 0.145038 flow.szplt
 
     Shift temperature from Kelvin to Celsius in zone 2 only::
 
-        $ tecscale -variable Temperature -offset -273.15 -zone 2 flow.szplt
+        $ tecscale -v Temperature --offset -273.15 -z 2 flow.szplt
 
     Scale and offset in one step, writing to ASCII DAT::
 
-        $ tecscale -variable 3 -scale 0.3048 flow.szplt -o flow_ft.dat
+        $ tecscale -v 3 -s 0.3048 flow.szplt -o flow_ft.dat
 
     Call directly from a Python session::
 
         import tecio.cli.tecscale.main as tecscale
 
-        tecscale(["-variable", "Pressure", "-scale", "1e-3", "flow.szplt"])
+        tecscale(["-v", "Pressure", "-s", "1e-3", "flow.szplt"])
 
 See Also:
     :mod:`tecio.cli.teconvert` - Convert between Tecplot file formats without applying
@@ -114,11 +114,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         epilog=(
             "Example usage:\n"
             "  Scale variable 4 by 1e-3 (Pa -> kPa)\n"
-            "    $ tecscale -variable 4 -scale 1e-3 <file>\n"
+            "    $ tecscale -v 4 -s 1e-3 <file>\n"
             "  Same using variable name\n"
-            "    $ tecscale -variable Pressure -scale 1e-3 <file>\n"
+            "    $ tecscale -v Pressure -s 1e-3 <file>\n"
             "  Offset temperature in zone 2 only\n"
-            "    $ tecscale -variable Temperature -offset -273.15 -zone 2 <file>\n"
+            "    $ tecscale -v Temperature --offset -273.15 -z 2 <file>\n"
         ),
         formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
             prog, width=70, max_help_position=24
@@ -130,7 +130,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Input Tecplot file.",
     )
     parser.add_argument(
-        "-variable",
+        "-v",
+        "--variable",
         type=str,
         required=True,
         metavar="INDEX_OR_NAME",
@@ -140,21 +141,23 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "-scale",
+        "-s",
+        "--scale",
         type=float,
         default=1.0,
         metavar="FLOAT",
         help="Multiplicative scale factor. Default: 1.0.",
     )
     parser.add_argument(
-        "-offset",
+        "--offset",
         type=float,
         default=0.0,
         metavar="FLOAT",
         help="Additive offset applied after scaling. Default: 0.0.",
     )
     parser.add_argument(
-        "-zone",
+        "-z",
+        "--zone",
         type=int,
         default=None,
         metavar="INDEX",

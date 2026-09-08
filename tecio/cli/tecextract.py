@@ -13,20 +13,20 @@ subset for use with another tool in a single command.
 
 .. code:: bash
 
-    tecextract [-h] [-zones LIST] [-variables LIST] [-o PATH] [-f] PATH
+    tecextract [-h] [-z LIST] [-v LIST] [-o PATH] [-f] PATH
 
 :Positional Arguments:
     ``PATH``
         Path to the input Tecplot binary file (``.plt`` or ``.szplt``).
 
 :Options:
-    ``-zones LIST``
-        Comma-separated list of one-based zone indices to extract (e.g. ``-zones
+    ``-z LIST``, ``--zones LIST``
+        Comma-separated list of one-based zone indices to extract (e.g. ``-z
         1,3,5``). If omitted, all zones are written to the output.
 
-    ``-variables LIST``
+    ``-v LIST``, ``--variables LIST``
         Comma-separated list of one-based variable indices or exact variable
-        names to extract (e.g. ``-variables 1,2,5`` or ``-variables x,y,pressure``).
+        names to extract (e.g. ``-v 1,2,5`` or ``-v x,y,pressure``).
         Indices and names cannot be mixed in the same list. A name containing a
         comma isn't supported by this syntax. If omitted, all variables are written
         to the output.
@@ -49,19 +49,19 @@ subset for use with another tool in a single command.
 Examples:
     Extract zones 1 and 3::
 
-        $ tecextract -zones 1,3 solution.szplt
+        $ tecextract -z 1,3 solution.szplt
 
     Extract variables 1, 2, and 5::
 
-        $ tecextract -variables 1,2,5 solution.szplt
+        $ tecextract -v 1,2,5 solution.szplt
 
     Extract variables by name::
 
-        $ tecextract -variables x,y,pressure solution.szplt
+        $ tecextract -v x,y,pressure solution.szplt
 
     Extract a zone subset and convert to ASCII in one step::
 
-        $ tecextract -zones 1,2 -o subset.dat solution.szplt
+        $ tecextract -z 1,2 -o subset.dat solution.szplt
 
     Call directly from a Tecplot macro or Python session, passing arguments as a list of
     strings::
@@ -69,9 +69,9 @@ Examples:
         import tecio.cli.tecextract.main as tecextract
 
         tecextract([
-            "-zones",
+            "-z",
             "1,2",
-            "-variables",
+            "-v",
             "1,2,5",
             "-o",
             "subset.szplt",
@@ -178,7 +178,7 @@ def _resolve_variable_tokens(
     if has_int and has_name:
         raise ValueError(
             "variable indices and names cannot be mixed in the same "
-            f"-variables list; use all indices or all names, got: "
+            f"-v/--variables list; use all indices or all names, got: "
             f"{','.join(str(t) for t in tokens)!r}."
         )
     resolved: list[int] = []
@@ -217,13 +217,13 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             # -|--------------------|---------------------------------------------|
             "Example usage:\n"
             "  Extract zones 1 and 3\n"
-            "    $ tecextract -zones 1,3 <file>\n"
+            "    $ tecextract -z 1,3 <file>\n"
             "  Extract variables 1, 2, 5\n"
-            "    $ tecextract -variables 1,2,5 <file>\n"
+            "    $ tecextract -v 1,2,5 <file>\n"
             "  Extract variables by name\n"
-            "    $ tecextract -variables x,y,pressure <file>\n"
+            "    $ tecextract -v x,y,pressure <file>\n"
             "  Extract and convert format\n"
-            "    $ tecextract -zones 1,2 -o subset.dat <file>\n"
+            "    $ tecextract -z 1,2 -o subset.dat <file>\n"
         ),
         formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
             prog, width=70, max_help_position=24
@@ -235,17 +235,19 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Input Tecplot file.",
     )
     parser.add_argument(
-        "-zones",
+        "-z",
+        "--zones",
         type=_parse_index_list,
         default=None,
         metavar="LIST",
         help=(
             "Comma-separated list of 1-based zone indices to extract "
-            "(e.g. -zones 1,3,5). Default is all zones."
+            "(e.g. -z 1,3,5). Default is all zones."
         ),
     )
     parser.add_argument(
-        "-variables",
+        "-v",
+        "--variables",
         type=_parse_index_or_name_list,
         default=None,
         metavar="LIST",

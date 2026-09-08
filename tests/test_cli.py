@@ -20,7 +20,7 @@ Design notes:
       in helper functions with return-None / raise-FileNotFoundError.)
     - File-writing tests use pytest's ``tmp_path`` fixture; the ``tests/``
       directory is never modified.
-    - ``tecstats -csv`` auto-names the CSV next to the input, so those tests
+    - ``tecstats --csv`` auto-names the CSV next to the input, so those tests
       copy the source file into ``tmp_path`` first.
     - The ``onera_path`` fixture is parametrised over all three formats;
       single-format tests reference ``_ONERA["szplt"]`` directly.
@@ -347,23 +347,23 @@ class TestTecdump:
         assert ret == 0
         assert "Zone Record" not in capsys.readouterr().out
 
-    def test_ignore_vars_flag(self, onera_path: Path, capsys) -> None:
-        """--ignore-vars suppresses variable value output."""
-        ret = tecdump(["--ignore-vars", str(onera_path)])
+    def test_ignore_variables_flag(self, onera_path: Path, capsys) -> None:
+        """--ignore-variables suppresses variable value output."""
+        ret = tecdump(["--ignore-variables", str(onera_path)])
         assert ret == 0
         assert "Values" not in capsys.readouterr().out
 
     def test_zone_filter(self, onera_path: Path) -> None:
-        """-zone 1 limits output to zone 1 without error."""
-        assert tecdump(["-zone", "1", str(onera_path)]) == 0
+        """-z 1 limits output to zone 1 without error."""
+        assert tecdump(["-z", "1", str(onera_path)]) == 0
 
     def test_variable_filter(self, onera_path: Path) -> None:
-        """-variable 1 limits output to variable 1 without error."""
-        assert tecdump(["-variable", "1", str(onera_path)]) == 0
+        """-v 1 limits output to variable 1 without error."""
+        assert tecdump(["-v", "1", str(onera_path)]) == 0
 
     def test_maxvals(self, onera_path: Path) -> None:
-        """-maxvals changes the array truncation threshold without error."""
-        assert tecdump(["-maxvals", "5", str(onera_path)]) == 0
+        """--maxvals changes the array truncation threshold without error."""
+        assert tecdump(["--maxvals", "5", str(onera_path)]) == 0
 
 
 # ======================================================================================
@@ -449,17 +449,17 @@ class TestTecextract:
         assert _is_readable(dst)
 
     def test_extract_zone_1_only(self, onera_path: Path, tmp_path: Path) -> None:
-        """``-zones 1`` extracts FluidVolume; output has 1 zone."""
+        """``-z 1`` extracts FluidVolume; output has 1 zone."""
         dst = tmp_path / "out.szplt"
-        ret = tecextract(["-zones", "1", "-o", str(dst), str(onera_path)])
+        ret = tecextract(["-z", "1", "-o", str(dst), str(onera_path)])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 1
 
     def test_extract_zone_2_only(self, onera_path: Path, tmp_path: Path) -> None:
-        """``-zones 2`` extracts WingSurface; output has 1 zone."""
+        """``-z 2`` extracts WingSurface; output has 1 zone."""
         dst = tmp_path / "out.szplt"
-        ret = tecextract(["-zones", "2", "-o", str(dst), str(onera_path)])
+        ret = tecextract(["-z", "2", "-o", str(dst), str(onera_path)])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 1
@@ -470,7 +470,7 @@ class TestTecextract:
         subzone layout — writing a single-variable SZL file is not supported.
         """
         dst = tmp_path / "out.dat"
-        ret = tecextract(["-variables", "1", "-o", str(dst), str(_ONERA["szplt"])])
+        ret = tecextract(["-v", "1", "-o", str(dst), str(_ONERA["szplt"])])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_vars == 1
@@ -481,14 +481,14 @@ class TestTecextract:
         variables 1, 2, and 3 (x, y, z) to compute its subzone layout.
         """
         dst = tmp_path / "out.szplt"
-        ret = tecextract(["-variables", "1", "-o", str(dst), str(_ONERA["szplt"])])
+        ret = tecextract(["-v", "1", "-o", str(dst), str(_ONERA["szplt"])])
         assert ret == 1
 
     def test_extract_multiple_variables(self, tmp_path: Path) -> None:
-        """``-variables 1,2,3`` produces a file with exactly 3 variables."""
+        """``-v 1,2,3`` produces a file with exactly 3 variables."""
         dst = tmp_path / "out.szplt"
         ret = tecextract([
-            "-variables",
+            "-v",
             "1,2,3",
             "-o",
             str(dst),
@@ -503,9 +503,9 @@ class TestTecextract:
         """Combined zone + variable filter applies both restrictions."""
         dst = tmp_path / "out.szplt"
         ret = tecextract([
-            "-zones",
+            "-z",
             "2",
-            "-variables",
+            "-v",
             "10",
             "-o",
             str(dst),
@@ -527,7 +527,7 @@ class TestTecextract:
         """Zone index beyond num_zones (2) returns exit code 1."""
         assert (
             tecextract([
-                "-zones",
+                "-z",
                 "99",
                 "-o",
                 str(tmp_path / "out.szplt"),
@@ -540,7 +540,7 @@ class TestTecextract:
         """Variable index beyond num_vars (18) returns exit code 1."""
         assert (
             tecextract([
-                "-variables",
+                "-v",
                 "99",
                 "-o",
                 str(tmp_path / "out.szplt"),
@@ -677,17 +677,17 @@ class TestTecmerge:
             assert r.num_zones == _NUM_ZONES * 3
 
     def test_assign_time_strands_with_delta(self, tmp_path: Path) -> None:
-        """``-delta`` assigns evenly-spaced solution times per input file."""
+        """``-d``/``--delta`` assigns evenly-spaced solution times per input file."""
         src1 = _copy_onera("szplt", tmp_path, "t0")
         src2 = _copy_onera("dat", tmp_path, "t1")
         dst = tmp_path / "transient.szplt"
         ret = tecmerge([
             "--assign-time-strands",
-            "-start",
+            "-s",
             "0.0",
-            "-delta",
+            "-d",
             "1.0",
-            "-strand",
+            "--strand",
             "1",
             "-o",
             str(dst),
@@ -701,18 +701,18 @@ class TestTecmerge:
             assert r.zones[_NUM_ZONES].solution_time == pytest.approx(1.0)
 
     def test_assign_time_strands_with_end(self, tmp_path: Path) -> None:
-        """-end computes the step size automatically from start/end/N."""
+        """-e/--end computes the step size automatically from start/end/N."""
         src1 = _copy_onera("szplt", tmp_path, "t0")
         src2 = _copy_onera("dat", tmp_path, "t1")
         src3 = _copy_onera("szplt", tmp_path, "t2")
         dst = tmp_path / "transient_end.szplt"
         ret = tecmerge([
             "--assign-time-strands",
-            "-start",
+            "-s",
             "0.0",
-            "-end",
+            "-e",
             "4.0",
-            "-strand",
+            "--strand",
             "1",
             "-o",
             str(dst),
@@ -726,11 +726,11 @@ class TestTecmerge:
             assert r.zones[_NUM_ZONES * 2].solution_time == pytest.approx(4.0)
 
     def test_missing_start_with_assign_ts_returns_1(self, tmp_path: Path) -> None:
-        """--assign-time-strands without -start returns exit code 1."""
+        """--assign-time-strands without -s/--start returns exit code 1."""
         assert (
             tecmerge([
                 "--assign-time-strands",
-                "-delta",
+                "-d",
                 "1.0",
                 "-o",
                 str(tmp_path / "out.szplt"),
@@ -740,11 +740,11 @@ class TestTecmerge:
         )
 
     def test_missing_delta_and_end_returns_1(self, tmp_path: Path) -> None:
-        """--assign-time-strands without -delta or -end returns exit code 1."""
+        """--assign-time-strands without -d/--delta or -e/--end returns exit code 1."""
         assert (
             tecmerge([
                 "--assign-time-strands",
-                "-start",
+                "-s",
                 "0.0",
                 "-o",
                 str(tmp_path / "out.szplt"),
@@ -805,9 +805,9 @@ class TestTecscale:
         """Scale variable 1 (x) by a constant factor; output is readable."""
         dst = tmp_path / "scaled.szplt"
         ret = tecscale([
-            "-variable",
+            "-v",
             "1",
-            "-scale",
+            "-s",
             "2.0",
             "-o",
             str(dst),
@@ -820,9 +820,9 @@ class TestTecscale:
         """Scale the Pressure variable identified by name."""
         dst = tmp_path / "scaled.szplt"
         ret = tecscale([
-            "-variable",
+            "-v",
             "Pressure",
-            "-scale",
+            "-s",
             "1e-3",
             "-o",
             str(dst),
@@ -835,11 +835,11 @@ class TestTecscale:
         """Applying both scale and offset returns exit code 0."""
         dst = tmp_path / "scaled.szplt"
         ret = tecscale([
-            "-variable",
+            "-v",
             "Temperature",
-            "-scale",
+            "-s",
             "1.0",
-            "-offset",
+            "--offset",
             "-273.15",
             "-o",
             str(dst),
@@ -849,14 +849,14 @@ class TestTecscale:
         assert dst.exists()
 
     def test_scale_single_zone(self, onera_path: Path, tmp_path: Path) -> None:
-        """-zone restricts scaling to zone 1 only."""
+        """-z restricts scaling to zone 1 only."""
         dst = tmp_path / "scaled.szplt"
         ret = tecscale([
-            "-variable",
+            "-v",
             "Density",
-            "-scale",
+            "-s",
             "1000.0",
-            "-zone",
+            "-z",
             "1",
             "-o",
             str(dst),
@@ -871,9 +871,9 @@ class TestTecscale:
         dst = tmp_path / "scaled.szplt"
         scale = 2.0
         tecscale([
-            "-variable",
+            "-v",
             "1",
-            "-scale",
+            "-s",
             str(scale),
             "--force",
             "-o",
@@ -887,15 +887,15 @@ class TestTecscale:
         np.testing.assert_allclose(scaled, orig * scale, rtol=1e-5)
 
     def test_unscaled_zone_unchanged(self, tmp_path: Path) -> None:
-        """When -zone 1 is active, zone 2 values are identical to source."""
+        """When -z 1 is active, zone 2 values are identical to source."""
         src = _ONERA["szplt"]
         dst = tmp_path / "scaled.szplt"
         tecscale([
-            "-variable",
+            "-v",
             "Pressure",
-            "-scale",
+            "-s",
             "999.0",
-            "-zone",
+            "-z",
             "1",
             "--force",
             "-o",
@@ -914,7 +914,7 @@ class TestTecscale:
         """Unknown variable name returns exit code 1."""
         assert (
             tecscale([
-                "-variable",
+                "-v",
                 "DOES_NOT_EXIST_XYZ",
                 "-o",
                 str(tmp_path / "scaled.szplt"),
@@ -929,7 +929,7 @@ class TestTecscale:
         """Variable index beyond num_vars (18) returns exit code 1."""
         assert (
             tecscale([
-                "-variable",
+                "-v",
                 "99",
                 "-o",
                 str(tmp_path / "scaled.szplt"),
@@ -944,9 +944,9 @@ class TestTecscale:
         """Zone index beyond num_zones (2) returns exit code 1."""
         assert (
             tecscale([
-                "-variable",
+                "-v",
                 "1",
-                "-zone",
+                "-z",
                 "99",
                 "-o",
                 str(tmp_path / "scaled.szplt"),
@@ -959,7 +959,7 @@ class TestTecscale:
         """Non-existent source file returns exit code 1."""
         assert (
             tecscale([
-                "-variable",
+                "-v",
                 "1",
                 "-o",
                 str(tmp_path / "out.szplt"),
@@ -972,7 +972,7 @@ class TestTecscale:
         """Existing output without --force returns exit code 1."""
         dst = tmp_path / "out.szplt"
         dst.touch()
-        assert tecscale(["-variable", "1", "-o", str(dst), str(_ONERA["szplt"])]) == 1
+        assert tecscale(["-v", "1", "-o", str(dst), str(_ONERA["szplt"])]) == 1
 
 
 # ======================================================================================
@@ -1121,50 +1121,50 @@ class TestTecstats:
         assert "WingSurface" in out
 
     def test_zone_filter(self, onera_path: Path) -> None:
-        """-zone 1 runs without error."""
-        assert tecstats(["-zone", "1", str(onera_path)]) == 0
+        """-z 1 runs without error."""
+        assert tecstats(["-z", "1", str(onera_path)]) == 0
 
     def test_variable_filter(self, onera_path: Path) -> None:
-        """-variable 10 (Pressure) runs without error."""
-        assert tecstats(["-variable", "10", str(onera_path)]) == 0
+        """-v 10 (Pressure) runs without error."""
+        assert tecstats(["-v", "10", str(onera_path)]) == 0
 
     def test_zone_and_variable_filter(self, onera_path: Path) -> None:
-        """Combined -zone 2 -variable 10 runs without error."""
-        assert tecstats(["-zone", "2", "-variable", "10", str(onera_path)]) == 0
+        """Combined -z 2 -v 10 runs without error."""
+        assert tecstats(["-z", "2", "-v", "10", str(onera_path)]) == 0
 
     def test_csv_created_with_stats_suffix(self, tmp_path: Path) -> None:
-        """-csv creates <stem>_stats.csv next to the input file."""
+        """--csv creates <stem>_stats.csv next to the input file."""
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
-        assert tecstats(["-csv", str(src)]) == 0
+        assert tecstats(["--csv", str(src)]) == 0
         assert (tmp_path / "Onera_stats.csv").exists()
 
     def test_csv_zone_suffix(self, tmp_path: Path) -> None:
-        """-csv -zone N produces <stem>_zone_N_stats.csv."""
+        """--csv -z N produces <stem>_zone_N_stats.csv."""
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
-        assert tecstats(["-csv", "-zone", "1", str(src)]) == 0
+        assert tecstats(["--csv", "-z", "1", str(src)]) == 0
         assert (tmp_path / "Onera_zone_1_stats.csv").exists()
 
     def test_csv_variable_suffix(self, tmp_path: Path) -> None:
-        """-csv -variable N produces <stem>_var_N_stats.csv."""
+        """--csv -v N produces <stem>_var_N_stats.csv."""
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
-        assert tecstats(["-csv", "-variable", "10", str(src)]) == 0
+        assert tecstats(["--csv", "-v", "10", str(src)]) == 0
         assert (tmp_path / "Onera_var_10_stats.csv").exists()
 
     def test_csv_zone_and_variable_suffix(self, tmp_path: Path) -> None:
         """Combined filters produce <stem>_zone_N_var_M_stats.csv."""
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
-        assert tecstats(["-csv", "-zone", "2", "-variable", "10", str(src)]) == 0
+        assert tecstats(["--csv", "-z", "2", "-v", "10", str(src)]) == 0
         assert (tmp_path / "Onera_zone_2_var_10_stats.csv").exists()
 
     def test_csv_header_and_data_rows(self, tmp_path: Path) -> None:
         """CSV has the correct header and 36 data rows (2 zones × 18 vars)."""
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
-        tecstats(["-csv", str(src)])
+        tecstats(["--csv", str(src)])
         lines = (tmp_path / "Onera_stats.csv").read_text(encoding="utf-8").splitlines()
         expected_header = (
             "zone_num,zone_title,var_num,var_name,min,max,mean,std,location,note"
@@ -1176,7 +1176,7 @@ class TestTecstats:
         """Zone title column contains the expected zone names."""
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
-        tecstats(["-csv", str(src)])
+        tecstats(["--csv", str(src)])
         content = (tmp_path / "Onera_stats.csv").read_text(encoding="utf-8")
         assert "FluidVolume" in content
         assert "WingSurface" in content
@@ -1186,7 +1186,7 @@ class TestTecstats:
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
         (tmp_path / "Onera_stats.csv").touch()
-        assert tecstats(["-csv", str(src)]) == 1
+        assert tecstats(["--csv", str(src)]) == 1
 
     def test_csv_force_overwrites_existing(self, tmp_path: Path) -> None:
         """--force replaces an existing CSV with fresh content."""
@@ -1194,7 +1194,7 @@ class TestTecstats:
         shutil.copy(_ONERA["szplt"], src)
         stale = tmp_path / "Onera_stats.csv"
         stale.write_text("stale", encoding="utf-8")
-        ret = tecstats(["-csv", "--force", str(src)])
+        ret = tecstats(["--csv", "--force", str(src)])
         assert ret == 0
         assert stale.read_text(encoding="utf-8") != "stale"
 
@@ -1254,7 +1254,7 @@ class TestSharingPreservation:
         back to real data while x/y/z/connectivity remap to output zone 1.
         """
         dst = tmp_path / f"extract_1_3{shared_path.suffix}"
-        ret = tecextract(["-zones", "1,3", "-o", str(dst), "--force", str(shared_path)])
+        ret = tecextract(["-z", "1,3", "-o", str(dst), "--force", str(shared_path)])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 2
@@ -1279,7 +1279,7 @@ class TestSharingPreservation:
         array that would corrupt or crash the output.
         """
         dst = tmp_path / f"extract_2_only{shared_path.suffix}"
-        ret = tecextract(["-zones", "2", "-o", str(dst), "--force", str(shared_path)])
+        ret = tecextract(["-z", "2", "-o", str(dst), "--force", str(shared_path)])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 1
@@ -1329,9 +1329,9 @@ class TestSharingPreservation:
             lambda tmp_path, src: (
                 tmp_path / "copy.szplt",
                 tecscale([
-                    "-variable",
+                    "-v",
                     "c",
-                    "-scale",
+                    "-s",
                     "1.0",
                     "-o",
                     str(tmp_path / "copy.szplt"),

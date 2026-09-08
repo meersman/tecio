@@ -14,28 +14,28 @@ corrective operation.
 
 .. code:: bash
 
-    tecstats [-h] [-zone INDEX] [-variable INDEX_OR_NAME] [-csv] [-f] PATH
+    tecstats [-h] [-z INDEX] [-v INDEX_OR_NAME] [--csv] [-f] PATH
 
 :Positional Arguments:
     ``PATH``
         Path to the input Tecplot file (``.plt``, ``.szplt``, or ``.dat``) to analyse.
 
 :Options:
-    ``-zone INDEX``
+    ``-z INDEX``, ``--zone INDEX``
         Restrict output to the zone at the given one-based index. If omitted, all zones
         are reported.
 
-    ``-variable INDEX_OR_NAME``
+    ``-v INDEX_OR_NAME``, ``--variable INDEX_OR_NAME``
         Restrict output to the variable at the given one-based index or exact variable
-        name (e.g. ``-variable 3`` or ``-variable pressure``). If omitted, all variables
+        name (e.g. ``-v 3`` or ``-v pressure``). If omitted, all variables
         are reported.
 
-    ``-csv``
+    ``--csv``
         Write statistics to a CSV file in addition to the terminal output. The filename
         is derived automatically from the input file stem with a ``_stats`` suffix,
         preceded by optional ``_zone_N`` and ``_var_N`` segments when the corresponding
         filters are active (the variable segment always uses the resolved index, even
-        when ``-variable`` was given by name). For example:
+        when ``-v``/``--variable`` was given by name). For example:
 
         .. list-table::
            :header-rows: 1
@@ -43,15 +43,15 @@ corrective operation.
 
            * - Command
              - Output filename
-           * - ``tecstats -csv flow.szplt``
+           * - ``tecstats --csv flow.szplt``
              - ``flow_stats.csv``
-           * - ``tecstats -csv -zone 2 flow.szplt``
+           * - ``tecstats --csv -z 2 flow.szplt``
              - ``flow_zone_2_stats.csv``
-           * - ``tecstats -csv -variable 3 flow.szplt``
+           * - ``tecstats --csv -v 3 flow.szplt``
              - ``flow_var_3_stats.csv``
-           * - ``tecstats -csv -variable pressure flow.szplt``
+           * - ``tecstats --csv -v pressure flow.szplt``
              - ``flow_var_3_stats.csv``
-           * - ``tecstats -csv -zone 2 -variable 3 flow.szplt``
+           * - ``tecstats --csv -z 2 -v 3 flow.szplt``
              - ``flow_zone_2_var_3_stats.csv``
 
     ``-f``, ``--force``
@@ -59,8 +59,8 @@ corrective operation.
         command exits with an error rather than silently clobbering an existing file.
 
 :Returns:
-    Statistics are written to standard output. If ``-csv`` is set, a CSV file is also
-    written to the same directory as the input file with an automatically derived
+    Statistics are written to standard output. If ``--csv`` is set, a CSV file is
+    also written to the same directory as the input file with an automatically derived
     name. Exit code is ``0`` on success and non-zero if the input file cannot be read,
     an invalid index is supplied, or the CSV file already exists and ``--force`` is not
     set.
@@ -72,25 +72,25 @@ Examples:
 
     Restrict to zone 2 only::
 
-        $ tecstats -zone 2 flow.szplt
+        $ tecstats -z 2 flow.szplt
 
     Restrict to variable 3 across all zones::
 
-        $ tecstats -variable 3 flow.szplt
+        $ tecstats -v 3 flow.szplt
 
     Restrict to a variable by name::
 
-        $ tecstats -variable pressure flow.szplt
+        $ tecstats -v pressure flow.szplt
 
     Write results to a CSV file::
 
-        $ tecstats -csv flow.szplt
+        $ tecstats --csv flow.szplt
 
     Call directly from a Python session::
 
         import tecio.cli.tecstats.main as tecstats
 
-        tecstats(["-zone", "2", "-variable", "3", "flow.szplt"])
+        tecstats(["-z", "2", "-v", "3", "flow.szplt"])
 
 See Also:
     * :mod:`tecio.cli.tecdump` - Inspect the full contents and metadata of a file,
@@ -140,15 +140,15 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "  Print stats for all zones and variables\n"
             "    $ tecstats <file>\n"
             "  Print stats for zone 2 only\n"
-            "    $ tecstats -zone 2 <file>\n"
+            "    $ tecstats -z 2 <file>\n"
             "  Print stats for variable 3 only\n"
-            "    $ tecstats -variable 3 <file>\n"
+            "    $ tecstats -v 3 <file>\n"
             "  Print stats for a variable by name\n"
-            "    $ tecstats -variable pressure <file>\n"
+            "    $ tecstats -v pressure <file>\n"
             "  Write results to a CSV file (auto-named from input stem)\n"
-            "    $ tecstats -csv <file>                 # <stem>_stats.csv\n"
+            "    $ tecstats --csv <file>                 # <stem>_stats.csv\n"
             "  CSV with zone/variable filter suffixes\n"
-            "    $ tecstats -csv -zone 2 -variable 3 <file>  # <stem>_zone_2_var_3_stats.csv\n"  # noqa: E501
+            "    $ tecstats --csv -z 2 -v 3 <file>  # <stem>_zone_2_var_3_stats.csv\n"
         ),
         formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
             prog, width=70, max_help_position=24
@@ -160,33 +160,35 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Input Tecplot file.",
     )
     parser.add_argument(
-        "-zone",
+        "-z",
+        "--zone",
         type=int,
         default=None,
         metavar="INDEX",
         help="1-based zone index to report. Default is all zones.",
     )
     parser.add_argument(
-        "-variable",
+        "-v",
+        "--variable",
         type=str,
         default=None,
         metavar="INDEX_OR_NAME",
         help=(
             "1-based variable index or exact variable name to report "
-            "(e.g. -variable 3 or -variable pressure). Default is all "
+            "(e.g. -v 3 or -v pressure). Default is all "
             "variables."
         ),
     )
     parser.add_argument(
-        "-csv",
+        "--csv",
         action="store_true",
         default=False,
         dest="write_csv",
         help=(
             "Write statistics to a CSV file. The filename is derived automatically "
             "from the input file stem with a _stats suffix always appended, preceded "
-            "by optional _zone_N and _var_N segments when -zone or -variable are "
-            "active (e.g. flow_zone_2_var_3_stats.csv)."
+            "by optional _zone_N and _var_N segments when -z/--zone or "
+            "-v/--variable are active (e.g. flow_zone_2_var_3_stats.csv)."
         ),
     )
     parser.add_argument(
@@ -207,11 +209,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def _resolve_variable(
     token: str | None, num_vars: int, var_names: list[str]
 ) -> int | None:
-    """Resolve a ``-variable`` token (an index or a name) into a 1-based index.
+    """Resolve a ``-v``/``--variable`` token (an index or a name) into a 1-based index.
 
     Args:
-        token: Raw ``-variable`` value from argparse, or ``None`` if the flag wasn't
-            given.
+        token: Raw ``-v``/``--variable`` value from argparse, or ``None`` if
+            the flag wasn't given.
         num_vars: Total variable count in the dataset, for range checks.
         var_names: Dataset variable names in order, for exact-match lookup.
 
@@ -266,7 +268,7 @@ def _build_csv_path(
         input_path: Path to the input Tecplot file.
         zone:       1-based zone filter index, or ``None``.
         variable:   Resolved 1-based variable filter index, or ``None``.
-            Always the *resolved* index, not the raw ``-variable`` value,
+            Always the *resolved* index, not the raw ``-v``/``--variable`` value,
             so a name-based filter still produces a short, filesystem-safe
             suffix (e.g. ``_var_3``, not ``_var_pressure``).
 

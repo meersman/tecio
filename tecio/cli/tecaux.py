@@ -41,7 +41,7 @@ mutually exclusive modes:
         one zone and one pair, so ``-z 1 A=1 -z 1 B=2`` sets both ``A`` and ``B`` on
         zone 1.
 
-    ``-v INDEX_OR_NAME KEY=VALUE``, ``--var INDEX_OR_NAME KEY=VALUE``
+    ``-v INDEX_OR_NAME KEY=VALUE``, ``--variable INDEX_OR_NAME KEY=VALUE``
         A ``name=value`` pair to set as variable-level auxiliary data on the variable
         given by a one-based index or a name (case-insensitive) -- or on every variable
         if the target is the literal word ``all``. Repeatable, same as ``-z``.
@@ -137,7 +137,7 @@ Examples:
               --zone 1 Case=A \
               --zone 1 Description=Wing \
               --zone 2 Case=B \
-              --var Pressure Units=Pa \
+              --variable Pressure Units=Pa \
               -o tagged.szplt flow.szplt
 
     Bulk metadata from a file, with one CLI override on top::
@@ -271,7 +271,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "-v",
-        "--var",
+        "--variable",
+        dest="var",
         action="append",
         nargs=2,
         default=None,
