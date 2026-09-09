@@ -40,14 +40,14 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Literal, overload
+from typing import Any, Literal, NamedTuple, overload
 
 import numpy as np
 import numpy.typing as npt
 
 from ._constants import FileType, ValueLocation, ZoneType
 from ._containers import ZoneList
-from ._dat_read import TecplotDatReader
+from ._dat_read import TecplotDatReader, _peek_dat_metadata
 from ._dat_write import TecplotDatWriter
 from ._plt_read import TecplotPltReader
 from ._plt_write import TecplotPltWriter
@@ -811,3 +811,252 @@ def open(
         raise ValueError(
             f"Unrecognised mode '{mode}'. Supported modes: 'r', 'w', 'x', 'a', 'a+'"
         )
+
+
+# --------------------------------------------------------------------------------------
+# Lightweight metadata queries
+# --------------------------------------------------------------------------------------
+
+
+def _validated_ext(path: str | os.PathLike) -> str:
+    """Return *path*'s lowercased extension, or raise if unsupported.
+
+    Example:
+        >>> _validated_ext("flow.szplt")
+        '.szplt'
+    """
+    ext = Path(path).suffix.lower()
+    if ext not in _HANDLERS:
+        raise ValueError(
+            f"Unsupported file extension: '{ext}'. Supported: {sorted(_HANDLERS)}"
+        )
+    return ext
+
+
+class ZoneSummary(NamedTuple):
+    """Per-zone metadata from a lightweight :func:`peek` query.
+
+    ``num_nodes``/``num_elements`` are ``None`` only for a DAT ordered zone whose header
+    omits I/J/K entirely (rare; relies on the reader inferring the point count from the
+    data itself, which a lightweight query never does). Every other case, and every
+    SZL/PLT zone, always has both.
+    """
+
+    title: str
+    zone_type: ZoneType
+    num_nodes: int | None
+    num_elements: int | None
+
+
+class FileSummary(NamedTuple):
+    """Whole-file metadata from :func:`peek`, with no variable data touched."""
+
+    title: str
+    file_type: FileType
+    variable_names: list[str]
+    zones: list[ZoneSummary]
+
+
+def get_variable_list(path: str | os.PathLike) -> list[str]:
+    """Return a file's variable names without reading any variable data.
+
+    For SZL and PLT this is already what a normal :func:`open` does, both formats
+    resolve dataset-level metadata (including variable names) up front without touching
+    data arrays, so this is a thin convenience wrapper for those two. DAT is different:
+    opening it normally always reads and numerically converts every value in the file,
+    so this function instead scans just the file's header text, several orders of
+    magnitude cheaper for a file with large data blocks.
+
+    Args:
+        path: Path to a ``.szplt``, ``.plt``/``.bin``, or ``.dat``/``.tec`` file.
+
+    Returns:
+        Variable names, in file order.
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+        ValueError: If the file extension is not recognized.
+
+    Example:
+        >>> get_variable_list("flow.szplt")
+        ['x', 'y', 'z', 'pressure']
+    """
+    ext = _validated_ext(path)
+    if ext in (".dat", ".tec"):
+        return _peek_dat_metadata(path).variable_names
+    with _HANDLERS[ext]["r"](str(path)) as r:
+        return list(r.variables)
+
+
+def get_zone_list(path: str | os.PathLike) -> list[str]:
+    """Return a file's zone titles without reading any variable data.
+
+    Same rationale as :func:`get_variable_list`: already cheap for SZL and PLT
+    (constructing a zone reader only resolves scalar metadata, never variable data),
+    so this is a thin wrapper for those; for DAT, uses a dedicated scan that skips
+    every data and connectivity block entirely.
+
+    Args:
+        path: Path to a ``.szplt``, ``.plt``/``.bin``, or ``.dat``/``.tec`` file.
+
+    Returns:
+        Zone titles, in file order. An unnamed zone contributes an empty string, not
+        a placeholder like ``"Zone 1"``.
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+        ValueError: If the file extension is not recognized.
+
+    Example:
+        >>> get_zone_list("flow.szplt")
+        ['FluidVolume', 'WingSurface']
+    """
+    ext = _validated_ext(path)
+    if ext in (".dat", ".tec"):
+        return [z.title for z in _peek_dat_metadata(path).zones]
+    with _HANDLERS[ext]["r"](str(path)) as r:
+        return [zone.title for zone in r.zones]
+
+
+def get_num_zones(path: str | os.PathLike) -> int:
+    """Return a file's zone count without reading any variable data.
+
+    Cheaper still than :func:`get_zone_list`: for SZL, a single scalar C-library
+    call with no zone objects constructed at all; for PLT and DAT, a count against
+    already-parsed/scanned header metadata.
+
+    Args:
+        path: Path to a ``.szplt``, ``.plt``/``.bin``, or ``.dat``/``.tec`` file.
+
+    Returns:
+        Number of zones in the file.
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+        ValueError: If the file extension is not recognized.
+
+    Example:
+        >>> get_num_zones("flow.szplt")
+        2
+    """
+    ext = _validated_ext(path)
+    if ext in (".dat", ".tec"):
+        return len(_peek_dat_metadata(path).zones)
+    with _HANDLERS[ext]["r"](str(path)) as r:
+        return r.num_zones
+
+
+def get_num_variables(path: str | os.PathLike) -> int:
+    """Return a file's variable count without reading any variable data.
+
+    Cheaper still than :func:`get_variable_list`: for SZL, a single scalar
+    C-library call.
+
+    Args:
+        path: Path to a ``.szplt``, ``.plt``/``.bin``, or ``.dat``/``.tec`` file.
+
+    Returns:
+        Number of variables in the dataset.
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+        ValueError: If the file extension is not recognized.
+
+    Example:
+        >>> get_num_variables("flow.szplt")
+        4
+    """
+    ext = _validated_ext(path)
+    if ext in (".dat", ".tec"):
+        return len(_peek_dat_metadata(path).variable_names)
+    with _HANDLERS[ext]["r"](str(path)) as r:
+        return r.num_vars
+
+
+def get_title(path: str | os.PathLike) -> str:
+    """Return a file's dataset title without reading any variable data.
+
+    Args:
+        path: Path to a ``.szplt``, ``.plt``/``.bin``, or ``.dat``/``.tec`` file.
+
+    Returns:
+        Dataset title string.
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+        ValueError: If the file extension is not recognized.
+
+    Example:
+        >>> get_title("flow.szplt")
+        'Onera M6 wing'
+    """
+    ext = _validated_ext(path)
+    if ext in (".dat", ".tec"):
+        return _peek_dat_metadata(path).title
+    with _HANDLERS[ext]["r"](str(path)) as r:
+        return r.title
+
+
+def get_file_type(path: str | os.PathLike) -> FileType:
+    """Return a file's :class:`~tecio.FileType` without reading any variable data.
+
+    Args:
+        path: Path to a ``.szplt``, ``.plt``/``.bin``, or ``.dat``/``.tec`` file.
+
+    Returns:
+        The file type (``FULL``, ``GRID``, or ``SOLUTION``).
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+        ValueError: If the file extension is not recognized.
+
+    Example:
+        >>> get_file_type("flow.szplt")
+        <FileType.FULL: 0>
+    """
+    ext = _validated_ext(path)
+    if ext in (".dat", ".tec"):
+        return _peek_dat_metadata(path).file_type
+    with _HANDLERS[ext]["r"](str(path)) as r:
+        return r.file_type
+
+
+def peek(path: str | os.PathLike) -> FileSummary:
+    """Return a file's title, file type, variable names, and per-zone summaries.
+
+    A single combined query covering everything :func:`get_variable_list`,
+    :func:`get_zone_list`, :func:`get_title`, and :func:`get_file_type` return, plus
+    each zone's type and size. For DAT, calling several of those functions
+    separately on the same file means scanning it that many times over, this
+    function scans once no matter how much of the summary is needed.
+
+    Args:
+        path: Path to a ``.szplt``, ``.plt``/``.bin``, or ``.dat``/``.tec`` file.
+
+    Returns:
+        Whole-file and per-zone metadata. See :class:`FileSummary` and
+        :class:`ZoneSummary`.
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+        ValueError: If the file extension is not recognized.
+
+    Example:
+        >>> summary = peek("flow.szplt")
+        >>> [z.title for z in summary.zones]
+        ['FluidVolume', 'WingSurface']
+    """
+    ext = _validated_ext(path)
+    if ext in (".dat", ".tec"):
+        meta = _peek_dat_metadata(path)
+        zones = [
+            ZoneSummary(z.title, z.zone_type, z.num_nodes, z.num_elements)
+            for z in meta.zones
+        ]
+        return FileSummary(meta.title, meta.file_type, meta.variable_names, zones)
+    with _HANDLERS[ext]["r"](str(path)) as r:
+        zones = [
+            ZoneSummary(zone.title, zone.zone_type, zone.num_nodes, zone.num_elements)
+            for zone in r.zones
+        ]
+        return FileSummary(r.title, r.file_type, list(r.variables), zones)

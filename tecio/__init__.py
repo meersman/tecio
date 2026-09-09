@@ -9,7 +9,7 @@ from importlib import metadata
 try:
     __version__ = metadata.version("tecio")
 except metadata.PackageNotFoundError:
-    __version__ = "0.3.2"
+    __version__ = "0.3.1"
 
 from . import cli, libtecio
 from ._constants import (
@@ -28,7 +28,20 @@ from ._constants import (
 from ._containers import VariableList, ZoneList
 from ._dat_read import TecplotDatReader
 from ._dat_write import TecplotDatWriter
-from ._io import AppendReadWrite, AppendWrite, open
+from ._io import (
+    AppendReadWrite,
+    AppendWrite,
+    FileSummary,
+    ZoneSummary,
+    get_file_type,
+    get_num_variables,
+    get_num_zones,
+    get_title,
+    get_variable_list,
+    get_zone_list,
+    open,
+    peek,
+)
 from ._plt_read import TecplotPltReader
 from ._plt_write import TecplotPltWriter
 from ._reader import (
@@ -82,6 +95,15 @@ del _cls
 __all__ = [
     "libtecio",
     "open",
+    "peek",
+    "get_variable_list",
+    "get_zone_list",
+    "get_num_zones",
+    "get_num_variables",
+    "get_title",
+    "get_file_type",
+    "FileSummary",
+    "ZoneSummary",
     "cli",
     "AppendWrite",
     "AppendReadWrite",

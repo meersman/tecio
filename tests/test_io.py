@@ -640,9 +640,187 @@ class TestOpenErrors:
             tecio.open(str(path), "a")
 
 
+# ===========================================================================
+# get_variable_list / get_zone_list
+# ===========================================================================
+
+
+class TestGetVariableAndZoneList:
+    """Tests for ``tecio.get_variable_list``/``tecio.get_zone_list``."""
+
+    @pytest.mark.parametrize("fmt", ["szplt", "plt", "dat"])
+    def test_matches_full_open(self, fmt: str, tmp_path: Path) -> None:
+        """Both functions agree with a full ``tecio.open()`` read, in every format."""
+        path = tmp_path / f"simple.{fmt}"
+        writer = {
+            "szplt": _write_simple_szplt,
+            "plt": _write_simple_plt,
+            "dat": _write_simple_dat,
+        }[fmt]
+        writer(path, n_zones=3)
+
+        assert tecio.get_variable_list(str(path)) == ["x", "c"]
+        assert tecio.get_zone_list(str(path)) == ["zone_1", "zone_2", "zone_3"]
+
+        with tecio.open(str(path), "r") as r:
+            assert tecio.get_variable_list(str(path)) == list(r.variables)
+            assert tecio.get_zone_list(str(path)) == [z.title for z in r.zones]
+
+    def test_dat_unnamed_zone_returns_empty_string(self, tmp_path: Path) -> None:
+        """A DAT zone with no ``T="..."`` contributes ``''``, not a placeholder."""
+        path = tmp_path / "untitled.dat"
+        path.write_text('TITLE="t"\nVARIABLES="x" "y"\nZONE I=2\n1.0 2.0\n3.0 4.0\n')
+        assert tecio.get_zone_list(str(path)) == [""]
+
+    def test_dat_multi_zone_no_ijk(self, tmp_path: Path) -> None:
+        """The point-count-inference legacy format doesn't confuse zone scanning."""
+        path = tmp_path / "no_ijk.dat"
+        path.write_text(
+            'TITLE="t"\nVARIABLES="x" "y"\n'
+            'ZONE T="First", F=point\n1.0 10.0\n2.0 20.0\n'
+            'ZONE T="Second", F=point\n100.0 1000.0\n200.0 2000.0\n'
+        )
+        assert tecio.get_zone_list(str(path)) == ["First", "Second"]
+        assert tecio.get_variable_list(str(path)) == ["x", "y"]
+
+    def test_dat_trailing_whitespace_line(self, tmp_path: Path) -> None:
+        """A trailing whitespace-only line after the last zone doesn't break scanning."""
+        path = tmp_path / "trailing.dat"
+        path.write_text('Title="t"\nVariables="X" "Y"\nZONE F=point\n1 2\n3 4\n    \n')
+        assert tecio.get_variable_list(str(path)) == ["X", "Y"]
+        assert tecio.get_zone_list(str(path)) == [""]
+
+    def test_unsupported_extension_raises(self, tmp_path: Path) -> None:
+        """An unrecognised extension raises :exc:`ValueError` for both functions."""
+        path = tmp_path / "data.nc"
+        path.touch()
+        with pytest.raises(ValueError, match="Unsupported"):
+            tecio.get_variable_list(str(path))
+        with pytest.raises(ValueError, match="Unsupported"):
+            tecio.get_zone_list(str(path))
+
+    def test_missing_file_raises(self, tmp_path: Path) -> None:
+        """A missing file raises :exc:`FileNotFoundError` for both functions."""
+        with pytest.raises(FileNotFoundError):
+            tecio.get_variable_list(str(tmp_path / "ghost.szplt"))
+        with pytest.raises(FileNotFoundError):
+            tecio.get_zone_list(str(tmp_path / "ghost.dat"))
+
+
 # ---------------------------------------------------------------------------
 # Direct execution
 # ---------------------------------------------------------------------------
+
+# ===========================================================================
+# get_num_zones / get_num_variables / get_title / get_file_type / peek
+# ===========================================================================
+
+
+class TestPeekAndScalarQueries:
+    """Tests for ``tecio.get_num_zones``/``get_num_variables``/``get_title``/
+    ``get_file_type``/``peek``."""
+
+    @pytest.mark.parametrize("fmt", ["szplt", "plt", "dat"])
+    def test_scalar_queries_match_full_open(self, fmt: str, tmp_path: Path) -> None:
+        """Every scalar query agrees with a full ``tecio.open()`` read."""
+        path = tmp_path / f"simple.{fmt}"
+        writer = {
+            "szplt": _write_simple_szplt,
+            "plt": _write_simple_plt,
+            "dat": _write_simple_dat,
+        }[fmt]
+        writer(path, n_zones=3)
+
+        assert tecio.get_num_zones(str(path)) == 3
+        assert tecio.get_num_variables(str(path)) == 2
+
+        with tecio.open(str(path), "r") as r:
+            assert tecio.get_title(str(path)) == r.title
+            assert tecio.get_file_type(str(path)) == r.file_type
+            assert tecio.get_num_zones(str(path)) == r.num_zones
+            assert tecio.get_num_variables(str(path)) == r.num_vars
+
+    @pytest.mark.parametrize("fmt", ["szplt", "plt", "dat"])
+    def test_peek_matches_full_open(self, fmt: str, tmp_path: Path) -> None:
+        """``peek()`` agrees with a full ``tecio.open()`` read, every field."""
+        path = tmp_path / f"simple.{fmt}"
+        writer = {
+            "szplt": _write_simple_szplt,
+            "plt": _write_simple_plt,
+            "dat": _write_simple_dat,
+        }[fmt]
+        writer(path, n_zones=2)
+
+        summary = tecio.peek(str(path))
+        with tecio.open(str(path), "r") as r:
+            assert summary.title == r.title
+            assert summary.file_type == r.file_type
+            assert summary.variable_names == list(r.variables)
+            assert [z.title for z in summary.zones] == [z.title for z in r.zones]
+            assert [z.zone_type for z in summary.zones] == [
+                z.zone_type for z in r.zones
+            ]
+            assert [z.num_nodes for z in summary.zones] == [
+                z.num_nodes for z in r.zones
+            ]
+            assert [z.num_elements for z in summary.zones] == [
+                z.num_elements for z in r.zones
+            ]
+
+    def test_peek_dat_fe_zone_dimensions(self, tmp_path: Path) -> None:
+        """An FE zone's node/element counts come straight from the header."""
+        path = tmp_path / "fe.dat"
+        path.write_text(
+            'TITLE="t"\nVARIABLES="x" "y"\n'
+            'ZONE T="quad", ZONETYPE=FEQUADRILATERAL, NODES=4, ELEMENTS=1, '
+            "DATAPACKING=POINT\n"
+            "0.0 0.0\n1.0 0.0\n1.0 1.0\n0.0 1.0\n1 2 3 4\n"
+        )
+        summary = tecio.peek(str(path))
+        assert len(summary.zones) == 1
+        z = summary.zones[0]
+        assert z.title == "quad"
+        assert z.zone_type == ZoneType.FEQUADRILATERAL
+        assert z.num_nodes == 4
+        assert z.num_elements == 1
+
+    def test_peek_dat_no_ijk_dimensions_are_none(self, tmp_path: Path) -> None:
+        """An ordered zone with no I/J/K reports unknown dimensions, not a guess."""
+        path = tmp_path / "no_ijk.dat"
+        path.write_text(
+            'TITLE="t"\nVARIABLES="x" "y"\nZONE T="z", F=point\n1.0 10.0\n2.0 20.0\n'
+        )
+        summary = tecio.peek(str(path))
+        assert summary.zones[0].num_nodes is None
+        assert summary.zones[0].num_elements is None
+
+    def test_unsupported_extension_raises(self, tmp_path: Path) -> None:
+        """An unrecognised extension raises :exc:`ValueError` for every query."""
+        path = tmp_path / "data.nc"
+        path.touch()
+        for fn in (
+            tecio.get_num_zones,
+            tecio.get_num_variables,
+            tecio.get_title,
+            tecio.get_file_type,
+            tecio.peek,
+        ):
+            with pytest.raises(ValueError, match="Unsupported"):
+                fn(str(path))
+
+    def test_missing_file_raises(self, tmp_path: Path) -> None:
+        """A missing file raises :exc:`FileNotFoundError` for every query."""
+        ghost = tmp_path / "ghost.szplt"
+        for fn in (
+            tecio.get_num_zones,
+            tecio.get_num_variables,
+            tecio.get_title,
+            tecio.get_file_type,
+            tecio.peek,
+        ):
+            with pytest.raises(FileNotFoundError):
+                fn(str(ghost))
+
 
 if __name__ == "__main__":
     import sys

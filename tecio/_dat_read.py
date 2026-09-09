@@ -14,8 +14,9 @@ and (for data values) PLT.
 from __future__ import annotations
 
 import contextlib
+import os
 import re
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 import numpy.typing as npt
@@ -297,6 +298,93 @@ def _next_token_is_value(text: str, i: int) -> bool:
     while j < n and text[j] in " \t":
         j += 1
     return not (j < n and text[j] == "=")
+
+
+def _determine_zone_type(kv: dict[str, str]) -> ZoneType:
+    """Determine a zone's type from its header key-value pairs.
+
+    Shared by the full parser and the metadata-only scanner so both agree on the same
+    modern/legacy keyword rules.
+
+    Two header dialects are supported:
+        * Modern: ``ZONETYPE=FEQuadrilateral, DATAPACKING=POINT``
+        * Legacy: ``F=FEPOINT, ET=QUADRILATERAL``
+
+    The FE-vs-ordered distinction comes from ``ZONETYPE`` (modern) or ``F``
+    (legacy). ``ET`` (element type) only ever appears on finite-element zones, so it
+    merely names the element *shape* once a zone is already known to be FE. Modern
+    keywords win when present.
+
+    Args:
+        kv: Zone header key-value pairs (leading ``ZONE`` keyword already stripped), as
+            returned by :func:`_kv_split`.
+
+    Returns:
+        The zone's type. Unlike the full parser, does not reject FEPOLYGON/FEPOLYHEDRON,
+        those just aren't readable for data, the header itself is perfectly legible.
+
+    Raises:
+        ValueError: If a legacy FE header (``F=FEPOINT``/``FEBLOCK``) is
+            missing the required ``ET`` keyword.
+
+    Example:
+        >>> _determine_zone_type({"T": '"z"', "I": "5"})
+        <ZoneType.ORDERED: ...>
+    """
+    legacy_is_fe: bool | None = None
+    if "F" in kv:
+        legacy_is_fe, _ = _parse_legacy_format(kv["F"])
+
+    if "ZONETYPE" in kv:
+        zt_raw = kv["ZONETYPE"].rstrip(",").strip().lower()
+        return _STR_TO_ZONETYPE.get(zt_raw, ZoneType.ORDERED)
+    elif legacy_is_fe is False:
+        return ZoneType.ORDERED
+    elif legacy_is_fe or "ET" in kv:
+        if "ET" not in kv:
+            raise ValueError(
+                "Legacy FE zone header specifies F=FEPOINT/FEBLOCK but is "
+                "missing the required ET (element type) keyword."
+            )
+        return _parse_legacy_element_type(kv["ET"])
+    else:
+        return ZoneType.ORDERED
+
+
+def _collect_zone_header_lines(tokens: _LineBuffer) -> list[str]:
+    """Collect a ZONE block's header lines, stopping before data begins.
+
+    Shared by the full parser and the metadata-only scanner (:func:`peek_dat_metadata`)
+    so both agree on exactly where a zone's header ends and its data starts.
+
+    Args:
+        tokens: Positioned at the ``ZONE`` line itself (not yet consumed).
+
+    Returns:
+        Raw header lines, including the leading ``ZONE`` keyword line.
+
+    Example:
+        >>> lines = _collect_zone_header_lines(tokens)
+    """
+    header_lines: list[str] = [tokens.next_stripped()]  # ZONE T=...
+    while tokens.has_more():
+        nxt = tokens.peek_stripped()
+        if not nxt:
+            tokens.next_stripped()
+            continue
+        nxt_upper = nxt.lstrip().upper()
+        # Stop at a new zone, top-level keyword, or the first data line.
+        if nxt_upper.split("=")[0].split()[0] == "ZONE":
+            break
+        if nxt_upper.startswith(("DATASETAUXDATA", "VARAUXDATA")):
+            break
+        first_ch = nxt.lstrip()[0] if nxt.lstrip() else ""
+        # A data line begins with a numeric token (covers leading-dot values such as
+        # ``.5`` and signed values such as ``-1.2e3``).
+        if first_ch in "0123456789+-.":
+            break
+        header_lines.append(tokens.next_stripped())
+    return header_lines
 
 
 def _kv_split(text: str) -> dict[str, str]:
@@ -1022,6 +1110,162 @@ class TecplotDatFEZoneReader(TecplotFEZoneReader):
         return TecplotDatAuxDataReader(self._aux_raw)
 
 
+class _DatZoneInfo(NamedTuple):
+    """Per-zone metadata from a cheap header-only scan."""
+
+    title: str
+    zone_type: ZoneType
+    num_nodes: int | None
+    num_elements: int | None
+
+
+class _DatMetadata(NamedTuple):
+    """Result of :func:`_peek_dat_metadata`."""
+
+    title: str
+    file_type: FileType
+    variable_names: list[str]
+    zones: list[_DatZoneInfo]
+
+
+_ZONE_LINE_RE = re.compile(r"^[ \t]*ZONE\b", re.IGNORECASE | re.MULTILINE)
+_ZONE_DATA_START_RE = re.compile(r"^[ \t]*[0-9+\-.]", re.MULTILINE)
+
+
+def _peek_dat_metadata(path: str | os.PathLike) -> _DatMetadata:
+    """Scan a DAT file's title, variable names, and per-zone metadata only.
+
+    Unlike opening the file normally, never converts a single data value to a number. A
+    single bulk regex pass across the whole file finds every zone header's starting
+    line; each zone's metadata is then extracted from just the handful of lines between
+    that start and the next one (or EOF), reusing the same header-parsing logic the real
+    parser uses, so a zone header can still span multiple lines correctly. The data and
+    connectivity blocks in between are never read at all. A line-by-line Python scan
+    over the whole file (rather than this bulk approach) was tried first and measured
+    slower than a full parse for large files, string-heavy per-line loops in Python
+    don't beat NumPy's bulk numeric parsing, even when doing less work; a single C-level
+    regex pass over the whole file does.
+
+    A zone's ``num_nodes``/``num_elements`` are ``None`` only for the one case they
+    genuinely can't be determined without reading data: an ordered zone whose header
+    omits I/J/K entirely, relying on the reader to infer the point count from the data
+    itself (see :meth:`TecplotDatReader._infer_ordered_point_count`). Every other case,
+    including FE zones, always states its node/element counts directly in the header
+    text.
+
+    Args:
+        path: Path to a ``.dat``/``.tec`` file.
+
+    Returns:
+        Title, file type, variable names, and per-zone metadata (in file order).
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+
+    Example:
+        >>> meta = _peek_dat_metadata("flow.dat")
+        >>> [z.title for z in meta.zones]
+        ['FluidVolume', 'WingSurface']
+    """
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        text = fh.read()
+
+    zone_starts = [m.start() for m in _ZONE_LINE_RE.finditer(text)]
+
+    # File header: everything before the first zone (or the whole file, if it somehow
+    # has none). Mirrors TecplotDatReader._parse_file_header, kept separate rather than
+    # shared with it since that method also populates dataset aux data, which this
+    # function deliberately doesn't scan for. Just a handful of lines regardless of file
+    # size, so no bulk-regex treatment needed here.
+    header_end = zone_starts[0] if zone_starts else len(text)
+    tokens = _LineBuffer(text[:header_end].splitlines(keepends=True))
+
+    title = ""
+    file_type = FileType.FULL
+    variable_names: list[str] = []
+    while tokens.has_more():
+        line = tokens.peek_stripped()
+        if not line:
+            tokens.next_stripped()
+            continue
+        upper_key = (
+            line.split("=")[0].strip().upper() if "=" in line else line.strip().upper()
+        )
+        tokens.next_stripped()
+
+        if upper_key == "TITLE":
+            rhs = line.split("=", 1)[1].strip() if "=" in line else ""
+            title = _unquote(rhs)
+        elif upper_key == "FILETYPE":
+            rhs = line.split("=", 1)[1].strip() if "=" in line else ""
+            file_type = _STR_TO_FILETYPE.get(rhs.strip().lower(), FileType.FULL)
+        elif upper_key == "VARIABLES":
+            rhs = line.split("=", 1)[1].strip() if "=" in line else ""
+            names = _extract_quoted_strings(rhs)
+            while tokens.has_more():
+                nxt = tokens.peek_stripped()
+                if not nxt:
+                    tokens.next_stripped()
+                    continue
+                if nxt.lstrip().startswith('"'):
+                    names.extend(_extract_quoted_strings(tokens.next_stripped()))
+                elif "=" not in nxt.split("#")[0]:
+                    tokens.next_stripped()
+                else:
+                    break
+            variable_names = names
+
+    # Zones: each zone's header lives in the small window between its start and the next
+    # zone's start (or EOF); _collect_zone_header_lines only ever looks at the first
+    # handful of lines in that window before hitting what looks like data, so this stays
+    # cheap regardless of how much data actually follows.
+    zones: list[_DatZoneInfo] = []
+    for i, start in enumerate(zone_starts):
+        end = zone_starts[i + 1] if i + 1 < len(zone_starts) else len(text)
+        # Bounded search directly on the original string
+        data_match = _ZONE_DATA_START_RE.search(text, start, end)
+        header_end = data_match.start() if data_match else end
+        window_tokens = _LineBuffer(text[start:header_end].splitlines(keepends=True))
+        header_lines = _collect_zone_header_lines(window_tokens)
+        header_text = " ".join(header_lines)
+        m_zone = re.match(r"(?i)^ZONE\s*", header_text)
+        if m_zone:
+            header_text = header_text[m_zone.end() :]
+        kv = _kv_split(header_text)
+        zone_title = _unquote(kv.get("T", ""))
+
+        try:
+            zone_type = _determine_zone_type(kv)
+        except ValueError:
+            # A legacy header F=FEPOINT with no ET reports as unknown
+            zones.append(_DatZoneInfo(zone_title, ZoneType.ORDERED, None, None))
+            continue
+
+        num_nodes: int | None
+        num_elements: int | None
+        if zone_type == ZoneType.ORDERED:
+            if "I" not in kv and "J" not in kv and "K" not in kv:
+                # Point count only knowable by reading data -> report unknown
+                num_nodes = None
+                num_elements = None
+            else:
+                zi = int(kv.get("I", "1") or "1")
+                zj = int(kv.get("J", "1") or "1")
+                zk = int(kv.get("K", "1") or "1")
+                num_nodes = zi * zj * zk
+                num_elements = max(zi - 1, 1) * max(zj - 1, 1) * max(zk - 1, 1)
+        else:
+            # FE zones (including FEPOLYGON/FEPOLYHEDRON, which the full parser can't
+            # read data for, but whose header is just as legible as any other zone's)
+            # always state counts directly.
+            num_nodes = int(kv.get("NODES", kv.get("N", "0")) or "0")
+            num_elements = int(kv.get("ELEMENTS", kv.get("E", "0")) or "0")
+
+        zones.append(_DatZoneInfo(zone_title, zone_type, num_nodes, num_elements))
+
+    return _DatMetadata(title, file_type, variable_names, zones)
+
+
 class TecplotDatReader(TecplotReader):
     """Reader for Tecplot ASCII DAT files.
 
@@ -1143,8 +1387,10 @@ class TecplotDatReader(TecplotReader):
 
         while tokens.has_more():
             line = tokens.peek_stripped()
+            if not line:
+                tokens.next_stripped()
+                continue
             upper = line.upper()
-            # if upper.startswith("ZONE"):
             if upper.lstrip().split("=")[0].split()[0] == "ZONE":
                 self._parse_zone(tokens)
             elif upper.startswith("DATASETAUXDATA"):
@@ -1232,7 +1478,9 @@ class TecplotDatReader(TecplotReader):
     def _infer_ordered_point_count(tokens: _LineBuffer, active_count: int) -> int:
         """Infer an ordered zone's point count when I/J/K are all omitted.
 
-        Peeks ahead counting numeric tokens up to the next zone/keyword boundary or end
+        Some legacy exporters write a bare ``ZONE F=POINT`` header with no dimensions at
+        all, relying on the reader to count data rows itself.  Peeks ahead (never
+        consuming) counting numeric tokens up to the next zone/keyword boundary or end
         of file, using the same boundary rule :meth:`_parse_zone` already uses to know
         where a header ends and data begins, then restores the original position so the
         real read (later, driven by the now-known count) starts from the same place.
@@ -1283,25 +1531,7 @@ class TecplotDatReader(TecplotReader):
         """
         # -- Collect header lines ------------------------------------------------------
 
-        header_lines: list[str] = [tokens.next_stripped()]  # ZONE T=...
-
-        while tokens.has_more():
-            nxt = tokens.peek_stripped()
-            if not nxt:
-                tokens.next_stripped()
-                continue
-            nxt_upper = nxt.lstrip().upper()
-            # Stop at a new zone, top-level keyword, or the first data line.
-            if nxt_upper.split("=")[0].split()[0] == "ZONE":
-                break
-            if nxt_upper.startswith(("DATASETAUXDATA", "VARAUXDATA")):
-                break
-            first_ch = nxt.lstrip()[0] if nxt.lstrip() else ""
-            # A data line begins with a numeric token (covers leading-dot values such as
-            # ``.5`` and signed values such as ``-1.2e3``).
-            if first_ch in "0123456789+-.":
-                break
-            header_lines.append(tokens.next_stripped())
+        header_lines = _collect_zone_header_lines(tokens)
 
         header_text = " ".join(header_lines)
 
@@ -1320,38 +1550,13 @@ class TecplotDatReader(TecplotReader):
 
         # -- Determine zone type and data packing --------------------------------------
         #
-        # Two header dialects are supported:
-        #   * Modern:  ZONETYPE=FEQuadrilateral, DATAPACKING=POINT
-        #   * Legacy:  F=FEPOINT, ET=QUADRILATERAL
-        #
-        # The FE-vs-ordered distinction comes from ``ZONETYPE`` (modern) or ``F``
-        # (legacy).  ``ET`` (element type) only ever appears on finite-element zones —
-        # ordered/structured data has no elements — so it merely names the element
-        # *shape* once a zone is already known to be FE, and is ignored on ordered
-        # zones. Modern keywords win when present.
-        legacy_is_fe: bool | None = None
+        # See _determine_zone_type for the modern/legacy keyword rules this shares with
+        # the metadata-only scanner (peek_dat_metadata).
         legacy_packing: DataPacking | None = None
         if "F" in kv:
-            legacy_is_fe, legacy_packing = _parse_legacy_format(kv["F"])
+            _, legacy_packing = _parse_legacy_format(kv["F"])
 
-        if "ZONETYPE" in kv:
-            zt_raw = kv["ZONETYPE"].rstrip(",").strip().lower()
-            zone_type = _STR_TO_ZONETYPE.get(zt_raw, ZoneType.ORDERED)
-        elif legacy_is_fe is False:
-            # F=POINT/BLOCK: ordered zone. A stray ET (if any) does not apply.
-            zone_type = ZoneType.ORDERED
-        elif legacy_is_fe or "ET" in kv:
-            # Finite-element zone: F=FEPOINT/FEBLOCK, or an ET keyword with no F (some
-            # exporters omit F). The element shape comes from ET, which is then
-            # required.
-            if "ET" not in kv:
-                raise ValueError(
-                    "Legacy FE zone header specifies F=FEPOINT/FEBLOCK but is "
-                    "missing the required ET (element type) keyword."
-                )
-            zone_type = _parse_legacy_element_type(kv["ET"])
-        else:
-            zone_type = ZoneType.ORDERED
+        zone_type = _determine_zone_type(kv)
 
         if zone_type in _FE_POLY:
             raise ValueError(
@@ -1372,7 +1577,7 @@ class TecplotDatReader(TecplotReader):
 
         if zone_type == ZoneType.ORDERED:
             if "I" not in kv and "J" not in kv and "K" not in kv:
-                # Infer the point count from the data that follows
+                # Infer point count
                 active_count = self.num_vars - len(passive_set) - len(share_map)
                 num_nodes = self._infer_ordered_point_count(tokens, active_count)
                 I = num_nodes  # noqa E741
