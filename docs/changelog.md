@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+```{include} changelog/v0.3.3.md
+```
+
+---
+
 ```{include} changelog/v0.3.2.md
 ```
 
@@ -61,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/meersman/tecio/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/meersman/tecio/compare/v0.3.3...HEAD
 
 ```{toctree}
 :hidden:
