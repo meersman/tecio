@@ -9,14 +9,18 @@ time-step sequences, solution times can be assigned automatically from a start t
 either a fixed interval or an end time; each zone also gets a strand ID matching its
 1-based position within its source file, so the same physical block (e.g. a wing zone
 present in every timestep) shares one strand across the whole sequence and can be
-animated as a single, continuous entity in the Tecplot GUI.
+animated as a single, continuous entity in the Tecplot GUI. Merged zones get
+``SourceFile``/``SourceFileName`` aux data record of the source file and path. Grid data
+can also be detected and shared across zones with matching structure instead of
+duplicated in every merged zone.
 
 :Usage:
 
 .. code:: bash
 
     tecmerge [-h] -o PATH [-f] [--title STRING] [--assign-time-strands]
-             [-s VALUE] [-d VALUE | -e VALUE] [--strand ID] FILE [FILE ...]
+             [-s VALUE] [-d VALUE | -e VALUE] [--strand ID] [--merge-grid [LIST]]
+             FILE [FILE ...]
 
 :Positional Arguments:
     ``FILE [FILE ...]``
@@ -63,6 +67,26 @@ animated as a single, continuous entity in the Tecplot GUI.
         per-zone-position assignment described under ``--assign-time-strands``. Has no
         effect without ``--assign-time-strands``.
 
+    ``--merge-grid [LIST]``
+        Detect and share grid data (coordinate variables, and for FE zones,
+        connectivity) across zones with matching zone type and dimensions, instead of
+        writing it fresh in every merged zone. Zones are compared by a
+        ``(zone_type, num_nodes, num_elements)`` signature; the first zone with a given
+        signature (in file, then zone, order) writes its grid fresh, and every later
+        zone with a matching signature, whether from the same file or a different one,
+        shares from it instead. This is not a rigorous check that the underlying data
+        is actually identical, just that it plausibly could be, a false match (e.g. two
+        genuinely different blocks that happen to share dimensions) would silently
+        share the wrong grid.
+
+        Given with no value, grid variables are found automatically by name (``x``,
+        ``X``, ``x-coordinate``, ``xgrid``, and similar common names for X/Y/Z). Given a
+        comma-separated list of 1-based indices or exact names into the union variable
+        list instead (e.g. ``--merge-grid x,y,z`` or ``--merge-grid 1,2,3``), only those
+        variables are treated as the grid; indices and names cannot be mixed in the same
+        list. Solution variables are never affected either way, only variables
+        explicitly identified as the grid are ever shared.
+
 :Returns:
     A new Tecplot file written to the output path containing all zones from every input
     file. Variables absent from a source file are written as passive. Exit code is ``0``
@@ -89,6 +113,16 @@ Examples:
 
         $ tecmerge --assign-time-strands -s 0.0 -d 0.1 --strand 1 \\
                    "step_*.szplt" -o transient.szplt
+
+    Merge a multiblock time series, sharing each block's grid across timesteps
+    instead of duplicating it::
+
+        $ tecmerge --assign-time-strands -s 0.0 -d 0.1 --merge-grid \\
+                   "step_*.szplt" -o transient.szplt
+
+    Same, but only "x" and "y" are grid variables (a 2-D case with no "z")::
+
+        $ tecmerge --merge-grid x,y "step_*.szplt" -o transient.szplt
 
     Call directly from a Python session::
 
@@ -122,6 +156,7 @@ from .. import (
     TecplotSzlWriter,
     TecplotWriter,
     TecplotZoneReader,
+    ValueLocation,
     ZoneType,
 )
 from .. import open as tecio_open
@@ -251,12 +286,179 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
 
+    # Grid sharing
+    parser.add_argument(
+        "--merge-grid",
+        nargs="?",
+        const="__auto__",
+        default=None,
+        type=str,
+        metavar="LIST",
+        help=(
+            "Detect and share the grid (coordinate variables, and connectivity for FE "
+            "zones) with matching zone type and dimensions. To manually specify grid "
+            "coordinates provide a comma-separated list of 1-based indices or exact "
+            "variable names (e.g.  -merge-grid x,y,z or -merge-grid 1,2,3)."
+        ),
+    )
+
     return parser.parse_args(argv)
 
 
 # --------------------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------------------
+
+# Guesses of grid variable names automatic grid variable detection for merging
+_AXIS_SYNONYMS: dict[str, frozenset[str]] = {
+    "x": frozenset({
+        "x",
+        "x-coordinate",
+        "x coordinate",
+        "coordinate x",
+        "coord-x",
+        "coordx",
+        "xcoord",
+        "x_coord",
+        "xgrid",
+        "x-grid",
+        "x_grid",
+    }),
+    "y": frozenset({
+        "y",
+        "y-coordinate",
+        "y coordinate",
+        "coordinate y",
+        "coord-y",
+        "coordy",
+        "ycoord",
+        "y_coord",
+        "ygrid",
+        "y-grid",
+        "y_grid",
+    }),
+    "z": frozenset({
+        "z",
+        "z-coordinate",
+        "z coordinate",
+        "coordinate z",
+        "coord-z",
+        "coordz",
+        "zcoord",
+        "z_coord",
+        "zgrid",
+        "z-grid",
+        "z_grid",
+    }),
+}
+
+
+def _autodetect_grid_variables(names: list[str]) -> list[int]:
+    """Return the 1-based indices in *names* that look like X/Y/Z coordinates.
+
+    Matched by exact name (case-insensitive, trimmed) against
+    :data:`_AXIS_SYNONYMS`, checked in X, Y, Z order; an axis with no match among
+    *names* is simply omitted rather than guessed at positionally, unlike the
+    ParaView plugin's coordinate resolution, an incorrect guess here would silently
+    mishandle real data instead of just looking odd on screen, so this only
+    returns indices it's actually confident in.
+
+    Example:
+        >>> _autodetect_grid_variables(["x-grid", "y", "pressure"])
+        [1, 2]
+    """
+    indices: list[int] = []
+    for axis in ("x", "y", "z"):
+        synonyms = _AXIS_SYNONYMS[axis]
+        for i, name in enumerate(names, start=1):
+            if name.strip().lower() in synonyms:
+                indices.append(i)
+                break
+    return indices
+
+
+def _parse_index_or_name_list(value: str) -> list[int | str]:
+    """Parse a comma-separated string of 1-based integers and/or variable names.
+
+    Each token is parsed as an integer where possible; anything else is kept as a
+    name string, resolved against the union variable list once it's known.
+
+    Args:
+        value: String like ``"1,2,3"`` or ``"x,y,z"``.
+
+    Returns:
+        List of ``int`` (1-based index) and/or ``str`` (variable name) tokens, in
+        the order given.
+
+    Example:
+        >>> _parse_index_or_name_list("x,y,z")
+        ['x', 'y', 'z']
+    """
+    tokens: list[int | str] = []
+    for raw in value.split(","):
+        token = raw.strip()
+        try:
+            tokens.append(int(token))
+        except ValueError:
+            tokens.append(token)
+    return tokens
+
+
+def _resolve_grid_variable_indices(
+    explicit: str | None, union_vars: list[str]
+) -> set[int] | None:
+    """Resolve ``--merge-grid``'s value into a set of 1-based union indices.
+
+    Args:
+        explicit: ``None`` if ``--merge-grid`` wasn't given at all (the feature is off);
+            the sentinel ``"__auto__"`` if given with no value (detect by name, see
+            :func:`_autodetect_grid_variables`); otherwise a comma-separated list of
+            indices and/or names, all of one kind, not mixed (matching
+            ``-v``/``--variables`` elsewhere in this project).
+        union_vars: The merge's full union variable list.
+
+    Returns:
+        1-based indices into *union_vars* eligible for grid sharing, or ``None`` if
+        ``--merge-grid`` wasn't given at all. An empty set (rather than ``None``) means
+        the feature is on but nothing was found/specified to share, --merge-grid then
+        has no effect.
+
+    Raises:
+        ValueError: If an explicit index is out of range, an explicit name isn't in
+            *union_vars*, or indices and names are mixed in the same list.
+    """
+    if explicit is None:
+        return None
+    if explicit == "__auto__":
+        return set(_autodetect_grid_variables(union_vars))
+
+    tokens = _parse_index_or_name_list(explicit)
+    has_int = any(isinstance(t, int) for t in tokens)
+    has_name = any(isinstance(t, str) for t in tokens)
+    if has_int and has_name:
+        raise ValueError(
+            "--merge-grid indices and names cannot be mixed in the same list; "
+            f"use all indices or all names, got: {explicit!r}."
+        )
+
+    resolved: set[int] = set()
+    for token in tokens:
+        if isinstance(token, int):
+            if token < 1 or token > len(union_vars):
+                raise ValueError(
+                    f"--merge-grid variable index {token} out of range "
+                    f"[1, {len(union_vars)}]."
+                )
+            resolved.add(token)
+        else:
+            try:
+                resolved.add(union_vars.index(token) + 1)
+            except ValueError:
+                raise ValueError(
+                    f"--merge-grid variable name {token!r} not found; available "
+                    f"names: {', '.join(union_vars)}."
+                ) from None
+    return resolved
 
 
 def _expand_inputs(patterns: list[str]) -> list[Path]:
@@ -338,6 +540,9 @@ def _write_zone(
     solution_time: float | None,
     strand_id: int | None,
     zone_index_map: dict[int, int],
+    source_path: Path,
+    grid_var_indices: set[int] | None,
+    grid_reference: int | None,
 ) -> None:
     """Write one zone to *writer* using the reconciled variable list.
 
@@ -348,12 +553,24 @@ def _write_zone(
         writer:           Open writer instance.
         zone:             Source zone reader.
         union_vars:       Full union variable name list.
-        local_index_map:  Map from union index -> local 0-based var index
-                          (``None`` = not present in this file).
+        local_index_map:  Map from union index -> local 0-based var index (``None`` =
+                          not present in this file).
         solution_time:    Override solution time, or ``None`` to keep original.
         strand_id:        Override strand ID, or ``None`` to keep original.
         zone_index_map:   Map 1-based source zone to 1-based output zone index for
                           variable and connectivity sharing.
+        source_path:      Input file this zone came from, recorded as zone-level aux
+                          data (``SourceFile``, ``SourceFileName``) on every merged
+                          zone.
+        grid_var_indices: 1-based union indices of the ``--merge-grid`` grid variables,
+                          or ``None`` if the feature is off.
+        grid_reference:   1-based output zone index to share this zone's grid variables
+                          (and, for FE zones, connectivity) from, if an earlier zone
+                          with a matching (zone_type, num_nodes, num_elements) signature
+                          was already written, else ``None`` (this zone's grid is
+                          written fresh; the caller is responsible for registering its
+                          signature afterward). Ignored entirely when *grid_var_indices*
+                          is ``None``.
     """
     zt = zone.zone_type
 
@@ -362,7 +579,22 @@ def _write_zone(
     passive_vars: list[bool] = []
     var_sharing: list[int] = []
 
-    for local_idx in local_index_map:
+    for union_i, local_idx in enumerate(local_index_map, start=1):
+        is_grid_var = grid_var_indices is not None and union_i in grid_var_indices
+
+        if is_grid_var and grid_reference is not None:
+            # An earlier zone with the same zone_type/num_nodes/num_elements already
+            # wrote this grid so share rather than duplicate
+            passive_vars.append(False)
+            var_sharing.append(grid_reference)
+            if local_idx is not None:
+                loc = zone.variables[local_idx].value_location
+            else:
+                loc = ValueLocation.NODAL
+            active_locs.append(loc)
+            active_data.append(np.array([], dtype=np.float32))
+            continue
+
         if local_idx is None:
             # Variable not in this file -- mark passive.
             passive_vars.append(True)
@@ -410,9 +642,13 @@ def _write_zone(
         if not is_p and sv == 0
     ]
 
-    zone_aux: dict[str, str] | None = None
+    zone_aux: dict[str, str] = {}
     if len(zone.auxdata) > 0:
         zone_aux = dict(zone.auxdata.items())
+    # Always added, source provenance is cheap to record and easy to ignore in the
+    # Tecplot GUI if unwanted
+    zone_aux["SourceFile"] = str(source_path)
+    zone_aux["SourceFileName"] = source_path.name
 
     s_time = solution_time if solution_time is not None else zone.solution_time
     s_id = strand_id if strand_id is not None else zone.strand_id
@@ -430,8 +666,14 @@ def _write_zone(
     if isinstance(zone, TecplotOrderedZoneReader):
         writer.write_ordered_zone(data=writer_data, **common_kw)
     elif isinstance(zone, TecplotFEZoneReader):
-        con_src = zone.shared_connectivity
-        con_remapped = zone_index_map.get(con_src) if con_src is not None else None
+        if grid_var_indices is not None and grid_reference is not None:
+            # Share connectivity from the same reference zone as the grid variables, a
+            # matching (zone_type, num_nodes, num_elements) signature implies the same
+            # mesh, node map included.
+            con_remapped: int | None = grid_reference
+        else:
+            con_src = zone.shared_connectivity
+            con_remapped = zone_index_map.get(con_src) if con_src is not None else None
         fe_kw = common_kw.copy()
 
         # Face-neighbor connections
@@ -530,6 +772,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         print(f"\nUnion variable list ({n_union}): {union_vars}")
 
+        try:
+            grid_var_indices = _resolve_grid_variable_indices(
+                args.merge_grid, union_vars
+            )
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        if grid_var_indices is not None:
+            grid_names = [union_vars[i - 1] for i in sorted(grid_var_indices)]
+            print(f"Grid sharing enabled for variables: {grid_names}")
+
         # Report any variables that will be passive in some files.
         for fi, (_reader, imap) in enumerate(zip(readers, index_maps, strict=False)):
             missing = [union_vars[ui] for ui, li in enumerate(imap) if li is None]
@@ -566,6 +819,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 writer.add_auxvar_dict(auxvar)
 
             total_zones = 0
+            # Persists sharing registry across every input file for merge grid option
+            signature_registry: dict[tuple[ZoneType, int, int], int] = {}
             for fi, (reader, imap) in enumerate(zip(readers, index_maps, strict=False)):
                 sol_time = times[fi] if times is not None else None
 
@@ -595,6 +850,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     else:
                         s_id = zone_num
 
+                    grid_reference: int | None = None
+                    signature: tuple[ZoneType, int, int] | None = None
+                    if grid_var_indices is not None and isinstance(
+                        zone, (TecplotOrderedZoneReader, TecplotFEZoneReader)
+                    ):
+                        signature = (zt, zone.num_nodes, zone.num_elements)
+                        grid_reference = signature_registry.get(signature)
+
                     _write_zone(
                         writer=writer,
                         zone=zone,
@@ -603,8 +866,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                         solution_time=sol_time,
                         strand_id=s_id,
                         zone_index_map=zone_index_map,
+                        source_path=input_paths[fi],
+                        grid_var_indices=grid_var_indices,
+                        grid_reference=grid_reference,
                     )
                     zone_index_map[zone_num] = writer.current_zone
+                    if signature is not None and grid_reference is None:
+                        # First zone with this signature should write grid, every later
+                        # zone with a matching signature shares from it
+                        signature_registry[signature] = writer.current_zone
                     total_zones += 1
 
         # Close all readers

@@ -170,6 +170,9 @@ _AXIS_SYNONYMS: dict[str, frozenset[str]] = {
         "coordx",
         "xcoord",
         "x_coord",
+        "xgrid",
+        "x-grid",
+        "x_grid",
     }),
     "y": frozenset({
         "y",
@@ -180,6 +183,9 @@ _AXIS_SYNONYMS: dict[str, frozenset[str]] = {
         "coordy",
         "ycoord",
         "y_coord",
+        "ygrid",
+        "y-grid",
+        "y_grid",
     }),
     "z": frozenset({
         "z",
@@ -190,6 +196,9 @@ _AXIS_SYNONYMS: dict[str, frozenset[str]] = {
         "coordz",
         "zcoord",
         "z_coord",
+        "zgrid",
+        "z-grid",
+        "z_grid",
     }),
 }
 
