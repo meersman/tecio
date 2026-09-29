@@ -580,58 +580,43 @@ def _collect_all_aux(reader: TecplotReader) -> dict[str, Any]:
 
 def _process_zone(
     zone: TecplotZoneReader,
-) -> tuple[list[np.ndarray], list[Any], list[bool], list[int], dict[str, str]]:
+) -> tuple[list[np.ndarray], list[Any], set[str], dict[str, int], dict[str, str]]:
     """Copy one zone's variable data/metadata verbatim.
 
     Sharing references are passed through unchanged: this tool writes every zone in the
     same order as the source, so source zone N is always output zone N.
 
     Returns:
-        A 5-tuple: ``(writer_data, writer_locs, passive_vars, var_sharing,
-        existing_aux)``, where the first two are filtered to active, non-shared
-        variables only.
+        A 5-tuple: ``(data, value_locations, passive_vars, var_sharing,
+        existing_aux)``, where the first two cover active, non-shared variables only.
     """
-    active_data: list[np.ndarray] = []
-    active_locs: list[Any] = []
-    passive_vars: list[bool] = []
-    var_sharing: list[int] = []
+    data: list[np.ndarray] = []
+    value_locations: list[Any] = []
+    passive_vars: set[str] = set()
+    var_sharing: dict[str, int] = {}
 
     for var in zone.variables:
-        is_passive = var.is_passive()
         sv = var.shared_zone  # 1-based source zone index, or None
-        share_int = sv if sv is not None else 0
 
-        passive_vars.append(is_passive)
-        var_sharing.append(share_int)
-        active_locs.append(var.value_location)
-
-        if is_passive or share_int != 0:
-            active_data.append(np.array([], dtype=np.float32))
+        if var.is_passive():
+            passive_vars.add(var.name)
+            continue
+        if sv is not None:
+            var_sharing[var.name] = sv
             continue
 
         arr = var.values
         if arr is None or arr.size == 0:
-            passive_vars[-1] = True
-            active_data.append(np.array([], dtype=np.float32))
+            passive_vars.add(var.name)
         else:
-            active_data.append(arr)
-
-    writer_data = [
-        arr
-        for arr, is_p, sv in zip(active_data, passive_vars, var_sharing, strict=False)
-        if not is_p and sv == 0
-    ]
-    writer_locs = [
-        loc
-        for loc, is_p, sv in zip(active_locs, passive_vars, var_sharing, strict=False)
-        if not is_p and sv == 0
-    ]
+            data.append(arr)
+            value_locations.append(var.value_location)
 
     existing_aux: dict[str, str] = {}
     if len(zone.auxdata) > 0:
         existing_aux = dict(zone.auxdata.items())
 
-    return writer_data, writer_locs, passive_vars, var_sharing, existing_aux
+    return data, value_locations, passive_vars, var_sharing, existing_aux
 
 
 def _write_zone_data(
@@ -639,8 +624,8 @@ def _write_zone_data(
     zone: TecplotZoneReader,
     writer_data: list[np.ndarray],
     writer_locs: list[Any],
-    passive_vars: list[bool],
-    var_sharing: list[int],
+    passive_vars: set[str],
+    var_sharing: dict[str, int],
     zone_aux: dict[str, str] | None,
 ) -> None:
     """Perform the actual write zone call for one already processed zone.
@@ -657,8 +642,8 @@ def _write_zone_data(
         zone:         Source zone reader being copied.
         writer_data:  Active, non-shared variable arrays (from ``_process_zone``).
         writer_locs:  Matching value locations (from ``_process_zone``).
-        passive_vars: Per-variable passive flags, dataset order.
-        var_sharing:  Per-variable sharing, dataset order.
+        passive_vars: Variable names marked passive.
+        var_sharing:  ``{variable name: source zone}`` mapping.
         zone_aux:     Zone-level aux to write, or ``None`` for none at all.
 
     """

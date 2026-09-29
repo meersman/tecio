@@ -232,8 +232,8 @@ def _process_zone(
 ) -> tuple[
     list[np.ndarray],
     list[Any],
-    list[bool],
-    list[int],
+    set[str],
+    dict[str, int],
     dict[str, str],
     dict[str, str],
 ]:
@@ -255,50 +255,42 @@ def _process_zone(
 
     Returns:
         A 6-tuple of:
-        ``(active_data, active_locs, passive_vars, var_sharing,
+        ``(data, value_locations, passive_vars, var_sharing,
            existing_aux, fix_auxdata)``
 
-        ``active_data``    – arrays for variables that are active and not shared.
-        ``active_locs``    – value locations aligned with *active_data*.
-        ``passive_vars``   – bool list (len == num_vars), ``True`` = passive.
-        ``var_sharing``    – int list (len == num_vars), 0 = no sharing,
-                             positive = 1-based source zone (unchanged).
-        ``existing_aux``   – dict copied from the zone's original aux data.
-        ``fix_auxdata``    – dict describing variables set passive by this tool.
+        ``data``            – arrays for active, non-shared variables.
+        ``value_locations`` – value locations aligned with *data*.
+        ``passive_vars``    – set of variable names marked passive.
+        ``var_sharing``     – {variable name: 1-based source zone} mapping.
+        ``existing_aux``    – dict copied from the zone's original aux data.
+        ``fix_auxdata``     – dict describing variables set passive by this tool.
 
     """
-    active_data: list[np.ndarray] = []
-    active_locs: list[Any] = []
-    passive_vars: list[bool] = []
-    var_sharing: list[int] = []
+    data: list[np.ndarray] = []
+    value_locations: list[Any] = []
+    passive_vars: set[str] = set()
+    var_sharing: dict[str, int] = {}
     fix_auxdata: dict[str, str] = {}
 
     for j, var in enumerate(zone.variables):
-        already_passive = var.is_passive()
         sv = var.shared_zone  # 1-based source zone index, or None
 
-        # Pass sharing through verbatim.  tecfix writes all zones in the
-        # same order as the source, so source zone N is always output zone N.
-        share_int = sv if sv is not None else 0
-
-        passive_vars.append(already_passive)
-        var_sharing.append(share_int)
-
-        if already_passive or share_int != 0:
-            # Passive or shared -- nothing to inspect or store.
-            active_data.append(np.array([], dtype=np.float32))
-            active_locs.append(var.value_location)
+        if var.is_passive():
+            passive_vars.add(var.name)
+            continue
+        if sv is not None:
+            # Pass sharing through verbatim.  tecfix writes all zones in the
+            # same order as the source, so source zone N is always output zone N.
+            var_sharing[var.name] = sv
             continue
 
         # Load the array.
         arr: np.ndarray = var.values
-        active_locs.append(var.value_location)
 
         # Guard against readers that return None or an empty array for
         # variables that are unavailable (e.g. DAT reader passive vars).
         if arr is None or arr.size == 0:
-            passive_vars[-1] = True
-            active_data.append(np.array([], dtype=np.float32))
+            passive_vars.add(var.name)
             continue
 
         # Only floating-point arrays can hold NaN / Inf.
@@ -308,24 +300,12 @@ def _process_zone(
 
         if bad_label is not None:
             # Mark as passive; record the reason.
-            passive_vars[-1] = True
+            passive_vars.add(var.name)
             key = f"Variable{j + 1}"
             fix_auxdata[key] = bad_label
-            active_data.append(np.array([], dtype=np.float32))
         else:
-            active_data.append(arr)
-
-    # Filter to only the arrays / locations the writer needs (active, non-shared).
-    writer_data = [
-        arr
-        for arr, is_p, sv in zip(active_data, passive_vars, var_sharing, strict=False)
-        if not is_p and sv == 0
-    ]
-    writer_locs = [
-        loc
-        for loc, is_p, sv in zip(active_locs, passive_vars, var_sharing, strict=False)
-        if not is_p and sv == 0
-    ]
+            data.append(arr)
+            value_locations.append(var.value_location)
 
     # Collect existing zone aux data.
     existing_aux: dict[str, str] = {}
@@ -333,8 +313,8 @@ def _process_zone(
         existing_aux = dict(zone.auxdata.items())
 
     return (
-        writer_data,
-        writer_locs,
+        data,
+        value_locations,
         passive_vars,
         var_sharing,
         existing_aux,

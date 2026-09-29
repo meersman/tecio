@@ -329,25 +329,23 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                     apply_scale = args.zone is None or zone_num == args.zone
 
-                    active_data: list[np.ndarray] = []
-                    active_locs: list[Any] = []
-                    passive_vars: list[bool] = []
-                    var_sharing: list[int] = []
+                    data: list[np.ndarray] = []
+                    value_locations: list[Any] = []
+                    passive_vars: set[str] = set()
+                    var_sharing: dict[str, int] = {}
 
                     for j, var in enumerate(zone.variables):
-                        passive_vars.append(var.is_passive())
                         sv = var.shared_zone
-                        var_sharing.append(sv if sv is not None else 0)
-                        active_locs.append(var.value_location)
-
-                        if var.is_passive() or sv is not None:
-                            active_data.append(np.array([], dtype=np.float32))
+                        if var.is_passive():
+                            passive_vars.add(var.name)
+                            continue
+                        if sv is not None:
+                            var_sharing[var.name] = sv
                             continue
 
                         arr = var.values
                         if arr is None or arr.size == 0:
-                            passive_vars[-1] = True
-                            active_data.append(np.array([], dtype=np.float32))
+                            passive_vars.add(var.name)
                             continue
 
                         if apply_scale and j == var_idx0:
@@ -356,22 +354,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                             arr = arr.astype(np.float64)
                             arr = arr * args.scale + args.offset
 
-                        active_data.append(arr)
-
-                    writer_data = [
-                        arr
-                        for arr, is_p, sv in zip(
-                            active_data, passive_vars, var_sharing, strict=False
-                        )
-                        if not is_p and sv == 0
-                    ]
-                    writer_locs = [
-                        loc
-                        for loc, is_p, sv in zip(
-                            active_locs, passive_vars, var_sharing, strict=False
-                        )
-                        if not is_p and sv == 0
-                    ]
+                        data.append(arr)
+                        value_locations.append(var.value_location)
 
                     zone_aux: dict[str, str] | None = None
                     if len(zone.auxdata) > 0:
@@ -379,7 +363,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                     common_kw: dict[str, Any] = dict(
                         title=zone.title,
-                        value_locations=writer_locs,
+                        value_locations=value_locations,
                         passive_vars=passive_vars,
                         var_sharing=var_sharing,
                         solution_time=zone.solution_time,
@@ -388,7 +372,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
 
                     if isinstance(zone, TecplotOrderedZoneReader):
-                        writer.write_ordered_zone(data=writer_data, **common_kw)
+                        writer.write_ordered_zone(data=data, **common_kw)
                     elif isinstance(zone, TecplotFEZoneReader):
                         con_sharing = zone.shared_connectivity
                         fe_kw = common_kw.copy()
@@ -401,7 +385,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             fe_kw["face_neighbor_mode"] = zone.face_neighbor_mode
                         writer.write_fe_zone(
                             zone_type=zt,
-                            data=writer_data,
+                            data=data,
                             node_map=None if con_sharing else zone.node_map,
                             con_sharing=con_sharing,
                             **fe_kw,

@@ -54,7 +54,7 @@ from ._reader import (
 )
 from ._szl_read import TecplotSzlReader
 from ._szl_write import TecplotSzlWriter
-from ._writer import TecplotWriter
+from ._writer import EmptyZoneWarning, TecplotWriter
 
 # Ensure these display as their canonical public name in docs and help(),
 # rather than the private module they're actually defined in.
@@ -77,6 +77,7 @@ for _cls in (
     TecplotSzlWriter,
     TecplotPltWriter,
     TecplotDatWriter,
+    EmptyZoneWarning,
     Boolean,
     DataPacking,
     DataType,
@@ -122,6 +123,7 @@ __all__ = [
     "TecplotSzlWriter",
     "TecplotPltWriter",
     "TecplotDatWriter",
+    "EmptyZoneWarning",
     "Boolean",
     "DataPacking",
     "DataType",

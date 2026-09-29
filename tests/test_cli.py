@@ -137,8 +137,8 @@ def _write_synthetic_ijk(path: Path) -> None:
         w.write_ordered_zone(
             data=[p2],
             title="Z2",
-            passive_vars=[False, True, False],
-            var_sharing=[1, 0, 0],
+            passive_vars={"y"},
+            var_sharing={"x": 1},
         )
 
 
@@ -198,7 +198,7 @@ def _write_shared_dataset(path: Path) -> None:
         w.write_fe_zone(
             zone_type=ZoneType.FETETRAHEDRON,
             data=[c2],
-            var_sharing=[1, 1, 1, 0, 1],
+            var_sharing={"x": 1, "y": 1, "z": 1, "w": 1},
             con_sharing=1,
             title="Zone2_SharesFromZone1",
             strand_id=1,
@@ -207,7 +207,7 @@ def _write_shared_dataset(path: Path) -> None:
         w.write_fe_zone(
             zone_type=ZoneType.FETETRAHEDRON,
             data=[w3],
-            var_sharing=[1, 1, 1, 2, 0],
+            var_sharing={"x": 1, "y": 1, "z": 1, "c": 2},
             con_sharing=1,
             title="Zone3_SharesFromZone1And2",
             strand_id=1,
@@ -266,7 +266,7 @@ def _write_aux_dataset(path: Path) -> None:
         w.write_fe_zone(
             zone_type=ZoneType.FETETRAHEDRON,
             data=[c2],
-            var_sharing=[1, 1, 1, 0, 1],
+            var_sharing={"x": 1, "y": 1, "z": 1, "w": 1},
             con_sharing=1,
             title="Zone2_SharesFromZone1",
             strand_id=1,
@@ -275,7 +275,7 @@ def _write_aux_dataset(path: Path) -> None:
         w.write_fe_zone(
             zone_type=ZoneType.FETETRAHEDRON,
             data=[w3],
-            var_sharing=[1, 1, 1, 2, 0],
+            var_sharing={"x": 1, "y": 1, "z": 1, "c": 2},
             con_sharing=1,
             title="Zone3_SharesFromZone1And2",
             strand_id=1,

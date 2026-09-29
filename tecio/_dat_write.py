@@ -32,9 +32,11 @@ from ._constants import (
 )
 from ._meta import ZoneMeta
 from ._writer import (
+    PassiveVarsSpec,
     PreparedFEZone,
     PreparedOrderedZone,
     TecplotWriter,
+    VarSharingSpec,
     normalize_precision,
     prepare_fe_zone,
     prepare_ordered_zone,
@@ -403,8 +405,8 @@ class TecplotDatWriter(TecplotWriter):
         title: str | None = None,
         variables: list[str] | None = None,
         value_locations: Sequence[ValueLocation] | None = None,
-        passive_vars: Sequence[bool | int] | None = None,
-        var_sharing: Sequence[int] | None = None,
+        passive_vars: PassiveVarsSpec | None = None,
+        var_sharing: VarSharingSpec | None = None,
         solution_time: float = 0.0,
         strand_id: int = 0,
         aux: dict[str, Any] | None = None,
@@ -415,39 +417,61 @@ class TecplotDatWriter(TecplotWriter):
         Zone dimensions are inferred from the shape of the first NODAL array.
 
         Args:
-            data:            One NumPy array per dataset variable. Array shape is used
-                             to infer ``imax``, ``jmax``, and ``kmax``; Fortran
-                             (column-major) order is assumed. Pass ``None`` to write a
-                             zone header only.
-            title:           Zone title. Defaults to ``"IJK_Zone_{current_zone + 1}"``.
-            variables:       Variable name list. Required on the first call when the
-                             file has not been opened yet (lazy-open path); ignored once
-                             the file is already initialised. Default to ``[V1, V2, V3,
-                             ...]`` if not provided in open or zone call.
-            value_locations: Per-variable :class:`~libtecio.ValueLocation`. Defaults to
-                             all ``NODAL``.
-            passive_vars:    Per-variable passive flags. Defaults to all active
-                             (``False``).
-            var_sharing:     Per-variable share-from zone index (1-based). Defaults to
-                             no sharing (all zeros).
-            solution_time:   Solution time for transient data. Use ``0.0`` for static
-                             zones. Default to ``0.0`` if not defined.
-            strand_id:       Strand ID for transient data. Use ``0`` for static
-                             zones. Default to ``0`` (static) if not defined.
-            aux:             Zone-level auxiliary data as ``{name: value}`` string
-                             pairs.
-            datapacking:     Must be :attr:`~tecio.libtecio.DataPacking.BLOCK` (the
-                             default).  :attr:`~tecio.libtecio.DataPacking.POINT` is an
-                             ASCII-only layout and is not supported by the SZL binary
-                             format. Defined only for parity with ASCII writer.
+            data (Sequence[npt.ArrayLike]):
+                One NumPy array per active (non-passive, non-shared) dataset variable,
+                in dataset order. Array shape is used to infer ``imax``, ``jmax``, and
+                ``kmax``; Fortran (column-major) order is assumed. Pass ``None`` to
+                write a zone header only.
+            title (str):
+                Zone title. Defaults to ``"IJK_Zone_{current_zone + 1}"``.
+            variables (list[str]):
+                Variable name list. Required on the first call when the file has not
+                been opened yet (lazy-open path); ignored once the file is already
+                initialised. Default to ``[V1, V2, V3, ...]`` if not provided in open or
+                zone call.
+            value_locations (Sequence[ValueLocation]):
+                Per-active-variable :class:`~tecio.ValueLocation`.  Defaults to all
+                ``NODAL``.
+            passive_vars (list | tuple | set | None):
+                Variables to mark passive: a list, tuple, or set of variable names, or
+                of 1-based indices, e.g. ``{"x"}`` or ``[4]``. Defaults to all active
+                (``passive_vars=None``).
+            var_sharing (Mapping[int | str, int]):
+                Variables to share from another zone: a ``{variable: source zone}``
+                mapping, name or 1-based index to 1-based zone index, e.g. ``{"x": 1,
+                "y": 1}``. Defaults to no sharing.
+            solution_time (float):
+                Solution time for transient data. Default to ``0.0`` if not defined.
+            strand_id (int):
+                Strand ID for transient data. Use ``0`` for static zones. Default to
+                ``0`` (static) if not defined.
+            aux (dict[str, str | float | int]):
+                Zone-level auxiliary data as ``{name: value}`` string pairs.
+            datapacking (DataPacking | str):
+                In :attr:`~tecio.DataPacking.POINT` format, the values for all variables
+                are given for the first point, then the second point, and so on. In
+                :attr:`~tecio.DataPacking.BLOCK` format, all of the values for the first
+                variable are given in a block, then all of the values for the second
+                variable, then all of the values for the third, and so
+                forth. :attr:`~tecio.DataPacking.BLOCK` format must be used for
+                cell-centered data and polyhedral zones
+                (:attr:`~tecio.ZoneType.FEPOLYGON`/:attr:`~tecio.ZoneType.FEPOLYHEDRAL`),
+                as well as for all binary data. `POINT` and `BLOCK` keyword strings also
+                accepted. Defaults to :attr:`~tecio.DataPacking.BLOCK`.
 
         Raises:
-            NotImplementedError: If *datapacking* is
-                                 :attr:`~tecio.libtecio.DataPacking.POINT`.
-            ValueError:          If I/O operation attempted on closed or None file
-                                 handle.
-            RuntimeError:        If attempting to write variable aux before variables
-                                 are defined.
+            TypeError:
+               If *passive_vars*/*var_sharing* isn't a list/tuple/set/mapping as
+               appropriate, or mixes variable names and indices.
+            ValueError:
+               If I/O operation attempted on closed or None file handle, or a variable
+               is named in both *passive_vars* and *var_sharing*.
+            RuntimeError:
+               If attempting to write variable aux before variables are defined.
+            KeyError:
+               A *passive_vars*/*var_sharing* name doesn't match any dataset variable.
+            IndexError:
+               A *passive_vars*/*var_sharing* 1-based index is out of range.
         """
         if isinstance(datapacking, str):
             try:
@@ -480,7 +504,7 @@ class TecplotDatWriter(TecplotWriter):
         if value_locations is None:
             value_locations = [ValueLocation.NODAL] * len(arrays)
 
-        prepared: PreparedOrderedZone = prepare_ordered_zone(
+        prepared: PreparedOrderedZone | None = prepare_ordered_zone(
             arrays,
             variable_types,
             value_locations=value_locations,
@@ -490,8 +514,10 @@ class TecplotDatWriter(TecplotWriter):
             meta=self._meta,
             on_error=self._handle_zone_error,
         )
-        passive_vars = prepared.passive_vars
-        var_sharing = prepared.var_sharing
+        if prepared is None:
+            return
+        passive_flags = prepared.passive_vars
+        share_idx = prepared.var_sharing
         imax, jmax, kmax = prepared.imax, prepared.jmax, prepared.kmax
         value_locations_global = prepared.value_locations_global
         variable_types_global = prepared.variable_types_global
@@ -506,8 +532,8 @@ class TecplotDatWriter(TecplotWriter):
             kmax=kmax,
             solution_time=solution_time,
             strand_id=strand_id,
-            passive_vars=passive_vars,
-            var_sharing=var_sharing,
+            passive_vars=passive_flags,
+            var_sharing=share_idx,
             value_locations_global=value_locations_global,
             variable_types_global=variable_types_global,
             aux=aux,
@@ -552,8 +578,8 @@ class TecplotDatWriter(TecplotWriter):
                 num_aux_items=len(aux) if aux else 0,
                 dimensions=(imax, jmax, kmax),
                 value_locations=tuple(value_locations_global),
-                passive_vars=tuple(bool(p) for p in passive_vars),
-                shared_vars=tuple(int(s) for s in var_sharing),
+                passive_vars=tuple(bool(p) for p in passive_flags),
+                shared_vars=tuple(int(s) for s in share_idx),
                 data_types=tuple(variable_types_global),
             )
         )
@@ -564,13 +590,13 @@ class TecplotDatWriter(TecplotWriter):
         self,
         data: Sequence[npt.ArrayLike],
         zone_type: ZoneType,
-        *,
         node_map: npt.ArrayLike | None = None,
+        *,
         title: str | None = None,
         variables: list[str] | None = None,
         value_locations: Sequence[ValueLocation] | None = None,
-        passive_vars: Sequence[bool | int] | None = None,
-        var_sharing: Sequence[int] | None = None,
+        passive_vars: PassiveVarsSpec | None = None,
+        var_sharing: VarSharingSpec | None = None,
         con_sharing: int | None = None,
         face_neighbors: npt.ArrayLike | None = None,
         face_neighbor_mode: FaceNeighborMode | None = None,
@@ -589,85 +615,105 @@ class TecplotDatWriter(TecplotWriter):
             ``FEPOLYGON`` and ``FEPOLYHEDRON`` raise :exc:`NotImplementedError`.
 
         Args:
-            data:            Sequence of 1-D arrays, one per dataset variable. NODAL
-                             arrays must have length ``num_nodes``; CELL_CENTERED arrays
-                             must have length ``num_cells``.  ``num_nodes`` and
-                             ``num_cells`` are inferred from ``node_map`` (or from the
-                             ``con_sharing`` source zone when ``node_map`` is omitted).
-            zone_type:       FE zone type from the ZoneType enum. Must be one of the
-                             types in ``_FE_SIMPLE``.
-            node_map:        Integer array of shape ``(num_cells, nodes_per_cell)``
-                             containing 1-based node indices.  32- or 64-bit write is
-                             chosen automatically based on the maximum index value.
-                             Required unless ``con_sharing`` is set, in which case the
-                             connectivity -- and the node/cell counts derived from it --
-                             are inherited from the source zone instead.
-            title:           Zone title string. Defaults to ``"FE_Zone_{current_zone +
-                             1}"`` if not provided.
-            variables:       Variable name list. Required only when the file has not
-                             been opened yet (lazy-open path). Ignored on subsequent
-                             zones once the file is already initialised. Default to
-                             ``[V1, V2, V3, ...]`` if not provided in open or zone call.
-            value_locations: Per-variable ValueLocation. Defaults to all NODAL.
-            passive_vars:    Per-variable passive flags. Defaults to all active
-                             (False).
-            var_sharing:     Per-variable share from zone index. Defaults to no
-                             sharing. Cross-checked against ``node_map`` /
-                             ``con_sharing`` for a consistent node/cell count.
-            con_sharing:     Optional zone index that the connectivity is shared from.
-                             ``None`` or ``0`` indicates no sharing (this zone owns its
-                             connectivity). The first zone in a dataset must own its
-                             connectivity. Connectivity cannot be shared when face
-                             neighbor mode is set to global. Connectivity cannot be
-                             shared between cell-based and face-based finite element
-                             zones.
-            face_neighbors:  Optional face-neighbor connectivity, always a
-                             flat array (whatever shape you pass is
-                             flattened before writing). The number of
-                             values per connection depends on
-                             ``face_neighbor_mode``, a fixed 3 or 4 for the
-                             one-to-one modes, a variable, self-describing
-                             count per record for the "many" modes. The
-                             connection count is always derived from this
-                             array, never a separate parameter.
-            face_neighbor_mode: None (the default) means no face-neighbor
-                             data, matching the read side. If
-                             ``face_neighbors`` is given without this,
-                             treated as LOCAL_ONE_TO_ONE. Given *without*
-                             ``face_neighbors``, raises, that combination is
-                             almost certainly a mistake.
-            face_neighbors_complete: Whether ``face_neighbors`` is the
-                             entire adjacency picture (``True``), Tecplot
-                             shouldn't auto-detect anything further, or a
-                             supplement to auto-detected conformal adjacency
-                             (``False``). ``None`` (the default) omits the
-                             ``FEFACENEIGHBORSCOMPLETE`` keyword entirely,
-                             deferring to Tecplot's own default. ASCII-only:
-                             neither the classic nor new C API can express
-                             this, so it has no equivalent on
-                             :class:`~tecio.TecplotSzlWriter` or
-                             :class:`~tecio.TecplotPltWriter`.
-            solution_time:   Solution time for transient data (0.0 = static).
-            strand_id:       Strand ID for transient data (0 = static).
-            aux:             Zone-level auxiliary data as ``{name: value}`` strings.
-            datapacking:     Must be :attr:`~tecio.libtecio.DataPacking.BLOCK` (the
-                             default).  :attr:`~tecio.libtecio.DataPacking.POINT` is an
-                             ASCII-only layout and is not supported by the SZL binary
-                             format. Defined only for parity with ASCII writer.
+            data (Sequence[npt.ArrayLike]):
+                Sequence of 1-D arrays, one per active (non-passive, non-shared) dataset
+                variable, in dataset order. NODAL arrays must have length ``num_nodes``;
+                CELL_CENTERED arrays must have length ``num_cells``.  ``num_nodes`` and
+                ``num_cells`` are inferred from ``node_map`` (or from the
+                ``con_sharing`` source zone when ``node_map`` is omitted).
+            zone_type (ZoneType):
+                FE zone type from the ZoneType enum. Must be one of the types in
+                ``_FE_SIMPLE``.
+            node_map (npt.ArrayLike):
+                Integer array of shape ``(num_cells, nodes_per_cell)`` containing
+                1-based node indices. Required unless ``con_sharing`` is set, in which
+                case the connectivity are inherited from the source zone instead.
+            title (str):
+                Zone title string. Defaults to ``"FE_Zone_{current_zone + 1}"`` if not
+                provided.  Zone title string. Defaults to ``"FE_Zone_{current_zone +
+                1}"`` if not provided.
+            variables (list[str]):
+                Variable name list. Required only when the file has not been opened yet
+                (lazy-open path). Ignored on subsequent zones once the file is already
+                initialised. Default to ``[V1, V2, V3, ...]`` if not provided in open or
+                zone call.
+            value_locations (Sequence[ValueLocation]):
+                Per-active-variable :class:`~tecio.ValueLocation`. Defaults to all
+                ``NODAL``.
+            passive_vars (list | tuple | set | None):
+                Variables to mark passive: a list, tuple, or set of variable names, or
+                of 1-based indices, e.g. ``{"x"}`` or ``[4]``. Defaults to all active
+                (``passive_vars=None``).
+            var_sharing (Mapping[int | str, int]):
+                Variables to share from another zone: a ``{variable: source zone}``
+                mapping, name or 1-based index to 1-based zone index. Defaults to no
+                sharing (None or an empty mapping). Cross-checked against ``node_map`` /
+                ``con_sharing`` for a consistent node/cell count.
+            con_sharing (int):
+                Optional zone index that the connectivity is shared from.  ``None`` or
+                ``0`` indicates no sharing (this zone owns its connectivity). The first
+                zone in a dataset must own its connectivity. Connectivity cannot be
+                shared when face neighbor mode is set to global. Connectivity cannot be
+                shared between cell-based and face-based finite element zones.
+            face_neighbors (npt.ArrayLike):
+                Optional face-neighbor connectivity, always a flat array (whatever shape
+                you pass is flattened before writing). The number of values per
+                connection depends on ``face_neighbor_mode``, a fixed 3 or 4 for the
+                one-to-one modes, a variable, self-describing count per record for the
+                "many" modes. The connection count is always derived from this array,
+                never a separate parameter.
+            face_neighbor_mode (FaceNeighborMode):
+                Default to None meaning no face-neighbor data. If ``face_neighbors`` is
+                supplied without defining a face neighbor mode, it is treated as
+                LOCAL_ONE_TO_ONE. Cannot be defined without also supplying a
+                ``face_neighbors`` array.
+            face_neighbors_complete (bool):
+                Whether ``face_neighbors`` is the entire adjacency picture (``True``),
+                Tecplot shouldn't auto-detect anything further, or a supplement to
+                auto-detected conformal adjacency (``False``). ``None`` (the default)
+                omits the ``FEFACENEIGHBORSCOMPLETE`` keyword entirely, deferring to the
+                Tecplot default. ASCII-only: neither the classic nor new C API can
+                express this, so it has no equivalent on
+                :class:`~tecio.TecplotSzlWriter` or :class:`~tecio.TecplotPltWriter`.
+            solution_time (float):
+                Solution time for transient data. Default to ``0.0`` if not defined.
+            strand_id (int):
+                Strand ID for transient data. Use ``0`` for static zones. Default to
+                ``0`` (static) if not defined.
+            aux (dict[str, str | float | int]):
+                Zone-level auxiliary data as ``{name: value}`` string pairs.
+            datapacking (DataPacking | str):
+                In :attr:`~tecio.DataPacking.POINT` format, the values for all variables
+                are given for the first point, then the second point, and so on. In
+                :attr:`~tecio.DataPacking.BLOCK` format, all of the values for the first
+                variable are given in a block, then all of the values for the second
+                variable, then all of the values for the third, and so
+                forth. :attr:`~tecio.DataPacking.BLOCK` format must be used for
+                cell-centered data and polyhedral zones
+                (:attr:`~tecio.ZoneType.FEPOLYGON`/:attr:`~tecio.ZoneType.FEPOLYHEDRAL`),
+                as well as for all binary data. `POINT` and `BLOCK` keyword strings also
+                accepted. Defaults to :attr:`~tecio.DataPacking.BLOCK`.
 
         Raises:
-            NotImplementedError: For FEPOLYGON, FEPOLYHEDRON, or if *datapacking*
-                                 is :attr:`~tecio.libtecio.DataPacking.POINT`.
-            ValueError:          On variable count or array length mismatch; if
-                                 ``node_map`` is omitted without ``con_sharing``; or if
-                                 ``var_sharing``/``con_sharing`` reference a zone with
-                                 no recorded node/cell count, or one whose count
-                                 disagrees with this zone's.
-            ValueError:          If I/O operation attempted on closed or None file
-                                 handle.
-            RuntimeError:        If attempting to write variable aux before variables
-                                 are defined.
-
+            NotImplementedError:
+                For FEPOLYGON or FEPOLYHEDRON.
+            TypeError:
+                If *passive_vars*/*var_sharing* isn't a list/tuple/set/mapping as
+                appropriate, or mixes variable names and indices.
+            ValueError:
+                On variable count or array length mismatch; if ``node_map`` is omitted
+                without ``con_sharing``; if ``var_sharing``/``con_sharing`` reference a
+                zone with no recorded node/cell count, or one whose count disagrees with
+                this zone's; or a variable named in both *passive_vars* and
+                *var_sharing*.
+            ValueError:
+                If I/O operation attempted on closed or None file handle.
+            RuntimeError:
+                If attempting to write variable aux before variables are defined.
+            KeyError:
+                A *passive_vars*/*var_sharing* name doesn't match any dataset variable.
+            IndexError:
+                A *passive_vars*/*var_sharing* 1-based index is out of range.
         """
         if isinstance(datapacking, str):
             try:
@@ -709,7 +755,7 @@ class TecplotDatWriter(TecplotWriter):
         if value_locations is None:
             value_locations = [ValueLocation.NODAL] * len(data)
 
-        prepared: PreparedFEZone = prepare_fe_zone(
+        prepared: PreparedFEZone | None = prepare_fe_zone(
             arrays,
             variable_types,
             zone_type,
@@ -724,8 +770,10 @@ class TecplotDatWriter(TecplotWriter):
             meta=self._meta,
             on_error=self._handle_zone_error,
         )
-        passive_vars = prepared.passive_vars
-        var_sharing = prepared.var_sharing
+        if prepared is None:
+            return
+        passive_flags = prepared.passive_vars
+        share_idx = prepared.var_sharing
         con_sharing = prepared.con_sharing
         num_nodes = prepared.num_nodes
         num_cells = prepared.num_cells
@@ -750,8 +798,8 @@ class TecplotDatWriter(TecplotWriter):
             num_elements=num_cells,
             solution_time=solution_time,
             strand_id=strand_id,
-            passive_vars=passive_vars,
-            var_sharing=var_sharing,
+            passive_vars=passive_flags,
+            var_sharing=share_idx,
             value_locations_global=value_locations_global,
             variable_types_global=variable_types_global,
             con_sharing=con_sharing,
@@ -836,8 +884,8 @@ class TecplotDatWriter(TecplotWriter):
                 num_nodes=num_nodes,
                 num_elements=num_cells,
                 value_locations=tuple(value_locations_global),
-                passive_vars=tuple(bool(p) for p in passive_vars),
-                shared_vars=tuple(int(s) for s in var_sharing),
+                passive_vars=tuple(bool(p) for p in passive_flags),
+                shared_vars=tuple(int(s) for s in share_idx),
                 data_types=tuple(variable_types_global),
                 face_neighbor_mode=(
                     face_neighbor_mode if face_neighbors_arr is not None else None

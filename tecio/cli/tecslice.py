@@ -134,6 +134,7 @@ from .. import (
     TecplotFEZoneReader,
     TecplotOrderedZoneReader,
     TecplotSzlWriter,
+    TecplotVariableReader,
     TecplotWriter,
     TecplotZoneReader,
     ValueLocation,
@@ -550,72 +551,56 @@ def _build_protected_set(
 def _collect_zone_arrays(
     zone: TecplotZoneReader,
     num_vars: int,
-) -> tuple[list[np.ndarray], list[Any], list[bool], list[int]]:
-    """Read all variable arrays and metadata from *zone*.
+) -> tuple[
+    list[TecplotVariableReader],
+    list[np.ndarray],
+    list[Any],
+    set[str],
+    dict[int | str, int],
+]:
+    """Read active variable arrays/metadata from *zone*, and passive/sharing sets.
 
-    Sharing references are passed through verbatim as 1-based zone indices.
-    Zone numbering is preserved in the output (every zone is written in source
-    order — either full, protected, or skipped), so no remapping is needed.
+    Sharing references are passed through verbatim as 1-based zone indices.  Zone
+    numbering is preserved in the output (every zone is written in source order).
 
     Args:
         zone:     Source zone reader.
         num_vars: Number of variables in the dataset.
 
     Returns:
-        ``(data, locs, passive_vars, var_sharing)`` where each list has
-        length ``num_vars``. Passive and shared entries have empty arrays.
+        ``(active_vars, data, locs, passive_vars, var_sharing)``: the first three cover
+        only active, non-shared variables, in dataset order.
+        ``passive_vars``/``var_sharing`` name the rest sparsely and are ready to pass
+        straight to the Write API.
 
     """
+    active_vars: list[TecplotVariableReader] = []
     data: list[np.ndarray] = []
     locs: list[Any] = []
-    passive_vars: list[bool] = []
-    var_sharing: list[int] = []
+    passive_vars: set[str] = set()
+    var_sharing: dict[int | str, int] = {}
 
     for j in range(num_vars):
         var = zone.variables[j]
-        passive_vars.append(var.is_passive())
         sv = var.shared_zone  # 1-based source zone index, or None
-        share_int = sv if sv is not None else 0
 
-        var_sharing.append(share_int)
-        locs.append(var.value_location)
-
-        if var.is_passive() or share_int != 0:
-            data.append(np.array([], dtype=np.float32))
+        if var.is_passive():
+            passive_vars.add(var.name)
+            continue
+        if sv is not None:
+            var_sharing[var.name] = sv
             continue
 
         arr = var.values
         if arr is None or arr.size == 0:
-            passive_vars[-1] = True
-            data.append(np.array([], dtype=np.float32))
-        else:
-            data.append(arr)
+            passive_vars.add(var.name)
+            continue
 
-    return data, locs, passive_vars, var_sharing
+        active_vars.append(var)
+        data.append(arr)
+        locs.append(var.value_location)
 
-
-def _filter_for_writer(
-    data: list[np.ndarray],
-    locs: list[Any],
-    passive_vars: list[bool],
-    var_sharing: list[int],
-) -> tuple[list[np.ndarray], list[Any]]:
-    """Return only the arrays and locations the Write API expects.
-
-    The Write API receives only active, non-shared variable arrays.
-
-    """
-    writer_data = [
-        arr
-        for arr, is_p, sv in zip(data, passive_vars, var_sharing, strict=False)
-        if not is_p and sv == 0
-    ]
-    writer_locs = [
-        loc
-        for loc, is_p, sv in zip(locs, passive_vars, var_sharing, strict=False)
-        if not is_p and sv == 0
-    ]
-    return writer_data, writer_locs
+    return active_vars, data, locs, passive_vars, var_sharing
 
 
 def _write_zone_verbatim(
@@ -624,8 +609,9 @@ def _write_zone_verbatim(
     num_vars: int,
 ) -> None:
     """Copy a zone to *writer* without modification."""
-    data, locs, passive_vars, var_sharing = _collect_zone_arrays(zone, num_vars)
-    writer_data, writer_locs = _filter_for_writer(data, locs, passive_vars, var_sharing)
+    _active_vars, data, locs, passive_vars, var_sharing = _collect_zone_arrays(
+        zone, num_vars
+    )
 
     zone_aux: dict[str, str] | None = (
         dict(zone.auxdata.items()) if len(zone.auxdata) > 0 else None
@@ -633,7 +619,7 @@ def _write_zone_verbatim(
 
     kw: dict[str, Any] = dict(
         title=zone.title,
-        value_locations=writer_locs,
+        value_locations=locs,
         passive_vars=passive_vars,
         var_sharing=var_sharing,
         solution_time=zone.solution_time,
@@ -642,7 +628,7 @@ def _write_zone_verbatim(
     )
 
     if isinstance(zone, TecplotOrderedZoneReader):
-        writer.write_ordered_zone(data=writer_data, **kw)
+        writer.write_ordered_zone(data=data, **kw)
     elif isinstance(zone, TecplotFEZoneReader):
         con_sharing = zone.shared_connectivity
         fe_kw = kw.copy()
@@ -655,7 +641,7 @@ def _write_zone_verbatim(
             fe_kw["face_neighbor_mode"] = zone.face_neighbor_mode
         writer.write_fe_zone(
             zone_type=zone.zone_type,
-            data=writer_data,
+            data=data,
             node_map=None if con_sharing else zone.node_map,
             con_sharing=con_sharing,
             **fe_kw,
@@ -686,13 +672,12 @@ def _write_zone_protected(
         num_vars: Number of variables in the dataset.
 
     """
-    data, locs, passive_vars, var_sharing = _collect_zone_arrays(zone, num_vars)
+    active_vars, _data, _locs, passive_vars, var_sharing = _collect_zone_arrays(
+        zone, num_vars
+    )
 
-    # Force every non-shared variable to passive.
-    passive_vars = [
-        True if sv == 0 else is_p
-        for is_p, sv in zip(passive_vars, var_sharing, strict=False)
-    ]
+    # Force every active (non-shared) variable to passive; no data to write.
+    passive_vars = passive_vars | {var.name for var in active_vars}
 
     # No active non-shared data to pass to the writer.
     writer_data: list[np.ndarray] = []
@@ -773,18 +758,12 @@ def _slice_and_write_ordered(
     if ni_out == 0 or nj_out == 0 or nk_out == 0:
         return False
 
-    data, locs, passive_vars, var_sharing = _collect_zone_arrays(zone, num_vars)
+    active_vars, data, locs, passive_vars, var_sharing = _collect_zone_arrays(
+        zone, num_vars
+    )
 
     sliced_data: list[np.ndarray] = []
-    for j, (arr, is_p, sv) in enumerate(
-        zip(data, passive_vars, var_sharing, strict=False)
-    ):
-        if is_p or sv != 0 or arr.size == 0:
-            sliced_data.append(arr)
-            continue
-
-        var = zone.variables[j]
-
+    for var, arr in zip(active_vars, data, strict=True):
         if var.value_location == ValueLocation.CELL_CENTERED:
             # Cell array has shape (I-1, J-1, K-1).
             # Cell c sits between nodes c and c+1. For a nodal selection
@@ -817,18 +796,14 @@ def _slice_and_write_ordered(
 
         sliced_data.append(np.ascontiguousarray(sliced))
 
-    writer_data, writer_locs = _filter_for_writer(
-        sliced_data, locs, passive_vars, var_sharing
-    )
-
     zone_aux: dict[str, str] | None = (
         dict(zone.auxdata.items()) if len(zone.auxdata) > 0 else None
     )
 
     writer.write_ordered_zone(
-        data=writer_data,
+        data=sliced_data,
         title=zone.title,
-        value_locations=writer_locs,
+        value_locations=locs,
         passive_vars=passive_vars,
         var_sharing=var_sharing,
         solution_time=zone.solution_time,

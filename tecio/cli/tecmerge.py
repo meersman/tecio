@@ -156,7 +156,6 @@ from .. import (
     TecplotSzlWriter,
     TecplotWriter,
     TecplotZoneReader,
-    ValueLocation,
     ZoneType,
 )
 from .. import open as tecio_open
@@ -574,73 +573,47 @@ def _write_zone(
     """
     zt = zone.zone_type
 
-    active_data: list[np.ndarray] = []
-    active_locs: list[Any] = []
-    passive_vars: list[bool] = []
-    var_sharing: list[int] = []
+    data: list[np.ndarray] = []
+    value_locations: list[Any] = []
+    passive_vars: set[str] = set()
+    var_sharing: dict[str, int] = {}
 
     for union_i, local_idx in enumerate(local_index_map, start=1):
+        name = union_vars[union_i - 1]
         is_grid_var = grid_var_indices is not None and union_i in grid_var_indices
 
         if is_grid_var and grid_reference is not None:
             # An earlier zone with the same zone_type/num_nodes/num_elements already
             # wrote this grid so share rather than duplicate
-            passive_vars.append(False)
-            var_sharing.append(grid_reference)
-            if local_idx is not None:
-                loc = zone.variables[local_idx].value_location
-            else:
-                loc = ValueLocation.NODAL
-            active_locs.append(loc)
-            active_data.append(np.array([], dtype=np.float32))
+            var_sharing[name] = grid_reference
             continue
 
         if local_idx is None:
             # Variable not in this file -- mark passive.
-            passive_vars.append(True)
-            var_sharing.append(0)
-            active_locs.append(None)
-            active_data.append(np.array([], dtype=np.float32))
+            passive_vars.add(name)
             continue
 
         var = zone.variables[local_idx]
-        is_passive = var.is_passive()
-        passive_vars.append(is_passive)
-        active_locs.append(var.value_location)
+
+        if var.is_passive():
+            passive_vars.add(name)
+            continue
 
         sv = var.shared_zone
         remapped = zone_index_map.get(sv) if sv is not None else None
 
-        if is_passive:
-            var_sharing.append(0)
-            active_data.append(np.array([], dtype=np.float32))
-        elif remapped is not None:
+        if remapped is not None:
             # Source zone was already written earlier in this file -> preserve sharing
             # relationship
-            var_sharing.append(remapped)
-            active_data.append(np.array([], dtype=np.float32))
-        else:
-            var_sharing.append(0)
-            arr = var.values
-            if arr is None or arr.size == 0:
-                passive_vars[-1] = True
-                active_data.append(np.array([], dtype=np.float32))
-            else:
-                active_data.append(arr)
+            var_sharing[name] = remapped
+            continue
 
-    # Filter to active, non-shared variables for the writer.
-    writer_data = [
-        arr
-        for arr, is_p, sv in zip(active_data, passive_vars, var_sharing, strict=False)
-        if not is_p and sv == 0
-    ]
-    # Replace None locations (from passive-by-absence) with a sentinel;
-    # they will never reach the writer but the filter must align.
-    writer_locs = [
-        loc if loc is not None else active_locs[0]
-        for loc, is_p, sv in zip(active_locs, passive_vars, var_sharing, strict=False)
-        if not is_p and sv == 0
-    ]
+        arr = var.values
+        if arr is None or arr.size == 0:
+            passive_vars.add(name)
+        else:
+            data.append(arr)
+            value_locations.append(var.value_location)
 
     zone_aux: dict[str, str] = {}
     if len(zone.auxdata) > 0:
@@ -655,7 +628,7 @@ def _write_zone(
 
     common_kw: dict[str, Any] = dict(
         title=zone.title,
-        value_locations=writer_locs,
+        value_locations=value_locations,
         passive_vars=passive_vars,
         var_sharing=var_sharing,
         solution_time=s_time,
@@ -664,7 +637,7 @@ def _write_zone(
     )
 
     if isinstance(zone, TecplotOrderedZoneReader):
-        writer.write_ordered_zone(data=writer_data, **common_kw)
+        writer.write_ordered_zone(data=data, **common_kw)
     elif isinstance(zone, TecplotFEZoneReader):
         if grid_var_indices is not None and grid_reference is not None:
             # Share connectivity from the same reference zone as the grid variables, a
@@ -684,7 +657,7 @@ def _write_zone(
             fe_kw["face_neighbor_mode"] = zone.face_neighbor_mode
         writer.write_fe_zone(
             zone_type=zt,
-            data=writer_data,
+            data=data,
             node_map=None if con_remapped else zone.node_map,
             con_sharing=con_remapped,
             **fe_kw,

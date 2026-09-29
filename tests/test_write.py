@@ -315,8 +315,8 @@ class TestWriteIJKZone:
         Demonstrates:
         - ``strand_id``/``solution_time`` for animation; zones sharing a strand_id
           animate together in Tecplot 360
-        - ``var_sharing=[1, 1, 1, 0]``: x, y, z shared from zone 1; only the scalar is
-          supplied for later zones
+        - ``var_sharing={"x": 1, "y": 1, "z": 1}``: x, y, z shared from zone 1 by
+          name; only the scalar is supplied for later zones
         """
         i, j, k = 6, 5, 4
         x, y, z = create_ordered((i, j, k))
@@ -331,7 +331,9 @@ class TestWriteIJKZone:
                 c = scalar_field(x + t, y + t, z).astype(np.float64)
                 w.write_ordered_zone(
                     data=[x, y, z, c] if w.current_zone == 0 else [c],
-                    var_sharing=None if w.current_zone == 0 else [1, 1, 1, 0],
+                    var_sharing=(
+                        None if w.current_zone == 0 else {"x": 1, "y": 1, "z": 1}
+                    ),
                     strand_id=1,
                     solution_time=float(t),
                 )
@@ -350,8 +352,8 @@ class TestWriteIJKZone:
         """Zone dimensions are taken from the shared source, not the local array.
 
         Demonstrates:
-        - A second zone shares x, y, z via ``var_sharing=[1, 1, 1, 0]`` and supplies
-          only the scalar; ``data`` contains only active variables
+        - A second zone shares x, y, z via ``var_sharing={"x": 1, "y": 1, "z": 1}``
+          and supplies only the scalar; ``data`` contains only active variables
         - The writer resolves ``(imax, jmax, kmax)`` from the shared source
         - Read-back: shared coordinate reports ``shared_zone``; local scalar reads its
           own value and resolves through as if local
@@ -369,7 +371,9 @@ class TestWriteIJKZone:
             w.write_ordered_zone(
                 data=[x, y, z, c0], variables=["x", "y", "z", "c"], title="zone_1"
             )
-            w.write_ordered_zone(data=[c1], var_sharing=[1, 1, 1, 0], title="zone_2")
+            w.write_ordered_zone(
+                data=[c1], var_sharing={"x": 1, "y": 1, "z": 1}, title="zone_2"
+            )
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
@@ -390,8 +394,7 @@ class TestWriteIJKZone:
         """Passive variable in an ordered zone.
 
         Demonstrates:
-        - ``passive_vars=[False, True, False]``; ``data`` supplies only the active
-          arrays
+        - ``passive_vars={"unused"}``; ``data`` supplies only the active arrays
         """
         n = 8
         x = np.linspace(0.0, 1.0, n, dtype=np.float32)
@@ -399,11 +402,186 @@ class TestWriteIJKZone:
 
         path = _path(output_path, fmt, "write_ijk_passive")
         with tecio.open(str(path), "w", variables=["x", "unused", "c"]) as w:
-            w.write_ordered_zone(data=[x, c], passive_vars=[False, True, False])
+            w.write_ordered_zone(data=[x, c], passive_vars={"unused"})
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
             assert r.zones[0].variables[1].is_passive()
+
+    def test_write_ijk_passive_variable_by_index(
+        self, fmt: str, output_path: Callable
+    ) -> None:
+        """``passive_vars`` also accepts 1-based variable indices."""
+        n = 8
+        x = np.linspace(0.0, 1.0, n, dtype=np.float32)
+        c = np.sin(2 * np.pi * x).astype(np.float64)
+
+        path = _path(output_path, fmt, "write_ijk_passive_by_index")
+        with tecio.open(str(path), "w", variables=["x", "unused", "c"]) as w:
+            w.write_ordered_zone(data=[x, c], passive_vars={2})
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            assert r.zones[0].variables[1].is_passive()
+
+    def test_write_ijk_passive_variables_set(
+        self, fmt: str, output_path: Callable
+    ) -> None:
+        """Marking more than one variable passive."""
+        n = 8
+        x = np.linspace(0.0, 1.0, n, dtype=np.float32)
+        c = np.sin(2 * np.pi * x).astype(np.float64)
+
+        path = _path(output_path, fmt, "write_ijk_passive_set")
+        with tecio.open(
+            str(path), "w", variables=["x", "unused1", "unused2", "c"]
+        ) as w:
+            w.write_ordered_zone(data=[x, c], passive_vars={"unused1", "unused2"})
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            assert r.zones[0].variables[1].is_passive()
+            assert r.zones[0].variables[2].is_passive()
+
+    def test_write_ijk_var_sharing_by_index(
+        self, fmt: str, output_path: Callable
+    ) -> None:
+        """Sparse ``var_sharing`` also accepts 1-based variable indices as keys."""
+        n = 8
+        x = np.linspace(0.0, 1.0, n, dtype=np.float32)
+        c0 = np.sin(2 * np.pi * x).astype(np.float64)
+        c1 = (np.sin(2 * np.pi * x) * 2.0).astype(np.float64)
+
+        path = _path(output_path, fmt, "write_ijk_sharing_by_index")
+        with tecio.open(str(path), "w", variables=["x", "c"]) as w:
+            w.write_ordered_zone(data=[x, c0], title="zone_1")
+            w.write_ordered_zone(data=[c1], var_sharing={1: 1}, title="zone_2")
+
+        assert path.exists()
+        with tecio.open(str(path), "r") as r:
+            assert r.zones[1].variables[0].shared_zone is not None
+
+    def test_write_ijk_var_sharing_mixed_name_and_index_raises(
+        self, fmt: str, output_path: Callable
+    ) -> None:
+        """A ``var_sharing`` mapping mixing name and index keys raises TypeError.
+
+        Without this, a name and an index key referring to the same variable could
+        set conflicting share targets, with one silently overwriting the other.
+        """
+        n = 8
+        x = np.linspace(0.0, 1.0, n, dtype=np.float32)
+        c0 = np.sin(2 * np.pi * x).astype(np.float64)
+        c1 = (np.sin(2 * np.pi * x) * 2.0).astype(np.float64)
+
+        path = _path(output_path, fmt, "write_ijk_sharing_mixed_raises")
+        with tecio.open(str(path), "w", variables=["x", "c"]) as w:
+            w.write_ordered_zone(data=[x, c0], title="zone_1")
+            with pytest.raises(TypeError):
+                w.write_ordered_zone(
+                    data=[c1], var_sharing={"x": 1, 1: 1}, title="zone_2"
+                )
+
+    def test_write_ijk_passive_and_shared_conflict_raises(
+        self, fmt: str, output_path: Callable
+    ) -> None:
+        """A variable named in both sparse passive_vars and var_sharing raises."""
+        i, j, k = 3, 3, 1
+        x, y, z = create_ordered((i, j, k))
+        x = x.astype(np.float32)
+        y = y.astype(np.float32)
+        z = z.astype(np.float32)
+        c0 = scalar_field(x, y, z).astype(np.float64)
+        path = _path(output_path, fmt, "write_ijk_passive_shared_conflict")
+
+        with pytest.raises(ValueError, match="passive"):
+            with tecio.open(str(path), "w", variables=["x", "y", "z", "c"]) as w:
+                w.write_ordered_zone(data=[x, y, z, c0], title="zone_1")
+                w.write_ordered_zone(
+                    data=[],
+                    passive_vars={"x"},
+                    var_sharing={"x": 1, "y": 1, "z": 1},
+                    title="zone_2",
+                )
+
+    def test_write_ijk_sparse_unknown_name_raises(
+        self, fmt: str, output_path: Callable
+    ) -> None:
+        """An unrecognised variable name in sparse passive_vars raises KeyError."""
+        n = 8
+        x = np.linspace(0.0, 1.0, n, dtype=np.float32)
+        path = _path(output_path, fmt, "write_ijk_sparse_unknown_name")
+
+        with pytest.raises(KeyError):
+            with tecio.open(str(path), "w", variables=["x", "c"]) as w:
+                w.write_ordered_zone(data=[x], passive_vars={"nonexistent"})
+
+    def test_write_ijk_sparse_index_out_of_range_raises(
+        self, fmt: str, output_path: Callable
+    ) -> None:
+        """A 1-based index outside the variable list in passive_vars raises."""
+        n = 8
+        x = np.linspace(0.0, 1.0, n, dtype=np.float32)
+        path = _path(output_path, fmt, "write_ijk_sparse_index_out_of_range")
+
+        with pytest.raises(IndexError):
+            with tecio.open(str(path), "w", variables=["x", "c"]) as w:
+                w.write_ordered_zone(data=[x], passive_vars={5})
+
+    def test_write_ijk_passive_vars_bare_value_raises(
+        self, fmt: str, output_path: Callable
+    ) -> None:
+        """A bare name/index (not in a list/tuple/set) raises TypeError.
+
+        In particular a bare string must be rejected outright rather than
+        silently iterated character-by-character.
+        """
+        n = 8
+        x = np.linspace(0.0, 1.0, n, dtype=np.float32)
+        path = _path(output_path, fmt, "write_ijk_passive_vars_bare_value")
+
+        with pytest.raises(TypeError):
+            with tecio.open(str(path), "w", variables=["x", "unused", "c"]) as w:
+                w.write_ordered_zone(data=[x], passive_vars="unused")
+
+        with pytest.raises(TypeError):
+            with tecio.open(str(path), "w", variables=["x", "unused", "c"]) as w:
+                w.write_ordered_zone(data=[x], passive_vars=2)
+
+    def test_write_ijk_all_shared_warns_and_skips(
+        self, fmt: str, output_path: Callable
+    ) -> None:
+        """A zone with no active variables warns and is skipped, not an error.
+
+        Demonstrates:
+        - Every variable shared -> :class:`tecio.EmptyZoneWarning`, no
+          :exc:`ValueError`
+        - The writer is still usable afterward: a following zone writes
+          normally, and the skipped zone never appears in the file
+        """
+        i, j, k = 3, 3, 1
+        x, y, z = create_ordered((i, j, k))
+        x = x.astype(np.float32)
+        y = y.astype(np.float32)
+        z = z.astype(np.float32)
+        c0 = scalar_field(x, y, z).astype(np.float64)
+        c1 = (scalar_field(x, y, z) * 2.0).astype(np.float64)
+        path = _path(output_path, fmt, "write_ijk_all_shared_warns")
+
+        with tecio.open(str(path), "w", variables=["x", "y", "z", "c"]) as w:
+            w.write_ordered_zone(data=[x, y, z, c0], title="zone_1")
+            with pytest.warns(tecio.EmptyZoneWarning):
+                w.write_ordered_zone(
+                    data=[],
+                    var_sharing={"x": 1, "y": 1, "z": 1, "c": 1},
+                    title="zone_skipped",
+                )
+            assert w.current_zone == 1  # skipped zone did not advance the count
+            w.write_ordered_zone(data=[x, y, z, c1], title="zone_2")
+
+        with tecio.open(str(path), "r") as r:
+            assert r.num_zones == 2
+            assert [zn.title for zn in r.zones] == ["zone_1", "zone_2"]
 
     def test_write_ijk_dataset_and_zone_aux(
         self, fmt: str, output_path: Callable
@@ -496,7 +674,7 @@ class TestWriteIJKZone:
         with pytest.raises(ValueError):
             with tecio.open(str(path), "w", variables=["x", "y", "z", "c"]) as w:
                 w.write_ordered_zone(data=[x, y, z, c])
-                w.write_ordered_zone(data=[bad_c], var_sharing=[1, 1, 1, 0])
+                w.write_ordered_zone(data=[bad_c], var_sharing={"x": 1, "y": 1, "z": 1})
 
 
 # ======================================================================================
@@ -989,7 +1167,7 @@ class TestWriteFEZone:
                 zone_type=ZoneType.FETRIANGLE,
                 data=[x, c],
                 node_map=nodes,
-                passive_vars=[False, True, False],
+                passive_vars={"unused"},
             )
 
         assert path.exists()
@@ -1003,6 +1181,8 @@ class TestWriteFEZone:
         - FE zones cannot share coordinates across zones without also sharing
           connectivity (node maps differ per-zone in general), so this exercises both
           ``var_sharing`` and ``con_sharing`` together
+        - ``var_sharing={"x": 1, "y": 1, "z": 1}``: sparse, by name, same as the
+          ordered-zone case
         - ``shared_connectivity`` and shared-variable forwarding are now
           consistent across all three readers
         """
@@ -1019,7 +1199,9 @@ class TestWriteFEZone:
                 w.write_fe_zone(
                     zone_type=ZoneType.FETETRAHEDRON,
                     data=[x, y, z, c] if w.current_zone == 0 else [c],
-                    var_sharing=None if w.current_zone == 0 else [1, 1, 1, 0],
+                    var_sharing=(
+                        None if w.current_zone == 0 else {"x": 1, "y": 1, "z": 1}
+                    ),
                     node_map=nodes if w.current_zone == 0 else None,
                     con_sharing=None if w.current_zone == 0 else 1,
                     title=f"zone_t{step + 1}",
@@ -1080,8 +1262,8 @@ class TestWriteFEZone:
 
         Demonstrates:
         - With connectivity and coordinates shared from zone 1 (``con_sharing=1``,
-          ``var_sharing=[1, 1, 1, 0]``), an incorrectly-sized scalar is still caught
-          even though ``node_map`` itself is omitted for this zone
+          ``var_sharing={"x": 1, "y": 1, "z": 1}``), an incorrectly-sized scalar is
+          still caught even though ``node_map`` itself is omitted for this zone
         """
         x, y, z, nodes = create_FE_tet()
         x = x.astype(np.float32)
@@ -1100,7 +1282,7 @@ class TestWriteFEZone:
                 w.write_fe_zone(
                     zone_type=ZoneType.FETETRAHEDRON,
                     data=[c[0:-2]],
-                    var_sharing=[1, 1, 1, 0],
+                    var_sharing={"x": 1, "y": 1, "z": 1},
                     con_sharing=1,
                 )
 
@@ -1119,6 +1301,52 @@ class TestWriteFEZone:
                     node_map=nodes,
                     variables=["x", "y"],
                 )
+
+    def test_write_fe_all_shared_warns_and_skips(
+        self, fmt: str, output_path: Callable
+    ) -> None:
+        """An FE zone with no active variables warns and is skipped.
+
+        Demonstrates:
+        - Coordinates and connectivity both shared from zone 1
+          (``con_sharing=1``, ``var_sharing`` covering every variable)
+          -> :class:`tecio.EmptyZoneWarning`, no :exc:`ValueError`
+        - The writer is still usable afterward
+        """
+        x, y, z, nodes = create_FE_tet()
+        x = x.astype(np.float32)
+        y = y.astype(np.float32)
+        z = z.astype(np.float32)
+        c0 = np.sin(x).astype(np.float64)
+        c1 = np.cos(x).astype(np.float64)
+        path = _path(output_path, fmt, "write_fe_all_shared_warns")
+
+        with tecio.open(str(path), "w", variables=["x", "y", "z", "c"]) as w:
+            w.write_fe_zone(
+                zone_type=ZoneType.FETETRAHEDRON,
+                data=[x, y, z, c0],
+                node_map=nodes,
+                title="zone_1",
+            )
+            with pytest.warns(tecio.EmptyZoneWarning):
+                w.write_fe_zone(
+                    zone_type=ZoneType.FETETRAHEDRON,
+                    data=[],
+                    var_sharing={"x": 1, "y": 1, "z": 1, "c": 1},
+                    con_sharing=1,
+                    title="zone_skipped",
+                )
+            assert w.current_zone == 1  # skipped zone did not advance the count
+            w.write_fe_zone(
+                zone_type=ZoneType.FETETRAHEDRON,
+                data=[x, y, z, c1],
+                node_map=nodes,
+                title="zone_2",
+            )
+
+        with tecio.open(str(path), "r") as r:
+            assert r.num_zones == 2
+            assert [zn.title for zn in r.zones] == ["zone_1", "zone_2"]
 
 
 # ======================================================================================

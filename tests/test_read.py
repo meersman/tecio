@@ -366,7 +366,7 @@ class TestGetArray:
                 w.write_ordered_zone(
                     data=[x, y],
                     variables=["x", "y", "p"],
-                    passive_vars=[False, False, True],
+                    passive_vars={"p"},
                 )
 
         with tecio.open(str(path), "r") as r:

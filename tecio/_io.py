@@ -42,7 +42,6 @@ import tempfile
 from pathlib import Path
 from typing import Any, Literal, NamedTuple, overload
 
-import numpy as np
 import numpy.typing as npt
 
 from ._constants import FileType, ValueLocation, ZoneType
@@ -156,43 +155,25 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
                 "copying is not supported by the Write API yet."
             )
 
-        # Collect per-variable metadata and data arrays.
+        # Collect per-variable metadata and data arrays
         data: list[npt.NDArray] = []
         value_locations: list[ValueLocation] = []
-        passive_vars: list[bool] = []
-        var_sharing: list[int] = []
+        passive_vars: set[str] = set()
+        var_sharing: dict[str, int] = {}
 
         for var in zone.variables:
-            passive_vars.append(var.is_passive())
             sv = var.shared_zone  # None, or the 1-based source-zone index shared from
-            # Write API expects 0 = no sharing, positive = 1-based zone source.
-            var_sharing.append((sv) if sv is not None else 0)
-            value_locations.append(var.value_location)
-
-            if var.is_passive() or sv is not None:
-                # No array needed; append a placeholder so indices stay aligned.
-                data.append(np.array([], dtype=np.float32))
+            if var.is_passive():
+                passive_vars.add(var.name)
+            elif sv is not None:
+                var_sharing[var.name] = sv
             else:
                 data.append(var.values)  # ty: ignore[invalid-argument-type]
-
-        # Strip placeholder arrays — Write infers active variables from passive_vars /
-        # var_sharing.
-        active_data = [
-            arr
-            for arr, is_p, sv in zip(data, passive_vars, var_sharing, strict=False)
-            if not is_p and sv == 0
-        ]
-        active_locs = [
-            loc
-            for loc, is_p, sv in zip(
-                value_locations, passive_vars, var_sharing, strict=False
-            )
-            if not is_p and sv == 0
-        ]
+                value_locations.append(var.value_location)
 
         common_kw: dict[str, Any] = dict(
             title=zone.title,
-            value_locations=active_locs,
+            value_locations=value_locations,
             passive_vars=passive_vars,
             var_sharing=var_sharing,
             solution_time=zone.solution_time,
@@ -201,7 +182,7 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
         )
 
         if isinstance(zone, TecplotOrderedZoneReader):
-            writer.write_ordered_zone(data=active_data, **common_kw)
+            writer.write_ordered_zone(data=data, **common_kw)
         elif isinstance(zone, TecplotFEZoneReader):
             # Forward connectivity sharing: when shared, pass ``con_sharing`` and omit
             # the node map so the writer derives the node/cell counts from the source
@@ -210,7 +191,7 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
             con_sharing = cv if cv is not None else 0
             writer.write_fe_zone(
                 zone_type=zone.zone_type,
-                data=active_data,
+                data=data,
                 node_map=None if con_sharing else zone.node_map,
                 con_sharing=con_sharing,
                 **common_kw,
@@ -301,14 +282,15 @@ class AppendWrite:
             value_locations (Sequence[ValueLocation] | None): Per-variable
                 :class:`~tecio.libtecio.ValueLocation` for active variables. Defaults
                 to all :attr:`~tecio.libtecio.ValueLocation.NODAL`.
-            passive_vars (Sequence[bool | int] | None): Per-variable passive flag for
-                the **full** variable list (length = total variables in the file, not
-                just active ones). Defaults to all ``False``.
-            var_sharing (Sequence[int] | None): Per-variable share-from zone index
-                (1-based, counting all zones including those copied from the original
-                file).  ``0`` = no sharing. Defaults to all ``0``. Sharing grid
-                coordinates from zone 1 is a common pattern for transient data to avoid
-                duplicating large arrays.
+            passive_vars (list | tuple | set | None): Variables to mark passive: a list,
+                tuple, or set of variable names, or of 1-based indices. Defaults to all
+                active.
+            var_sharing (dict[str | int, int] | None): Variables to share from another
+                zone: a ``{variable: source zone}`` mapping (name or 1-based index to
+                1-based zone index, counting all zones including those copied from the
+                original file). Defaults to no sharing. Sharing grid coordinates from
+                zone 1 is a common pattern for transient data to avoid duplicating large
+                arrays.
             solution_time (float): Solution time for transient data. Defaults to
                 ``0.0``.
             strand_id (int): Strand ID grouping related time steps. Zones with the same
@@ -319,11 +301,9 @@ class AppendWrite:
         Example:
             Append a time step, sharing the grid from zone 1:
 
-            >>> n = len(tec.variables)  # e.g. ["x", "y", "pressure"]
             >>> tec.write_ordered_zone(
             ...     data=[p_new],  # only the non-shared variable
-            ...     passive_vars=[False] * n,
-            ...     var_sharing=[1, 1, 0],  # x and y shared from zone 1
+            ...     var_sharing={"x": 1, "y": 1},
             ...     solution_time=5.0,
             ...     strand_id=1,
             ... )
@@ -356,10 +336,12 @@ class AppendWrite:
             value_locations (Sequence[ValueLocation] | None): Per-variable value
                 location for active variables. Defaults to all
                 :attr:`~tecio.libtecio.ValueLocation.NODAL`.
-            passive_vars (Sequence[bool | int] | None): Per-variable passive flags for
-                the full variable list. Defaults to all ``False``.
-            var_sharing (Sequence[int] | None): Per-variable share-from zone index
-                (1-based).  ``0`` = no sharing. Defaults to all ``0``.
+            passive_vars (list | tuple | set | None): Variables to mark passive: a list,
+                tuple, or set of variable names, or of 1-based indices. Defaults to all
+                active.
+            var_sharing (dict[str | int, int] | None): Variables to share from another
+                zone: a ``{variable: source zone}`` mapping (name or 1-based index to
+                1-based zone index). Defaults to no sharing.
             con_sharing (int): Zone index to share connectivity from (1-based).  ``0`` =
                 write connectivity directly. Cannot be used with GLOBAL face-neighbor
                 modes. Defaults to ``0``.

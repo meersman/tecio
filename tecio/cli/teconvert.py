@@ -227,37 +227,22 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
                 "FEPOLYGON and FEPOLYHEDRON zones cannot be converted."
             )
 
-        # Collect per-variable arrays and metadata up front.
+        # Collect per-variable arrays and metadata. Only active variables are
+        # appended; passive_vars/var_sharing name the rest sparsely.
         data: list[np.ndarray] = []
         value_locations: list[Any] = []
-        passive_vars: list[bool] = []
-        var_sharing: list[int] = []
+        passive_vars: set[str] = set()
+        var_sharing: dict[str, int] = {}
 
         for var in zone.variables:
-            passive_vars.append(var.is_passive())
             sv = var.shared_zone
-            # Write API expects 0 = no sharing, positive = 1-based zone source.
-            var_sharing.append(sv if sv is not None else 0)
-            value_locations.append(var.value_location)
-
-            if var.is_passive() or sv is not None:
-                data.append(np.array([], dtype=np.float32))
+            if var.is_passive():
+                passive_vars.add(var.name)
+            elif sv is not None:
+                var_sharing[var.name] = sv
             else:
                 data.append(var.values)  # ty: ignore[invalid-argument-type]
-
-        # Only pass arrays for active, non-shared variables.
-        active_data = [
-            arr
-            for arr, is_p, sv in zip(data, passive_vars, var_sharing, strict=False)
-            if not is_p and sv == 0
-        ]
-        active_locs = [
-            loc
-            for loc, is_p, sv in zip(
-                value_locations, passive_vars, var_sharing, strict=False
-            )
-            if not is_p and sv == 0
-        ]
+                value_locations.append(var.value_location)
 
         # Collect existing zone-level aux data.
         zone_aux: dict[str, str] | None = None
@@ -266,7 +251,7 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
 
         common_kw: dict[str, Any] = dict(
             title=zone.title,
-            value_locations=active_locs,
+            value_locations=value_locations,
             passive_vars=passive_vars,
             var_sharing=var_sharing,
             solution_time=zone.solution_time,
@@ -275,7 +260,7 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
         )
 
         if isinstance(zone, TecplotOrderedZoneReader):
-            writer.write_ordered_zone(data=active_data, **common_kw)
+            writer.write_ordered_zone(data=data, **common_kw)
         elif isinstance(zone, TecplotFEZoneReader):
             con_sharing = zone.shared_connectivity
             fe_kw = common_kw.copy()
@@ -288,7 +273,7 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
                 fe_kw["face_neighbor_mode"] = zone.face_neighbor_mode
             writer.write_fe_zone(
                 zone_type=zt,
-                data=active_data,
+                data=data,
                 node_map=None if con_sharing else zone.node_map,
                 con_sharing=con_sharing,
                 **fe_kw,

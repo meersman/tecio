@@ -369,15 +369,14 @@ class TestAppendWrite:
             assert w.current_zone == 2  # two Onera zones copied
             # Append a new tiny zone (all non-Onera variables passive).
             n_vars = len(w.variables)
-            passive = [True] * n_vars
-            passive[0] = passive[1] = passive[2] = False  # x, y, z
+            passive_vars = set(range(4, n_vars + 1))  # everything except x, y, z
             pts = np.zeros((10, 3), dtype=np.float32)
             nodes = np.array([[i + 1, i + 2] for i in range(9)], dtype=np.int32)
             w.write_fe_zone(
                 zone_type=ZoneType.FELINESEG,
                 data=[pts[:, 0], pts[:, 1], pts[:, 2]],
                 node_map=nodes,
-                passive_vars=passive,
+                passive_vars=passive_vars,
                 title="tiny_new",
             )
 
@@ -393,14 +392,13 @@ class TestAppendWrite:
         with tecio.open(str(src), "a") as w:
             x = np.zeros(5, dtype=np.float32)
             n_vars = len(w.variables)
-            passive = [True] * n_vars
-            passive[0] = passive[1] = passive[2] = False
+            passive_vars = set(range(4, n_vars + 1))  # everything except x, y, z
             nodes = np.array([[1, 2], [2, 3], [3, 4], [4, 5]], dtype=np.int32)
             w.write_fe_zone(
                 zone_type=ZoneType.FELINESEG,
                 data=[x, x, x],
                 node_map=nodes,
-                passive_vars=passive,
+                passive_vars=passive_vars,
                 title="filler",
             )
 
@@ -495,7 +493,7 @@ class TestAppendReadWrite:
             for i, t in enumerate(times):
                 c = np.sin(x_base + t).astype(np.float32)
                 data = [x_base, c] if i == 0 else [c]
-                sharing = None if i == 0 else [1, 0]
+                sharing = None if i == 0 else {"x": 1}
                 w.write_ordered_zone(
                     data=data,
                     var_sharing=sharing,
@@ -514,7 +512,7 @@ class TestAppendReadWrite:
 
             rw.write_ordered_zone(
                 data=[c_avg],
-                var_sharing=[1, 0],
+                var_sharing={"x": 1},
                 title="time_average",
                 solution_time=float(rw.num_zones),
                 strand_id=2,
@@ -542,15 +540,14 @@ class TestAppendReadWrite:
             assert titles == ["FluidVolume", "WingSurface"]
 
             n_vars = len(rw.variables)
-            passive = [True] * n_vars
-            passive[0] = passive[1] = passive[2] = False
+            passive_vars = set(range(4, n_vars + 1))  # everything except x, y, z
             nodes = np.array([[1, 2], [2, 3]], dtype=np.int32)
             xyz = np.zeros(3, dtype=np.float32)
             rw.write_fe_zone(
                 zone_type=ZoneType.FELINESEG,
                 data=[xyz, xyz, xyz],
                 node_map=nodes,
-                passive_vars=passive,
+                passive_vars=passive_vars,
                 title="dummy",
             )
 
@@ -718,7 +715,8 @@ class TestGetVariableAndZoneList:
 
 class TestPeekAndScalarQueries:
     """Tests for ``tecio.get_num_zones``/``get_num_variables``/``get_title``/
-    ``get_file_type``/``peek``."""
+    ``get_file_type``/``peek``.
+    """
 
     @pytest.mark.parametrize("fmt", ["szplt", "plt", "dat"])
     def test_scalar_queries_match_full_open(self, fmt: str, tmp_path: Path) -> None:

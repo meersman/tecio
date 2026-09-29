@@ -398,54 +398,34 @@ def main(argv: Sequence[str] | None = None) -> int:
                         continue
 
                     # Build per-variable metadata for the requested subset.
-                    active_data: list[np.ndarray] = []
-                    active_locs: list[Any] = []
-                    passive_vars: list[bool] = []
-                    var_sharing: list[int] = []
+                    data: list[np.ndarray] = []
+                    value_locations: list[Any] = []
+                    passive_vars: set[str] = set()
+                    var_sharing: dict[str, int] = {}
 
                     for orig_idx in out_var_indices:
                         var = zone.variables[orig_idx - 1]
                         is_passive = var.is_passive()
-                        passive_vars.append(is_passive)
-                        active_locs.append(var.value_location)
 
                         sv = var.shared_zone
                         remapped = zone_index_map.get(sv) if sv is not None else None
 
                         if is_passive:
-                            var_sharing.append(0)
-                            active_data.append(np.array([], dtype=np.float32))
+                            passive_vars.add(var.name)
                         elif remapped is not None:
                             # Source zone was also extracted -> preserve the data
                             # sharing relationship
-                            var_sharing.append(remapped)
-                            active_data.append(np.array([], dtype=np.float32))
+                            var_sharing[var.name] = remapped
                         else:
                             # Variables not shared at all, or shared from a zone that is
                             # not output, in which case branch sharing -> write the
                             # actual values as independent data
-                            var_sharing.append(0)
                             arr = var.values
                             if arr is None or arr.size == 0:
-                                passive_vars[-1] = True
-                                active_data.append(np.array([], dtype=np.float32))
+                                passive_vars.add(var.name)
                             else:
-                                active_data.append(arr)
-
-                    writer_data = [
-                        arr
-                        for arr, is_p, sv in zip(
-                            active_data, passive_vars, var_sharing, strict=False
-                        )
-                        if not is_p and sv == 0
-                    ]
-                    writer_locs = [
-                        loc
-                        for loc, is_p, sv in zip(
-                            active_locs, passive_vars, var_sharing, strict=False
-                        )
-                        if not is_p and sv == 0
-                    ]
+                                data.append(arr)
+                                value_locations.append(var.value_location)
 
                     zone_aux: dict[str, str] | None = None
                     if len(zone.auxdata) > 0:
@@ -453,7 +433,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                     common_kw: dict[str, Any] = dict(
                         title=zone.title,
-                        value_locations=writer_locs,
+                        value_locations=value_locations,
                         passive_vars=passive_vars,
                         var_sharing=var_sharing,
                         solution_time=zone.solution_time,
@@ -462,7 +442,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
 
                     if isinstance(zone, TecplotOrderedZoneReader):
-                        writer.write_ordered_zone(data=writer_data, **common_kw)
+                        writer.write_ordered_zone(data=data, **common_kw)
                     elif isinstance(zone, TecplotFEZoneReader):
                         con_src = zone.shared_connectivity
                         con_remapped = (
@@ -478,7 +458,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             fe_kw["face_neighbor_mode"] = zone.face_neighbor_mode
                         writer.write_fe_zone(
                             zone_type=zt,
-                            data=writer_data,
+                            data=data,
                             node_map=None if con_remapped else zone.node_map,
                             con_sharing=con_remapped,
                             **fe_kw,

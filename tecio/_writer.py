@@ -30,8 +30,10 @@ Notes:
 
 from __future__ import annotations
 
+import warnings
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from typing import Any
 
@@ -47,6 +49,21 @@ from ._constants import (
     ZoneType,
 )
 from ._meta import WriterMeta
+
+
+class EmptyZoneWarning(UserWarning):
+    """Emitted when a zone has no active variables to write.
+
+    Raised when every dataset variable is either passive or shared for this zone, such
+    that there is no data to write. No zone is created, rather than raising an error, so
+    the writer stays open and usable for subsequent zones.
+    """
+
+
+# passive_vars/var_sharing each name only the variables that deviate from the default
+# (active, not shared)
+PassiveVarsSpec = Collection[int | str]
+VarSharingSpec = Mapping[int | str, int]
 
 _STR_TO_PRECISION: dict[str, DataType] = {
     "single": DataType.FLOAT,
@@ -210,6 +227,176 @@ def validate_face_neighbors(
             i += record_len
 
 
+# -- Variable key resolution -----------------------------------------------------------
+
+
+def resolve_variable_key(key: int | str, dataset_variables: Sequence[str]) -> int:
+    """Return the 0-based dataset variable index for *key*.
+
+    Shared by aux-data key resolution (:meth:`~TecplotWriter._resolve_var_index`) and
+    the sparse forms of *passive_vars*/*var_sharing* below, so a variable is always
+    identified the same way everywhere in the writer API: either its exact name, or its
+    1-based dataset index.
+
+    Args:
+        key: A variable name (exact match) or a 1-based index.
+        dataset_variables: The full dataset variable name list.
+
+    Raises:
+        TypeError: *key* is neither ``int`` nor ``str`` (``bool`` included, since it is
+            a subtype of ``int`` but never a meaningful key).
+        IndexError: A 1-based index is out of range.
+        KeyError: A name doesn't match any dataset variable.
+    """
+    if isinstance(key, bool):
+        raise TypeError(
+            f"Variable key must be a name (str) or 1-based index (int), got {key!r}"
+        )
+    if isinstance(key, int):
+        var_idx = key - 1
+        if var_idx not in range(len(dataset_variables)):
+            raise IndexError(
+                f"Variable index {key} out of bounds [1, {len(dataset_variables)}]"
+            )
+        return var_idx
+    if isinstance(key, str):
+        try:
+            return list(dataset_variables).index(key)
+        except ValueError:
+            raise KeyError(
+                f"Variable {key!r} not found in {list(dataset_variables)}"
+            ) from None
+    raise TypeError(
+        f"Variable key must be a name (str) or 1-based index (int), got {key!r}"
+    )
+
+
+def _check_uniform_key_type(keys: Iterable[int | str], label: str) -> None:
+    """Raise if *keys* names variables by both name and 1-based index.
+
+    A single passive_vars/var_sharing specification must address variables one way or
+    the other. Mixing them introduces ambiguity and, for var_sharing, would let one
+    entry silently overwrite the other.
+
+    Args:
+        keys: The keys to check (bool values are ignored here; they are rejected with a
+            more specific error by :func:`resolve_variable_key`).
+        label: Parameter name to use in the error message.
+
+    Raises:
+        TypeError: *keys* contains at least one name and at least one index.
+    """
+    has_name = any(isinstance(k, str) for k in keys)
+    has_index = any(isinstance(k, int) and not isinstance(k, bool) for k in keys)
+    if has_name and has_index:
+        raise TypeError(
+            f"{label} must use variable names or 1-based indices, not a mix of both."
+        )
+
+
+def resolve_passive_vars(
+    passive_keys: Collection[int | str], dataset_variables: Sequence[str]
+) -> list[bool]:
+    """Expand a list-like set of passive variable keys to an expanded flag list.
+
+    Args:
+        passive_keys: Variable names, or 1-based indices, to mark passive. Must be all
+            names or all indices.
+        dataset_variables: The full dataset variable name list.
+
+    Raises:
+        TypeError: *passive_keys* mixes names and indices.
+    """
+    _check_uniform_key_type(passive_keys, "passive_vars")
+    passive = [False] * len(dataset_variables)
+    for key in passive_keys:
+        passive[resolve_variable_key(key, dataset_variables)] = True
+    return passive
+
+
+def resolve_var_sharing(
+    sharing_map: Mapping[int | str, int],
+    dataset_variables: Sequence[str],
+    *,
+    passive_vars: Sequence[bool],
+) -> list[int]:
+    """Expand a sparse ``{variable: source zone}`` mapping to a dense list.
+
+    Args:
+        sharing_map: Maps a variable name, or 1-based index, to the 1-based zone index
+            to share its data from. Keys must be all names or all indices.
+        dataset_variables: The full dataset variable name list.
+        passive_vars: Already-resolved dense passive_vars list, checked against so no
+            variable ends up both passive and shared.
+
+    Raises:
+        TypeError: *sharing_map* mixes names and indices.
+        ValueError: A key is already marked passive in *passive_vars*.
+    """
+    _check_uniform_key_type(sharing_map.keys(), "var_sharing")
+    sharing = [0] * len(dataset_variables)
+    for key, zone in sharing_map.items():
+        var_idx = resolve_variable_key(key, dataset_variables)
+        if passive_vars[var_idx]:
+            raise ValueError(
+                f"Variable {dataset_variables[var_idx]!r} is both passive "
+                "and shared; a variable cannot be both."
+            )
+        sharing[var_idx] = int(zone)
+    return sharing
+
+
+def _normalize_passive_and_sharing(
+    passive_vars: PassiveVarsSpec | None,
+    var_sharing: VarSharingSpec | None,
+    dataset_variables: Sequence[str],
+) -> tuple[list[bool], list[int]]:
+    """Resolve sparse *passive_vars*/*var_sharing* to dense internal arrays.
+
+    Each names only the variables that deviate from the default (active, not shared);
+    ``None`` or an empty collection means all-active/no-sharing.  *passive_vars* accepts
+    any list, tuple, or set of names, or of indices, but not a mix of both within the
+    same call (see :func:`_check_uniform_key_type`). This is expanded to dataset length
+    arrays here for input to TecIO functions.
+
+    Raises:
+        TypeError: *passive_vars* is given but isn't a list/tuple/set, or *var_sharing*
+            is given but isn't a mapping, or either mixes variable names and indices.
+            The old dense form, a sequence with one entry per dataset variable, is no
+            longer accepted; specify only the variables that are passive or shared
+            instead.
+        ValueError: A variable is named in both *passive_vars* and *var_sharing*.
+        KeyError: A name doesn't match any dataset variable.
+        IndexError: A 1-based index is out of range.
+    """
+    if isinstance(passive_vars, (str, bytes)) or (
+        passive_vars is not None
+        and not isinstance(passive_vars, (AbstractSet, Sequence))
+    ):
+        raise TypeError(
+            "passive_vars must be a list, tuple, or set of variable names, or of "
+            f"1-based indices, e.g. {{'unused'}} or [2]; got "
+            f"{type(passive_vars).__name__}."
+        )
+    if var_sharing is not None and not isinstance(var_sharing, Mapping):
+        raise TypeError(
+            "var_sharing must be a {variable: source zone} mapping, e.g. "
+            f"{{'x': 1}}; got {type(var_sharing).__name__}."
+        )
+
+    passive = (
+        resolve_passive_vars(passive_vars, dataset_variables)
+        if passive_vars
+        else [False] * len(dataset_variables)
+    )
+    sharing = (
+        resolve_var_sharing(var_sharing, dataset_variables, passive_vars=passive)
+        if var_sharing
+        else [0] * len(dataset_variables)
+    )
+    return passive, sharing
+
+
 @dataclass
 class PreparedOrderedZone:
     """Validated, normalized inputs for writing one ordered (IJK) zone.
@@ -234,12 +421,12 @@ def prepare_ordered_zone(
     variable_types: Sequence[DataType],
     *,
     value_locations: Sequence[ValueLocation] | None,
-    passive_vars: Sequence[bool | int] | None,
-    var_sharing: Sequence[int] | None,
+    passive_vars: PassiveVarsSpec | None,
+    var_sharing: VarSharingSpec | None,
     dataset_variables: Sequence[str],
     meta: WriterMeta,
     on_error: Callable[[], None] | None = None,
-) -> PreparedOrderedZone:
+) -> PreparedOrderedZone | None:
     """Validate and normalize inputs for writing an ordered (IJK) zone.
 
     Shared across formats: derives imax/jmax/kmax from the supplied arrays' shapes,
@@ -253,18 +440,18 @@ def prepare_ordered_zone(
                            one per active (non-passive, non-shared) variable.
         variable_types:    Per-active-variable data type, one per array in
                            *arrays*. Computed by the caller: type-inference strategy is
-                           currently
-                           format-specific (SZL/DAT infer from each array's own dtype,
-                           PLT always uses its
-                           configured precision), so it isn't derived here.
-        value_locations:   Per-active-variable value location, or None for
-                           all-NODAL.
-        passive_vars:      Per-dataset-variable passive flags, or None for all
-                           active.
-        var_sharing:       Per-dataset-variable source-zone sharing indices, or
-                           None for no sharing.
-        dataset_variables: The full dataset variable name list, already
-                           established (after the writer's own lazy-open handling).
+                           currently format-specific (SZL/DAT infer from each array's
+                           own dtype, PLT always uses its configured precision), so it
+                           isn't derived here.
+        value_locations:   Per-active-variable value location, or None for all-NODAL.
+        passive_vars:      Variables to mark passive: a list, tuple, or set of variable
+                           names, or of 1-based indices (not a mix of both), e.g.
+                           ``{"x"}`` or ``[2]``. None means all active.
+        var_sharing:       Variables to share from another zone: a ``{variable: source
+                           zone}`` mapping, name or 1-based index to 1-based zone index,
+                           e.g. ``{"x": 1}``. None or an empty mapping means no sharing.
+        dataset_variables: The full dataset variable name list, already established
+                           (after the writer's own lazy-open handling).
         meta:              The writer's own zone metadata, for resolving shared
                            variables' source zones.
         on_error:          Optional callback invoked once, before any ValueError is
@@ -274,35 +461,44 @@ def prepare_ordered_zone(
 
     Returns:
         A :class:`PreparedOrderedZone` with everything else needed to proceed to the
-        format-specific zone-creation call.
+        format-specific zone-creation call, or ``None`` if every dataset variable
+        is passive or shared, leaving nothing to write. In the ``None`` case an
+        :class:`EmptyZoneWarning` is emitted and the caller should return without
+        creating a zone; ``on_error`` is not invoked since nothing has gone wrong.
 
     Raises:
+        TypeError: *passive_vars*/*var_sharing* isn't a list/tuple/set/mapping as
+            appropriate, or mixes variable names and indices.
         ValueError: On any inconsistency: wrong active-variable count, shape mismatch
-            (local or shared), or a shared variable referencing a zone that doesn't
-            exist yet or isn't ORDERED.
+            (local or shared), a shared variable referencing a zone that doesn't exist
+            yet or isn't ORDERED, or a variable named in both *passive_vars* and
+            *var_sharing*.
+        KeyError: A *passive_vars*/*var_sharing* name doesn't match any dataset
+            variable.
+        IndexError: A *passive_vars*/*var_sharing* 1-based index is out of range.
 
     """
     try:
         if value_locations is None:
             value_locations = [ValueLocation.NODAL] * len(arrays)
-        if passive_vars is None:
-            passive_vars = [False] * len(dataset_variables)
-        if var_sharing is None:
-            var_sharing = [0] * len(dataset_variables)
+        passive_flags, share_idx = _normalize_passive_and_sharing(
+            passive_vars, var_sharing, dataset_variables
+        )
 
         if len(arrays) != len(dataset_variables):
             expected_vars = sum(
                 1
-                for is_passive, share_zone in zip(
-                    passive_vars, var_sharing, strict=True
-                )
+                for is_passive, share_zone in zip(passive_flags, share_idx, strict=True)
                 if not is_passive and not share_zone
             )
             if expected_vars == 0:
-                raise ValueError(
-                    "No active variables to write. All variables are "
-                    "either passive or shared."
+                warnings.warn(
+                    "Zone has no active variables to write (every variable is "
+                    "passive or shared); skipping this zone.",
+                    EmptyZoneWarning,
+                    stacklevel=3,
                 )
+                return None
             if len(arrays) == 0:
                 raise ValueError(
                     f"No data arrays provided. Expected {expected_vars} "
@@ -317,7 +513,7 @@ def prepare_ordered_zone(
         active_var_idx = [
             var_idx
             for var_idx, (is_passive, sharing_zone_idx) in enumerate(
-                zip(passive_vars, var_sharing, strict=True), start=1
+                zip(passive_flags, share_idx, strict=True), start=1
             )
             if (not is_passive) and (not sharing_zone_idx)
         ]
@@ -332,9 +528,9 @@ def prepare_ordered_zone(
         cell_fallback_ndims: int | None = None
 
         for var_idx in range(1, len(dataset_variables) + 1):
-            if passive_vars[var_idx - 1]:
+            if passive_flags[var_idx - 1]:
                 continue
-            src = var_sharing[var_idx - 1]
+            src = share_idx[var_idx - 1]
             if src:
                 if nodal_shape is None:
                     src_zone = meta.zone(src)
@@ -376,9 +572,9 @@ def prepare_ordered_zone(
         # Validate every non-passive dataset variable (local and shared) against the
         # reference shape.
         for var_idx in range(1, len(dataset_variables) + 1):
-            if passive_vars[var_idx - 1]:
+            if passive_flags[var_idx - 1]:
                 continue
-            src = var_sharing[var_idx - 1]
+            src = share_idx[var_idx - 1]
             if src:
                 src_zone = meta.zone(src)
                 if src_zone is None or src_zone.dimensions is None:
@@ -423,8 +619,8 @@ def prepare_ordered_zone(
 
     return PreparedOrderedZone(
         value_locations=list(value_locations),
-        passive_vars=[bool(p) for p in passive_vars],
-        var_sharing=[int(s) for s in var_sharing],
+        passive_vars=[bool(p) for p in passive_flags],
+        var_sharing=[int(s) for s in share_idx],
         active_var_idx=active_var_idx,
         imax=imax,
         jmax=jmax,
@@ -463,15 +659,15 @@ def prepare_fe_zone(
     *,
     node_map: npt.ArrayLike | None,
     value_locations: Sequence[ValueLocation] | None,
-    passive_vars: Sequence[bool | int] | None,
-    var_sharing: Sequence[int] | None,
+    passive_vars: PassiveVarsSpec | None,
+    var_sharing: VarSharingSpec | None,
     con_sharing: int | None,
     face_neighbors: npt.ArrayLike | None,
     face_neighbor_mode: FaceNeighborMode | None,
     dataset_variables: Sequence[str],
     meta: WriterMeta,
     on_error: Callable[[], None] | None = None,
-) -> PreparedFEZone:
+) -> PreparedFEZone | None:
     """Validate and normalize inputs for writing a finite-element zone.
 
     Shared across formats: derives num_nodes/num_cells from node_map (or the con_sharing
@@ -490,9 +686,12 @@ def prepare_fe_zone(
         zone_type: This zone's :class:`~tecio.ZoneType`.
         node_map: Connectivity array, or None if *con_sharing* is set.
         value_locations: Per-active-variable value location, or None for all-NODAL.
-        passive_vars: Per-dataset-variable passive flags, or None for all active.
-        var_sharing: Per-dataset-variable source-zone sharing indices, or None for no
-            sharing.
+        passive_vars: Variables to mark passive: a list, tuple, or set of variable
+            names, or of 1-based indices (not a mix of both), e.g. ``{"x"}`` or
+            ``[2]``. None means all active.
+        var_sharing: Variables to share from another zone: a ``{variable: source zone}``
+            mapping, name or 1-based index to 1-based zone index, e.g.  ``{"x":
+            1}``. None or an empty mapping means no sharing.
         con_sharing: Source zone index to share connectivity from, or None (equivalent
             to 0) for no sharing.
         face_neighbors: Optional flat face-neighbor connectivity array.  Left in its
@@ -501,8 +700,7 @@ def prepare_fe_zone(
             API, for instance) casts the returned array itself.
         face_neighbor_mode: Required if *face_neighbors* is given, invalid if it isn't;
             see :func:`validate_face_neighbor_sharing`.
-        dataset_variables: The full dataset variable name list, already established
-            (after the writer's own lazy-open handling).
+        dataset_variables: The full dataset variable name list.
         meta: The writer's own zone metadata, for resolving shared connectivity/variable
             source zones.
         on_error: Optional callback invoked once, before any ValueError is raised, for a
@@ -511,12 +709,21 @@ def prepare_fe_zone(
 
     Returns:
         A :class:`PreparedFEZone` with everything else needed to proceed to the
-        format-specific zone-creation call.
+        format-specific zone-creation call, or ``None`` if every dataset variable is
+        passive or shared, leaving nothing to write. In the ``None`` case an
+        :class:`EmptyZoneWarning` is emitted and the caller should return without
+        creating a zone; ``on_error`` is not invoked since nothing has gone wrong.
 
     Raises:
+        TypeError: *passive_vars*/*var_sharing* isn't a list/tuple/set/mapping as
+            appropriate, or mixes variable names and indices.
         ValueError: On any inconsistency: wrong active-variable count, array-size
             mismatch (local or shared), con_sharing/var_sharing referencing a zone that
-            doesn't exist yet or isn't FE, or any face-neighbor validation failure.
+            doesn't exist yet or isn't FE, any face-neighbor validation failure, or a
+            variable named in both *passive_vars* and *var_sharing*.
+        KeyError: A *passive_vars*/*var_sharing* name doesn't match any dataset
+            variable.
+        IndexError: A *passive_vars*/*var_sharing* 1-based index is out of range.
     """
     try:
         if con_sharing is None:
@@ -547,24 +754,26 @@ def prepare_fe_zone(
 
         if value_locations is None:
             value_locations = [ValueLocation.NODAL] * len(arrays)
-        if passive_vars is None:
-            passive_vars = [False] * len(dataset_variables)
-        if var_sharing is None:
-            var_sharing = [0] * len(dataset_variables)
+        passive_flags, share_idx = _normalize_passive_and_sharing(
+            passive_vars, var_sharing, dataset_variables
+        )
 
         if len(arrays) != len(dataset_variables):
             expected_vars = sum(
                 1
                 for is_passive, sharing_zone_idx in zip(
-                    passive_vars, var_sharing, strict=True
+                    passive_flags, share_idx, strict=True
                 )
                 if not is_passive and not sharing_zone_idx
             )
             if expected_vars == 0:
-                raise ValueError(
-                    "No active variables to write. All variables are "
-                    "either passive or shared."
+                warnings.warn(
+                    "Zone has no active variables to write (every variable is "
+                    "passive or shared); skipping this zone.",
+                    EmptyZoneWarning,
+                    stacklevel=3,
                 )
+                return None
             if len(arrays) == 0:
                 raise ValueError(
                     "No data arrays provided for active variables. "
@@ -579,13 +788,13 @@ def prepare_fe_zone(
         active_var_idx = [
             var_idx
             for var_idx, (is_passive, sharing_zone_idx) in enumerate(
-                zip(passive_vars, var_sharing, strict=True), start=1
+                zip(passive_flags, share_idx, strict=True), start=1
             )
             if (not is_passive) and (not sharing_zone_idx)
         ]
 
         # Shared variable data shape validation
-        for var_idx, src in enumerate(var_sharing, start=1):
+        for var_idx, src in enumerate(share_idx, start=1):
             if not src:
                 continue
             src_zone = meta.zone(src)
@@ -661,8 +870,8 @@ def prepare_fe_zone(
 
     return PreparedFEZone(
         value_locations=list(value_locations),
-        passive_vars=[bool(p) for p in passive_vars],
-        var_sharing=[int(s) for s in var_sharing],
+        passive_vars=[bool(p) for p in passive_flags],
+        var_sharing=[int(s) for s in share_idx],
         con_sharing=con_sharing,
         active_var_idx=active_var_idx,
         num_nodes=num_nodes,
@@ -848,6 +1057,10 @@ class TecplotWriter(ABC):
     def _resolve_var_index(self, key: int | str) -> int:
         """Return the 0-based variable index for an aux-data key.
 
+        Delegates to :func:`resolve_variable_key`, the same resolver the sparse forms of
+        *passive_vars*/*var_sharing* use, so a variable is identified the same way
+        everywhere in the writer API.
+
         Args:
             key: A 1-based variable index, or an exact variable name.
 
@@ -856,31 +1069,7 @@ class TecplotWriter(ABC):
             KeyError: If a name key doesn't match any variable.
             TypeError: If *key* is neither ``int`` nor ``str``.
         """
-        if isinstance(key, bool):
-            raise TypeError(
-                f"Aux data key must be a variable name (str) or 1-based "
-                f"index (int), got {key!r}"
-            )
-        if isinstance(key, int):
-            var_idx = key - 1
-            if var_idx not in range(len(self._check_variables())):
-                raise IndexError(
-                    f"Variable index {key} out of bounds "
-                    f"[1, {len(self._check_variables())}]"
-                )
-            return var_idx
-        if isinstance(key, str):
-            try:
-                return self._check_variables().index(key)
-            except ValueError as exc:
-                raise KeyError(
-                    f"Variable aux data key {key!r} not found in variable "
-                    f"list ({self.variables})"
-                ) from exc
-        raise TypeError(
-            f"Aux data key must be a variable name (str) or 1-based index "
-            f"(int), got {key!r}"
-        )
+        return resolve_variable_key(key, self._check_variables())
 
     def flush_aux(self) -> None:
         """Write buffered dataset- and variable-level aux data to the file.
@@ -922,8 +1111,8 @@ class TecplotWriter(ABC):
         title: str | None = None,
         variables: list[str] | None = None,
         value_locations: Sequence[ValueLocation] | None = None,
-        passive_vars: Sequence[bool | int] | None = None,
-        var_sharing: Sequence[int] | None = None,
+        passive_vars: PassiveVarsSpec | None = None,
+        var_sharing: VarSharingSpec | None = None,
         solution_time: float = 0.0,
         strand_id: int = 0,
         aux: dict[str, Any] | None = None,
@@ -941,8 +1130,8 @@ class TecplotWriter(ABC):
         title: str | None = None,
         variables: list[str] | None = None,
         value_locations: Sequence[ValueLocation] | None = None,
-        passive_vars: Sequence[bool | int] | None = None,
-        var_sharing: Sequence[int] | None = None,
+        passive_vars: PassiveVarsSpec | None = None,
+        var_sharing: VarSharingSpec | None = None,
         con_sharing: int | None = None,
         face_neighbors: npt.ArrayLike | None = None,
         face_neighbor_mode: FaceNeighborMode | None = None,
