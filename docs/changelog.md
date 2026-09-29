@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Updaded passive and shared variable specification for the writer
+  methods. Previously any passive or shared variables required providing a
+  flag for all global variables, while data arrays and value loacations and
+  only provided for active variables. Now the passive and shared variables can
+  be specified by only referencing those variables. Users may specify passive
+  variables with `passive_vars=["x", "y", "z"]` and shared variables with
+  `var_sharing={"x": 1, "y": 1, "z": 1}` (specified as varname or index:
+  shared zone index).
+
 ---
 
 ```{include} changelog/v0.3.3.md
