@@ -22,12 +22,12 @@ corrective operation.
 
 :Options:
     ``-z INDEX``, ``--zone INDEX``
-        Restrict output to the zone at the given one-based index. If omitted, all zones
+        Restrict output to the zone at the given 0-based index. If omitted, all zones
         are reported.
 
     ``-v INDEX_OR_NAME``, ``--variable INDEX_OR_NAME``
-        Restrict output to the variable at the given one-based index or exact variable
-        name (e.g. ``-v 3`` or ``-v pressure``). If omitted, all variables
+        Restrict output to the variable at the given 0-based index or exact variable
+        name (e.g. ``-v 2`` or ``-v pressure``). If omitted, all variables
         are reported.
 
     ``--csv``
@@ -45,14 +45,14 @@ corrective operation.
              - Output filename
            * - ``tecstats --csv flow.szplt``
              - ``flow_stats.csv``
-           * - ``tecstats --csv -z 2 flow.szplt``
-             - ``flow_zone_2_stats.csv``
-           * - ``tecstats --csv -v 3 flow.szplt``
-             - ``flow_var_3_stats.csv``
+           * - ``tecstats --csv -z 1 flow.szplt``
+             - ``flow_zone_1_stats.csv``
+           * - ``tecstats --csv -v 2 flow.szplt``
+             - ``flow_var_2_stats.csv``
            * - ``tecstats --csv -v pressure flow.szplt``
-             - ``flow_var_3_stats.csv``
-           * - ``tecstats --csv -z 2 -v 3 flow.szplt``
-             - ``flow_zone_2_var_3_stats.csv``
+             - ``flow_var_2_stats.csv``
+           * - ``tecstats --csv -z 1 -v 2 flow.szplt``
+             - ``flow_zone_1_var_2_stats.csv``
 
     ``-f``, ``--force``
         Overwrite the output CSV file if it already exists. Without this flag the
@@ -70,13 +70,13 @@ Examples:
 
         $ tecstats flow.szplt
 
-    Restrict to zone 2 only::
+    Restrict to zone 1 only::
 
-        $ tecstats -z 2 flow.szplt
+        $ tecstats -z 1 flow.szplt
 
-    Restrict to variable 3 across all zones::
+    Restrict to variable 2 across all zones::
 
-        $ tecstats -v 3 flow.szplt
+        $ tecstats -v 2 flow.szplt
 
     Restrict to a variable by name::
 
@@ -90,7 +90,7 @@ Examples:
 
         import tecio.cli.tecstats.main as tecstats
 
-        tecstats(["-z", "2", "-v", "3", "flow.szplt"])
+        tecstats(["-z", "1", "-v", "2", "flow.szplt"])
 
 See Also:
     * :mod:`tecio.cli.tecdump` - Inspect the full contents and metadata of a file,
@@ -139,16 +139,16 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "Example usage:\n"
             "  Print stats for all zones and variables\n"
             "    $ tecstats <file>\n"
-            "  Print stats for zone 2 only\n"
-            "    $ tecstats -z 2 <file>\n"
-            "  Print stats for variable 3 only\n"
-            "    $ tecstats -v 3 <file>\n"
+            "  Print stats for zone 1 only\n"
+            "    $ tecstats -z 1 <file>\n"
+            "  Print stats for variable 2 only\n"
+            "    $ tecstats -v 2 <file>\n"
             "  Print stats for a variable by name\n"
             "    $ tecstats -v pressure <file>\n"
             "  Write results to a CSV file (auto-named from input stem)\n"
             "    $ tecstats --csv <file>                 # <stem>_stats.csv\n"
             "  CSV with zone/variable filter suffixes\n"
-            "    $ tecstats --csv -z 2 -v 3 <file>  # <stem>_zone_2_var_3_stats.csv\n"
+            "    $ tecstats --csv -z 1 -v 2 <file>  # <stem>_zone_1_var_2_stats.csv\n"
         ),
         formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
             prog, width=70, max_help_position=24
@@ -165,7 +165,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=int,
         default=None,
         metavar="INDEX",
-        help="1-based zone index to report. Default is all zones.",
+        help="0-based zone index to report. Default is all zones.",
     )
     parser.add_argument(
         "-v",
@@ -174,8 +174,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="INDEX_OR_NAME",
         help=(
-            "1-based variable index or exact variable name to report "
-            "(e.g. -v 3 or -v pressure). Default is all "
+            "0-based variable index or exact variable name to report "
+            "(e.g. -v 2 or -v pressure). Default is all "
             "variables."
         ),
     )
@@ -209,7 +209,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def _resolve_variable(
     token: str | None, num_vars: int, var_names: list[str]
 ) -> int | None:
-    """Resolve a ``-v``/``--variable`` token (an index or a name) into a 1-based index.
+    """Resolve a ``-v``/``--variable`` token (an index or a name) into a 0-based index.
 
     Args:
         token: Raw ``-v``/``--variable`` value from argparse, or ``None`` if
@@ -218,7 +218,7 @@ def _resolve_variable(
         var_names: Dataset variable names in order, for exact-match lookup.
 
     Returns:
-        Validated 1-based index, or ``None`` if *token* is ``None`` (no
+        Validated 0-based index, or ``None`` if *token* is ``None`` (no
         filter, matches "all variables").
 
     Raises:
@@ -227,7 +227,7 @@ def _resolve_variable(
 
     Example:
         >>> _resolve_variable("pressure", 3, ["x", "y", "pressure"])
-        3
+        2
     """
     if token is None:
         return None
@@ -235,15 +235,17 @@ def _resolve_variable(
         index = int(token)
     except ValueError:
         try:
-            return var_names.index(token) + 1
+            return var_names.index(token)
         except ValueError:
             raise ValueError(
                 f"variable name {token!r} not found; available names: "
                 f"{', '.join(var_names)}."
             ) from None
     else:
-        if index < 1 or index > num_vars:
-            raise ValueError(f"variable index {index} out of range [1, {num_vars}].")
+        if index < 0 or index >= num_vars:
+            raise ValueError(
+                f"variable index {index} out of range [0, {num_vars - 1}]."
+            )
         return index
 
 
@@ -266,11 +268,11 @@ def _build_csv_path(
 
     Args:
         input_path: Path to the input Tecplot file.
-        zone:       1-based zone filter index, or ``None``.
-        variable:   Resolved 1-based variable filter index, or ``None``.
+        zone:       0-based zone filter index, or ``None``.
+        variable:   Resolved 0-based variable filter index, or ``None``.
             Always the *resolved* index, not the raw ``-v``/``--variable`` value,
             so a name-based filter still produces a short, filesystem-safe
-            suffix (e.g. ``_var_3``, not ``_var_pressure``).
+            suffix (e.g. ``_var_2``, not ``_var_pressure``).
 
     Returns:
         :class:`~pathlib.Path` with a ``.csv`` suffix in the same directory
@@ -279,10 +281,10 @@ def _build_csv_path(
     Examples:
         >>> _build_csv_path("results/flow.szplt", None, None)
         PosixPath('results/flow_stats.csv')
-        >>> _build_csv_path("results/flow.szplt", 2, None)
-        PosixPath('results/flow_zone_2_stats.csv')
-        >>> _build_csv_path("results/flow.szplt", 2, 3)
-        PosixPath('results/flow_zone_2_var_3_stats.csv')
+        >>> _build_csv_path("results/flow.szplt", 1, None)
+        PosixPath('results/flow_zone_1_stats.csv')
+        >>> _build_csv_path("results/flow.szplt", 1, 2)
+        PosixPath('results/flow_zone_1_var_2_stats.csv')
 
     """
     src = Path(input_path)
@@ -425,19 +427,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             _print_header()
 
-            for i, zone in enumerate(tec.zones):
-                zone_num = i + 1
+            for zone_num, zone in enumerate(tec.zones):
                 if args.zone is not None and zone_num != args.zone:
                     continue
 
                 zone_title: str = zone.title or ""
 
-                for j in range(tec.num_vars):
-                    var_num = j + 1
+                for var_num in range(tec.num_vars):
                     if resolved_var is not None and var_num != resolved_var:
                         continue
 
-                    var = zone.variables[j]
+                    var = zone.variables[var_num]
                     loc = (
                         var.value_location.name
                         if var.value_location is not None

@@ -47,7 +47,10 @@ dataset can be reconstructed in MATLAB without a Tecplot installation.
 
 Output structure:
     The ``.mat`` file contains one ``info`` struct describing the dataset and one
-    ``zone_<n>`` struct per zone (1-based, matching MATLAB's and Tecplot's indexing)::
+    ``zone_<n>`` struct per zone (1-based, matching MATLAB's and Tecplot's indexing).
+    All indices in the output (variable and zone indices AND node and cell indices in
+    ``node_map`` or ``face_connections``) are converted from the 0-based Python
+    convention to 1-based so the same values work directly in MATLAB::
 
         info                      struct
           .title                  char
@@ -69,16 +72,17 @@ Output structure:
           .var_locations          cell    'NODAL' | 'CELL_CENTERED' | ''
           .var_dtypes             cell    'FLOAT' | 'DOUBLE' | 'INT32' | ...
           .var_shared_from        array   1-based source zone, or 0 if not shared
-          .node_map               array   (num_elements x nodes_per_cell), FE only,
-                                          omitted if connectivity is shared
+          .node_map               array   (num_elements x nodes_per_cell) of 1-based
+                                          node numbers, FE only, omitted if
+                                          connectivity is shared
           .node_map_shared_from   double  1-based source zone, FE only, present only
                                           if this zone shares its connectivity
           .face_neighbor_mode     char    'LOCAL_ONE_TO_ONE' | ..., FE only, present
                                           only if the zone has face-neighbor data
           .num_face_connections   double  FE only, present only alongside
                                           face_neighbor_mode
-          .face_connections       array   flat, FE only, present only alongside
-                                          face_neighbor_mode
+          .face_connections       array   flat, 1-based cell/zone numbers, FE only,
+                                          present only alongside face_neighbor_mode
 
     Variable arrays are stored at their on-disk NumPy dtype, so single/double/integer
     precision is preserved. The real variable names are kept only in ``info.var_names``
@@ -180,6 +184,7 @@ from .. import (
     ZoneType,
 )
 from .. import open as tecio_open
+from .._writer import convert_face_connections_to_one_based
 
 # --------------------------------------------------------------------------------------
 # Constants
@@ -364,10 +369,10 @@ def _zone_to_dict(zone: TecplotZoneReader, num_vars: int) -> dict[str, Any]:
 
         src = var.shared_zone
         if src is not None:
-            # Stored once in the source zone; record the 1-based source so the
-            # MATLAB user can dereference zone_<src>.var_<k>.
+            # Stored once in the source zone; record the 1-based source (0-indexed,
+            # shifted for MATLAB) so the MATLAB user can dereference zone_<src>.var_<k>.
             d[f"var_{j + 1}"] = empty
-            shared_from[j] = int(src)
+            shared_from[j] = int(src) + 1
             status.append("shared")
             continue
 
@@ -399,11 +404,12 @@ def _zone_to_dict(zone: TecplotZoneReader, num_vars: int) -> dict[str, Any]:
     if isinstance(zone, TecplotFEZoneReader) and zone.zone_type not in _FE_POLY:
         con_src = zone.shared_connectivity
         if con_src is not None:
-            d["node_map_shared_from"] = np.int32(con_src)
+            d["node_map_shared_from"] = np.int32(con_src + 1)
         else:
             node_map = zone.node_map
             if node_map is not None:
-                d["node_map"] = node_map
+                # Node numbers are 0-based in Python; shift to 1-based for MATLAB.
+                d["node_map"] = np.asarray(node_map) + 1
 
         # Face-neighbor connections
         if zone.face_neighbor_mode is not None:
@@ -413,7 +419,11 @@ def _zone_to_dict(zone: TecplotZoneReader, num_vars: int) -> dict[str, Any]:
             assert face_connections is not None
             d["face_neighbor_mode"] = zone.face_neighbor_mode.name
             d["num_face_connections"] = np.int64(num_face_connections)
-            d["face_connections"] = face_connections
+            # Cell/remote-zone references are 0-based in Python; shift to
+            # 1-based for MATLAB. The face ordinal is already 1-based.
+            d["face_connections"] = convert_face_connections_to_one_based(
+                face_connections, zone.face_neighbor_mode
+            )
 
     return d
 

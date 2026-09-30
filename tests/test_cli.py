@@ -138,7 +138,7 @@ def _write_synthetic_ijk(path: Path) -> None:
             data=[p2],
             title="Z2",
             passive_vars={"y"},
-            var_sharing={"x": 1},
+            var_sharing={"x": 0},
         )
 
 
@@ -172,15 +172,15 @@ def onera_path(request) -> Path:
 def _write_shared_dataset(path: Path) -> None:
     """Write a 3-zone FETETRAHEDRON dataset with real variable/connectivity sharing.
 
-    Zone 1 (t=0.0): owns x, y, z, connectivity, c, and w.
-    Zone 2 (t=1.0): shares x, y, z, connectivity, and w from zone 1; c is its own.
-    Zone 3 (t=2.0): shares x, y, z, and connectivity from zone 1, and shares c from zone
-                    2.
+    Zone 0 (t=0.0): owns x, y, z, connectivity, c, and w.
+    Zone 1 (t=1.0): shares x, y, z, connectivity, and w from zone 0; c is its own.
+    Zone 2 (t=2.0): shares x, y, z, and connectivity from zone 0, and shares c from zone
+                    1.
     """
     x = np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float32)
     y = np.array([0.0, 0.0, 1.0, 0.0], dtype=np.float32)
     z = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
-    nodes = np.array([[1, 2, 3, 4]], dtype=np.int64)
+    nodes = np.array([[0, 1, 2, 3]], dtype=np.int64)
     c1 = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float64)
     c2 = np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float64)
     w1 = np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float64)
@@ -198,8 +198,8 @@ def _write_shared_dataset(path: Path) -> None:
         w.write_fe_zone(
             zone_type=ZoneType.FETETRAHEDRON,
             data=[c2],
-            var_sharing={"x": 1, "y": 1, "z": 1, "w": 1},
-            con_sharing=1,
+            var_sharing={"x": 0, "y": 0, "z": 0, "w": 0},
+            con_sharing=0,
             title="Zone2_SharesFromZone1",
             strand_id=1,
             solution_time=1.0,
@@ -207,8 +207,8 @@ def _write_shared_dataset(path: Path) -> None:
         w.write_fe_zone(
             zone_type=ZoneType.FETETRAHEDRON,
             data=[w3],
-            var_sharing={"x": 1, "y": 1, "z": 1, "c": 2},
-            con_sharing=1,
+            var_sharing={"x": 0, "y": 0, "z": 0, "c": 1},
+            con_sharing=0,
             title="Zone3_SharesFromZone1And2",
             strand_id=1,
             solution_time=2.0,
@@ -244,7 +244,7 @@ def _write_aux_dataset(path: Path) -> None:
     x = np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float32)
     y = np.array([0.0, 0.0, 1.0, 0.0], dtype=np.float32)
     z = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
-    nodes = np.array([[1, 2, 3, 4]], dtype=np.int64)
+    nodes = np.array([[0, 1, 2, 3]], dtype=np.int64)
     c1 = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float64)
     c2 = np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float64)
     w1 = np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float64)
@@ -252,7 +252,7 @@ def _write_aux_dataset(path: Path) -> None:
 
     with tecio.open(str(path), "w", variables=["x", "y", "z", "c", "w"]) as w:
         w.add_auxdataset_dict({"Solver": "MyCFD", "Version": "2.1"})
-        w.add_auxvar_dict({1: {"Units": "m"}, 4: {"Units": "Pa"}})
+        w.add_auxvar_dict({0: {"Units": "m"}, 3: {"Units": "Pa"}})
         w.flush_aux()
         w.write_fe_zone(
             zone_type=ZoneType.FETETRAHEDRON,
@@ -266,8 +266,8 @@ def _write_aux_dataset(path: Path) -> None:
         w.write_fe_zone(
             zone_type=ZoneType.FETETRAHEDRON,
             data=[c2],
-            var_sharing={"x": 1, "y": 1, "z": 1, "w": 1},
-            con_sharing=1,
+            var_sharing={"x": 0, "y": 0, "z": 0, "w": 0},
+            con_sharing=0,
             title="Zone2_SharesFromZone1",
             strand_id=1,
             solution_time=1.0,
@@ -275,8 +275,8 @@ def _write_aux_dataset(path: Path) -> None:
         w.write_fe_zone(
             zone_type=ZoneType.FETETRAHEDRON,
             data=[w3],
-            var_sharing={"x": 1, "y": 1, "z": 1, "c": 2},
-            con_sharing=1,
+            var_sharing={"x": 0, "y": 0, "z": 0, "c": 1},
+            con_sharing=0,
             title="Zone3_SharesFromZone1And2",
             strand_id=1,
             solution_time=2.0,
@@ -448,48 +448,48 @@ class TestTecextract:
         assert tecextract(["-o", str(dst), "--force", str(onera_path)]) == 0
         assert _is_readable(dst)
 
+    def test_extract_zone_0_only(self, onera_path: Path, tmp_path: Path) -> None:
+        """``-z 0`` extracts FluidVolume; output has 1 zone."""
+        dst = tmp_path / "out.szplt"
+        ret = tecextract(["-z", "0", "-o", str(dst), str(onera_path)])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            assert r.num_zones == 1
+
     def test_extract_zone_1_only(self, onera_path: Path, tmp_path: Path) -> None:
-        """``-z 1`` extracts FluidVolume; output has 1 zone."""
+        """``-z 1`` extracts WingSurface; output has 1 zone."""
         dst = tmp_path / "out.szplt"
         ret = tecextract(["-z", "1", "-o", str(dst), str(onera_path)])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 1
 
-    def test_extract_zone_2_only(self, onera_path: Path, tmp_path: Path) -> None:
-        """``-z 2`` extracts WingSurface; output has 1 zone."""
-        dst = tmp_path / "out.szplt"
-        ret = tecextract(["-z", "2", "-o", str(dst), str(onera_path)])
-        assert ret == 0
-        with tecio.open(str(dst), "r") as r:
-            assert r.num_zones == 1
-
-    def test_extract_variable_1_reduces_count(self, tmp_path: Path) -> None:
+    def test_extract_variable_0_reduces_count(self, tmp_path: Path) -> None:
         """Output is written to DAT format because the SZL C library requires
-        variables 1, 2, and 3 (x, y, z) to be present to compute its
+        variables 0, 1, and 2 (x, y, z) to be present to compute its
         subzone layout — writing a single-variable SZL file is not supported.
         """
         dst = tmp_path / "out.dat"
-        ret = tecextract(["-v", "1", "-o", str(dst), str(_ONERA["szplt"])])
+        ret = tecextract(["-v", "0", "-o", str(dst), str(_ONERA["szplt"])])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_vars == 1
             assert r.variables == ["x"]
 
-    def test_extract_variable_1_szplt_requires_xyz(self, tmp_path: Path) -> None:
+    def test_extract_variable_0_szplt_requires_xyz(self, tmp_path: Path) -> None:
         """Extracting a single variable to SZL fails — the format requires
-        variables 1, 2, and 3 (x, y, z) to compute its subzone layout.
+        variables 0, 1, and 2 (x, y, z) to compute its subzone layout.
         """
         dst = tmp_path / "out.szplt"
-        ret = tecextract(["-v", "1", "-o", str(dst), str(_ONERA["szplt"])])
+        ret = tecextract(["-v", "0", "-o", str(dst), str(_ONERA["szplt"])])
         assert ret == 1
 
     def test_extract_multiple_variables(self, tmp_path: Path) -> None:
-        """``-v 1,2,3`` produces a file with exactly 3 variables."""
+        """``-v 0,1,2`` produces a file with exactly 3 variables."""
         dst = tmp_path / "out.szplt"
         ret = tecextract([
             "-v",
-            "1,2,3",
+            "0,1,2",
             "-o",
             str(dst),
             str(_ONERA["szplt"]),
@@ -504,9 +504,9 @@ class TestTecextract:
         dst = tmp_path / "out.szplt"
         ret = tecextract([
             "-z",
-            "2",
+            "1",
             "-v",
-            "10",
+            "9",
             "-o",
             str(dst),
             str(_ONERA["szplt"]),
@@ -802,11 +802,11 @@ class TestTecscale:
     """Tests for tecscale - scales and/or offsets a variable."""
 
     def test_scale_by_index(self, onera_path: Path, tmp_path: Path) -> None:
-        """Scale variable 1 (x) by a constant factor; output is readable."""
+        """Scale variable 0 (x) by a constant factor; output is readable."""
         dst = tmp_path / "scaled.szplt"
         ret = tecscale([
             "-v",
-            "1",
+            "0",
             "-s",
             "2.0",
             "-o",
@@ -849,7 +849,7 @@ class TestTecscale:
         assert dst.exists()
 
     def test_scale_single_zone(self, onera_path: Path, tmp_path: Path) -> None:
-        """-z restricts scaling to zone 1 only."""
+        """-z restricts scaling to zone 0 only."""
         dst = tmp_path / "scaled.szplt"
         ret = tecscale([
             "-v",
@@ -857,7 +857,7 @@ class TestTecscale:
             "-s",
             "1000.0",
             "-z",
-            "1",
+            "0",
             "-o",
             str(dst),
             str(onera_path),
@@ -866,13 +866,13 @@ class TestTecscale:
         assert dst.exists()
 
     def test_scale_values_correct(self, tmp_path: Path) -> None:
-        """Scaled values in zone 1 equal original × scale_factor."""
+        """Scaled values in zone 0 equal original × scale_factor."""
         src = _ONERA["szplt"]
         dst = tmp_path / "scaled.szplt"
         scale = 2.0
         tecscale([
             "-v",
-            "1",
+            "0",
             "-s",
             str(scale),
             "--force",
@@ -887,7 +887,7 @@ class TestTecscale:
         np.testing.assert_allclose(scaled, orig * scale, rtol=1e-5)
 
     def test_unscaled_zone_unchanged(self, tmp_path: Path) -> None:
-        """When -z 1 is active, zone 2 values are identical to source."""
+        """When -z 0 is active, zone 1 values are identical to source."""
         src = _ONERA["szplt"]
         dst = tmp_path / "scaled.szplt"
         tecscale([
@@ -896,7 +896,7 @@ class TestTecscale:
             "-s",
             "999.0",
             "-z",
-            "1",
+            "0",
             "--force",
             "-o",
             str(dst),
@@ -1125,12 +1125,12 @@ class TestTecstats:
         assert tecstats(["-z", "1", str(onera_path)]) == 0
 
     def test_variable_filter(self, onera_path: Path) -> None:
-        """-v 10 (Pressure) runs without error."""
-        assert tecstats(["-v", "10", str(onera_path)]) == 0
+        """-v 9 (Pressure) runs without error."""
+        assert tecstats(["-v", "9", str(onera_path)]) == 0
 
     def test_zone_and_variable_filter(self, onera_path: Path) -> None:
-        """Combined -z 2 -v 10 runs without error."""
-        assert tecstats(["-z", "2", "-v", "10", str(onera_path)]) == 0
+        """Combined -z 1 -v 9 runs without error."""
+        assert tecstats(["-z", "1", "-v", "9", str(onera_path)]) == 0
 
     def test_csv_created_with_stats_suffix(self, tmp_path: Path) -> None:
         """--csv creates <stem>_stats.csv next to the input file."""
@@ -1150,15 +1150,15 @@ class TestTecstats:
         """--csv -v N produces <stem>_var_N_stats.csv."""
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
-        assert tecstats(["--csv", "-v", "10", str(src)]) == 0
-        assert (tmp_path / "Onera_var_10_stats.csv").exists()
+        assert tecstats(["--csv", "-v", "9", str(src)]) == 0
+        assert (tmp_path / "Onera_var_9_stats.csv").exists()
 
     def test_csv_zone_and_variable_suffix(self, tmp_path: Path) -> None:
         """Combined filters produce <stem>_zone_N_var_M_stats.csv."""
         src = tmp_path / "Onera.szplt"
         shutil.copy(_ONERA["szplt"], src)
-        assert tecstats(["--csv", "-z", "2", "-v", "10", str(src)]) == 0
-        assert (tmp_path / "Onera_zone_2_var_10_stats.csv").exists()
+        assert tecstats(["--csv", "-z", "1", "-v", "9", str(src)]) == 0
+        assert (tmp_path / "Onera_zone_1_var_9_stats.csv").exists()
 
     def test_csv_header_and_data_rows(self, tmp_path: Path) -> None:
         """CSV has the correct header and 36 data rows (2 zones × 18 vars)."""
@@ -1236,10 +1236,10 @@ class TestSharingPreservation:
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 3
-            assert r.zones[1].variables[0].shared_zone == 1  # zone 2's x <- zone 1
-            assert r.zones[1].shared_connectivity == 1
-            assert r.zones[2].variables[0].shared_zone == 1  # zone 3's x <- zone 1
-            assert r.zones[2].variables[3].shared_zone == 2  # zone 3's c <- zone 2
+            assert r.zones[1].variables[0].shared_zone == 0  # zone 1's x <- zone 0
+            assert r.zones[1].shared_connectivity == 0
+            assert r.zones[2].variables[0].shared_zone == 0  # zone 2's x <- zone 0
+            assert r.zones[2].variables[3].shared_zone == 1  # zone 2's c <- zone 1
             np.testing.assert_allclose(
                 r.zones[1].variables[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
             )
@@ -1247,22 +1247,22 @@ class TestSharingPreservation:
     def test_tecextract_remaps_sharing_to_compacted_indices(
         self, shared_path: Path, tmp_path: Path
     ) -> None:
-        """Extracting zones 1 and 3 (dropping 2) remaps zone 3's shares correctly.
+        """Extracting zones 0 and 2 (dropping 1) remaps zone 2's shares correctly.
 
-        Zone 3 shares x/y/z/connectivity from zone 1 (still present, becomes
-        output zone 2) but shares c from zone 2 (excluded) -- so c must fall
-        back to real data while x/y/z/connectivity remap to output zone 1.
+        Zone 2 shares x/y/z/connectivity from zone 0 (still present, becomes
+        output zone 1) but shares c from zone 1 (excluded) -- so c must fall
+        back to real data while x/y/z/connectivity remap to output zone 0.
         """
-        dst = tmp_path / f"extract_1_3{shared_path.suffix}"
-        ret = tecextract(["-z", "1,3", "-o", str(dst), "--force", str(shared_path)])
+        dst = tmp_path / f"extract_0_2{shared_path.suffix}"
+        ret = tecextract(["-z", "0,2", "-o", str(dst), "--force", str(shared_path)])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 2
-            # Output zone 2 (was source zone 3): x/y/z/connectivity remap to
-            # output zone 1 (was source zone 1).
-            assert r.zones[1].variables[0].shared_zone == 1
-            assert r.zones[1].shared_connectivity == 1
-            # c was shared from zone 2, which isn't in this extraction --
+            # Output zone 1 (was source zone 2): x/y/z/connectivity remap to
+            # output zone 0 (was source zone 0).
+            assert r.zones[1].variables[0].shared_zone == 0
+            assert r.zones[1].shared_connectivity == 0
+            # c was shared from zone 1, which isn't in this extraction --
             # must be real, independent data, not an empty placeholder.
             assert r.zones[1].variables[3].shared_zone is None
             c_vals = r.zones[1].variables[3].values
@@ -1272,14 +1272,14 @@ class TestSharingPreservation:
     def test_tecextract_materializes_when_source_excluded(
         self, shared_path: Path, tmp_path: Path
     ) -> None:
-        """Extracting only zone 2 (source zone 1 excluded) writes real data.
+        """Extracting only zone 1 (source zone 0 excluded) writes real data.
 
-        This is the regression case for the original bug: zone 2's shared
+        This is the regression case for the original bug: zone 1's shared
         x/y/z/connectivity must come out as actual values, not an empty
         array that would corrupt or crash the output.
         """
-        dst = tmp_path / f"extract_2_only{shared_path.suffix}"
-        ret = tecextract(["-z", "2", "-o", str(dst), "--force", str(shared_path)])
+        dst = tmp_path / f"extract_1_only{shared_path.suffix}"
+        ret = tecextract(["-z", "1", "-o", str(dst), "--force", str(shared_path)])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 1
@@ -1289,7 +1289,7 @@ class TestSharingPreservation:
             np.testing.assert_allclose(
                 zone.variables[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
             )
-            np.testing.assert_array_equal(zone.node_map, [[1, 2, 3, 4]])
+            np.testing.assert_array_equal(zone.node_map, [[0, 1, 2, 3]])
 
     # -- tecmerge: sharing preserved within each file -> offset for later files --------
 
@@ -1309,13 +1309,13 @@ class TestSharingPreservation:
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 6
-            # File 1's block: zones 1-3, unchanged indices.
-            assert r.zones[1].variables[0].shared_zone == 1
-            assert r.zones[2].variables[3].shared_zone == 2
-            # File 2's block: zones 4-6, offset by 3.
-            assert r.zones[4].variables[0].shared_zone == 4
-            assert r.zones[4].shared_connectivity == 4
-            assert r.zones[5].variables[3].shared_zone == 5
+            # File 1's block: zones 0-2, unchanged indices.
+            assert r.zones[1].variables[0].shared_zone == 0
+            assert r.zones[2].variables[3].shared_zone == 1
+            # File 2's block: zones 3-5, offset by 3.
+            assert r.zones[4].variables[0].shared_zone == 3
+            assert r.zones[4].shared_connectivity == 3
+            assert r.zones[5].variables[3].shared_zone == 4
 
     # -- 1:1 zone-copy tools: sharing preserved unchanged ------------------------------
 
@@ -1355,9 +1355,9 @@ class TestSharingPreservation:
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
             assert r.num_zones == 3
-            assert r.zones[1].variables[0].shared_zone == 1
-            assert r.zones[1].shared_connectivity == 1
-            assert r.zones[2].variables[3].shared_zone == 2
+            assert r.zones[1].variables[0].shared_zone == 0
+            assert r.zones[1].shared_connectivity == 0
+            assert r.zones[2].variables[3].shared_zone == 1
             # Shared values still resolve to the real source data.
             np.testing.assert_allclose(
                 r.zones[1].variables[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
@@ -1368,21 +1368,21 @@ class TestSharingPreservation:
     def test_tecstats_shared_note_zone_number_correct(
         self, shared_path: Path, capsys
     ) -> None:
-        """The 'shared (zone N)' note uses the correct 1-based zone number.
+        """The 'shared (zone N)' note uses the correct 0-based zone number.
 
         Regression test for a double-offset: shared_zone is already
-        1-based, and the note used to add 1 again.
+        0-based, and the note used to add 1 on top of it.
         """
         ret = tecstats([str(shared_path)])
         assert ret == 0
         out = capsys.readouterr().out
-        # Zone 2's x is shared from zone 1, and zone 3's c is shared from
-        # zone 2 specifically -- both distinct notes should appear exactly,
+        # Zone 1's x is shared from zone 0, and zone 2's c is shared from
+        # zone 1 specifically -- both distinct notes should appear exactly,
         # confirming the fix isn't just "any single value happens to look
-        # right" (the old +1 bug would have printed "zone 2" and "zone 3"
+        # right" (the old +1 bug would have printed "zone 1" and "zone 2"
         # here instead).
+        assert "shared (zone 0)" in out
         assert "shared (zone 1)" in out
-        assert "shared (zone 2)" in out
 
 
 # ======================================================================================
@@ -1677,7 +1677,7 @@ class TestTecaux:
         dst = tmp_path / "out.dat"
         ret = tecaux([
             "-z",
-            "1",
+            "0",
             "Description=Wing",
             "-o",
             str(dst),
@@ -1696,10 +1696,10 @@ class TestTecaux:
         dst = tmp_path / "out.dat"
         ret = tecaux([
             "-z",
-            "1",
+            "0",
             "Description=Wing",
             "-z",
-            "1",
+            "0",
             "Area=120sqm",
             "-o",
             str(dst),
@@ -1741,7 +1741,7 @@ class TestTecaux:
             "all",
             "Batch=2024",
             "-z",
-            "1",
+            "0",
             "Special=true",
             "-o",
             str(dst),
@@ -1789,15 +1789,15 @@ class TestTecaux:
         ])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
-            # "c" is variable 4 (1-based) in the shared fixture.
-            assert dict(r.get_var_auxdata(4).items())["Units"] == "Pa"
+            # "c" is variable 3 (0-based) in the shared fixture.
+            assert dict(r.get_var_auxdata(3).items())["Units"] == "Pa"
 
     def test_var_aux_by_index(self, shared_path: Path, tmp_path: Path) -> None:
-        """-v INDEX KEY=VALUE resolves the variable by 1-based index."""
+        """-v INDEX KEY=VALUE resolves the variable by 0-based index."""
         dst = tmp_path / "out.dat"
         ret = tecaux([
             "-v",
-            "1",
+            "0",
             "Units=m",
             "-o",
             str(dst),
@@ -1806,7 +1806,7 @@ class TestTecaux:
         ])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
-            assert dict(r.get_var_auxdata(1).items())["Units"] == "m"
+            assert dict(r.get_var_auxdata(0).items())["Units"] == "m"
 
     def test_var_aux_all_broadcasts_to_every_variable(
         self, shared_path: Path, tmp_path: Path
@@ -1824,7 +1824,7 @@ class TestTecaux:
         ])
         assert ret == 0
         with tecio.open(str(dst), "r") as r:
-            for i in range(1, r.num_vars + 1):
+            for i in range(r.num_vars):
                 assert dict(r.get_var_auxdata(i).items())["Source"] == "Test"
 
     def test_var_aux_unresolvable_returns_1(
@@ -1860,10 +1860,10 @@ class TestTecaux:
             "-d",
             "Solver=MyCFD",
             "-z",
-            "1",
+            "0",
             "Case=A",
             "-z",
-            "2",
+            "1",
             "Case=B",
             "-v",
             "w",
@@ -1878,11 +1878,11 @@ class TestTecaux:
             assert dict(r.auxdata.items())["Solver"] == "MyCFD"
             assert dict(r.zones[0].auxdata.items())["Case"] == "A"
             assert dict(r.zones[1].auxdata.items())["Case"] == "B"
-            assert dict(r.get_var_auxdata(5).items())["Units"] == "K"
+            assert dict(r.get_var_auxdata(4).items())["Units"] == "K"
             # The whole point: sharing relationships from the source file
             # are still exactly what they were.
-            assert r.zones[1].variables[0].shared_zone == 1
-            assert r.zones[2].shared_connectivity == 1
+            assert r.zones[1].variables[0].shared_zone == 0
+            assert r.zones[2].shared_connectivity == 0
             np.testing.assert_allclose(
                 r.zones[1].variables[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
             )
@@ -1938,7 +1938,7 @@ class TestTecaux:
         json_path.write_text(
             json.dumps({
                 "AUXDATASET": {"Solver": "FromJSON"},
-                "AUXZONE": {"1": {"Description": "Wing"}},
+                "AUXZONE": {"0": {"Description": "Wing"}},
                 "AUXVAR": {"c": {"Units": "Pa"}},
             })
         )
@@ -1955,7 +1955,7 @@ class TestTecaux:
         with tecio.open(str(dst), "r") as r:
             assert dict(r.auxdata.items())["Solver"] == "FromJSON"
             assert dict(r.zones[0].auxdata.items())["Description"] == "Wing"
-            assert dict(r.get_var_auxdata(4).items())["Units"] == "Pa"
+            assert dict(r.get_var_auxdata(3).items())["Units"] == "Pa"
 
     def test_json_all_sentinel_broadcasts(
         self, shared_path: Path, tmp_path: Path
@@ -2102,10 +2102,10 @@ class TestTecaux:
             assert dict(r.auxdata.items()) == {}
             assert dict(r.zones[0].auxdata.items()) == {}
             assert dict(r.zones[2].auxdata.items()) == {}
-            assert dict(r.get_var_auxdata(1).items()) == {}
-            assert dict(r.get_var_auxdata(4).items()) == {}
-            assert r.zones[1].variables[0].shared_zone == 1
-            assert r.zones[2].shared_connectivity == 1
+            assert dict(r.get_var_auxdata(0).items()) == {}
+            assert dict(r.get_var_auxdata(3).items()) == {}
+            assert r.zones[1].variables[0].shared_zone == 0
+            assert r.zones[2].shared_connectivity == 0
             np.testing.assert_allclose(
                 r.zones[1].variables[0].values.ravel(), [0.0, 1.0, 0.0, 0.0]
             )
@@ -2117,10 +2117,10 @@ class TestTecaux:
             dumped = json.load(f)
         assert dumped["AUXDATASET"] == {"Solver": "MyCFD", "Version": "2.1"}
         assert dumped["AUXZONE"] == {
-            "1": {"Description": "Wing"},
-            "3": {"Description": "Empennage"},
+            "0": {"Description": "Wing"},
+            "2": {"Description": "Empennage"},
         }
-        assert dumped["AUXVAR"] == {"1": {"Units": "m"}, "4": {"Units": "Pa"}}
+        assert dumped["AUXVAR"] == {"0": {"Units": "m"}, "3": {"Units": "Pa"}}
 
         # And it round-trips: feeding the export back in via -j reproduces the original
         # aux data on a fresh copy

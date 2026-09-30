@@ -129,9 +129,9 @@ class TestReadDump:
         print("\n\nVariable Auxiliary Data")
         print("-" * 70)
         for i in range(r.num_vars):
-            var_aux = r.get_var_auxdata(i + 1)
+            var_aux = r.get_var_auxdata(i)
             if len(var_aux) > 0:
-                print(f"Var {i + 1:3} Aux Data  : {dict(var_aux)}")
+                print(f"Var {i:3} Aux Data  : {dict(var_aux)}")
                 for name, value in var_aux.items():
                     print(f"  {name:>15} : {value}")
 
@@ -139,7 +139,7 @@ class TestReadDump:
         print("-" * 70)
         for i in range(r.num_zones):
             zone = r.zones[i]
-            print(f"\nZone {i + 1:3}")
+            print(f"\nZone {i:3}")
             print(f"  Title           : {zone.title}")
             print(f"  Zone Type       : {zone.zone_type}")
             print(f"  Datapacking     : {zone.datapacking}")
@@ -154,7 +154,7 @@ class TestReadDump:
 
             for j in range(r.num_vars):
                 var = zone.variables[j]
-                print(f"  Variable {j + 1:3}")
+                print(f"  Variable {j:3}")
                 print(f"    Name          : {var.name}")
                 print(f"    Data Type     : {var.data_type}")
                 print(f"    Is Enabled    : {var.is_enabled()}")
@@ -451,7 +451,7 @@ class TestDatPointFormat:
             """)
         expected_x = np.array([0.0, 1.0, 1.0, 0.0])
         expected_c = np.array([0.1, 0.2, 0.3, 0.4])
-        expected_conn = np.array([[1, 2, 3], [1, 3, 4]], dtype=np.int64)
+        expected_conn = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int64)
 
         path = _write_text_fixture(output_path, "read_point_fe.dat", point_dat)
         r = tecio.open(str(path), "r")

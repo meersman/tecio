@@ -348,9 +348,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # Forward variable-level aux data.
                 auxvar: dict[int, dict[str, str]] = {}
                 for i in range(reader.num_vars):
-                    var_aux = reader.get_var_auxdata(i + 1)
+                    var_aux = reader.get_var_auxdata(i)
                     if len(var_aux) > 0:
-                        auxvar[i + 1] = dict(var_aux.items())
+                        auxvar[i] = dict(var_aux.items())
                 if auxvar:
                     writer.add_auxvar_dict(auxvar)
 

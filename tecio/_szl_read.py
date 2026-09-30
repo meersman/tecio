@@ -34,6 +34,7 @@ from ._reader import (
     TecplotReader,
     TecplotVariableReader,
     TecplotZoneReader,
+    convert_face_connections_to_zero_based,
 )
 
 # ======================================================================================
@@ -138,21 +139,22 @@ class TecplotSzlVariableReader(TecplotVariableReader):
     @property
     def name(self) -> str:
         """Variable name string."""
-        return libtecio.tec_var_get_name(self._handle, self.var_index)
+        return libtecio.tec_var_get_name(self._handle, self.var_index + 1)
 
     def is_enabled(self) -> bool:
         """True if the variable is enabled (dataset-level flag, queried live)."""
-        return libtecio.tec_var_is_enabled(self._handle, self.var_index)
+        return libtecio.tec_var_is_enabled(self._handle, self.var_index + 1)
 
     @property
     def shared_zone(self) -> int | None:
         """Source zone index if shared, or None."""
-        return libtecio.tec_zone_var_get_shared_zone(
-            self._handle, self.zone_index, self.var_index
+        raw = libtecio.tec_zone_var_get_shared_zone(
+            self._handle, self.zone_index + 1, self.var_index + 1
         )
+        return raw - 1 if raw is not None else None
 
     def _data_zone(self) -> int:
-        """Return the zone index that actually holds this variable's data."""
+        """Return the 0-based zone index that actually holds this variable's data."""
         shared = self.shared_zone
         return shared if shared is not None else self.zone_index
 
@@ -160,27 +162,27 @@ class TecplotSzlVariableReader(TecplotVariableReader):
     def data_type(self) -> DataType:
         """Data type enum for this variable."""
         return libtecio.tec_zone_var_get_type(
-            self._handle, self._data_zone(), self.var_index
+            self._handle, self._data_zone() + 1, self.var_index + 1
         )
 
     @property
     def value_location(self) -> ValueLocation:
         """Value location (NODAL or CELL_CENTERED)."""
         return libtecio.tec_zone_var_get_value_location(
-            self._handle, self._data_zone(), self.var_index
+            self._handle, self._data_zone() + 1, self.var_index + 1
         )
 
     def is_passive(self) -> bool:
         """True if this variable is passive in this zone."""
         return libtecio.tec_zone_var_is_passive(
-            self._handle, self.zone_index, self.var_index
+            self._handle, self.zone_index + 1, self.var_index + 1
         )
 
     @property
     def num_values(self) -> int:
         """Number of values in the data array."""
         return libtecio.tec_zone_var_get_num_values(
-            self._handle, self._data_zone(), self.var_index
+            self._handle, self._data_zone() + 1, self.var_index + 1
         )
 
     def get_values(
@@ -209,7 +211,7 @@ class TecplotSzlVariableReader(TecplotVariableReader):
         if self.is_passive():
             return None
 
-        data_zone = self._data_zone()
+        data_zone = self._data_zone() + 1
         data_type = self.data_type
         full_read = value_range == (None, None)
 
@@ -234,31 +236,31 @@ class TecplotSzlVariableReader(TecplotVariableReader):
 
         if data_type == DataType.FLOAT:
             arr = libtecio.tec_zone_var_get_float_values(
-                self._handle, data_zone, self.var_index, start_index, num_values
+                self._handle, data_zone, self.var_index + 1, start_index, num_values
             )
         elif data_type == DataType.DOUBLE:
             arr = libtecio.tec_zone_var_get_double_values(
-                self._handle, data_zone, self.var_index, start_index, num_values
+                self._handle, data_zone, self.var_index + 1, start_index, num_values
             )
         elif data_type == DataType.INT32:
             arr = libtecio.tec_zone_var_get_int32_values(
-                self._handle, data_zone, self.var_index, start_index, num_values
+                self._handle, data_zone, self.var_index + 1, start_index, num_values
             )
         elif data_type == DataType.INT16:
             arr = libtecio.tec_zone_var_get_int16_values(
-                self._handle, data_zone, self.var_index, start_index, num_values
+                self._handle, data_zone, self.var_index + 1, start_index, num_values
             )
         elif data_type == DataType.BYTE:
             arr = libtecio.tec_zone_var_get_uint8_values(
-                self._handle, data_zone, self.var_index, start_index, num_values
+                self._handle, data_zone, self.var_index + 1, start_index, num_values
             )
         else:
             raise ValueError(f"Unknown data type: {data_type}")
 
         # Reshape to (I, J, K) / (I-1, J-1, K-1) for full reads of ordered zones.
         if full_read and arr is not None:
-            ni, nj, nk = libtecio.tec_zone_get_ijk(self._handle, self.zone_index)
-            zt = libtecio.tec_zone_get_type(self._handle, self.zone_index)
+            ni, nj, nk = libtecio.tec_zone_get_ijk(self._handle, self.zone_index + 1)
+            zt = libtecio.tec_zone_get_type(self._handle, self.zone_index + 1)
             if zt == ZoneType.ORDERED:
                 if self.value_location == ValueLocation.CELL_CENTERED:
                     shape = (max(ni - 1, 1), max(nj - 1, 1), max(nk - 1, 1))
@@ -279,14 +281,12 @@ def _load_szl_variables(
     handle: ctypes.c_void_p, zone_index: int, num_vars: int
 ) -> list[TecplotVariableReader]:
     """Build this zone's variable readers. Shared by both SZL zone classes."""
-    return [
-        TecplotSzlVariableReader(handle, zone_index, i + 1) for i in range(num_vars)
-    ]
+    return [TecplotSzlVariableReader(handle, zone_index, i) for i in range(num_vars)]
 
 
 def _szl_zone_is_enabled(handle: ctypes.c_void_p, zone_index: int) -> bool:
     """Query the C library's per-zone enabled flag. Shared by both SZL zone classes."""
-    return libtecio.tec_zone_is_enabled(handle, zone_index)
+    return libtecio.tec_zone_is_enabled(handle, zone_index + 1)
 
 
 class TecplotSzlOrderedZoneReader(TecplotOrderedZoneReader):
@@ -301,12 +301,13 @@ class TecplotSzlOrderedZoneReader(TecplotOrderedZoneReader):
     num_vars: int
 
     def __init__(self, handle: ctypes.c_void_p, zone_index: int, num_vars: int) -> None:
-        i, j, k = libtecio.tec_zone_get_ijk(handle, zone_index)
+        zone_num = zone_index + 1
+        i, j, k = libtecio.tec_zone_get_ijk(handle, zone_num)
         super().__init__(
             zone_index=zone_index,
-            title=libtecio.tec_zone_get_title(handle, zone_index),
-            solution_time=libtecio.tec_zone_get_solution_time(handle, zone_index),
-            strand_id=libtecio.tec_zone_get_strand_id(handle, zone_index),
+            title=libtecio.tec_zone_get_title(handle, zone_num),
+            solution_time=libtecio.tec_zone_get_solution_time(handle, zone_num),
+            strand_id=libtecio.tec_zone_get_strand_id(handle, zone_num),
             datapacking=DataPacking.BLOCK,
             i=i,
             j=j,
@@ -327,7 +328,7 @@ class TecplotSzlOrderedZoneReader(TecplotOrderedZoneReader):
         return _load_szl_variables(self._handle, self.zone_index, self.num_vars)
 
     def _load_auxdata(self) -> TecplotAuxDataReader:
-        return TecplotSzlZoneAuxDataReader(self._handle, self.zone_index)
+        return TecplotSzlZoneAuxDataReader(self._handle, self.zone_index + 1)
 
 
 class TecplotSzlFEZoneReader(TecplotFEZoneReader):
@@ -343,17 +344,17 @@ class TecplotSzlFEZoneReader(TecplotFEZoneReader):
     num_vars: int
 
     def __init__(self, handle: ctypes.c_void_p, zone_index: int, num_vars: int) -> None:
-        zone_type = ZoneType(libtecio.tec_zone_get_type(handle, zone_index))
-        num_nodes, num_elements, _ = libtecio.tec_zone_get_ijk(handle, zone_index)
-        shared_connectivity = libtecio.tec_zone_connectivity_get_shared_zone(
-            handle, zone_index
-        )
+        zone_num = zone_index + 1
+        zone_type = ZoneType(libtecio.tec_zone_get_type(handle, zone_num))
+        num_nodes, num_elements, _ = libtecio.tec_zone_get_ijk(handle, zone_num)
+        raw_shared = libtecio.tec_zone_connectivity_get_shared_zone(handle, zone_num)
+        shared_connectivity = raw_shared - 1 if raw_shared is not None else None
         super().__init__(
             zone_index=zone_index,
-            title=libtecio.tec_zone_get_title(handle, zone_index),
+            title=libtecio.tec_zone_get_title(handle, zone_num),
             zone_type=zone_type,
-            solution_time=libtecio.tec_zone_get_solution_time(handle, zone_index),
-            strand_id=libtecio.tec_zone_get_strand_id(handle, zone_index),
+            solution_time=libtecio.tec_zone_get_solution_time(handle, zone_num),
+            strand_id=libtecio.tec_zone_get_strand_id(handle, zone_num),
             datapacking=DataPacking.BLOCK,
             num_nodes=num_nodes,
             num_elements=num_elements,
@@ -374,54 +375,61 @@ class TecplotSzlFEZoneReader(TecplotFEZoneReader):
         return _load_szl_variables(self._handle, self.zone_index, self.num_vars)
 
     def _connectivity_zone(self) -> int:
-        """Return the zone index that actually holds this zone's connectivity."""
+        """Return the 0-based zone index that holds this zone's connectivity."""
         shared = self.shared_connectivity
         return shared if shared is not None else self.zone_index
 
     def _load_node_map(self) -> npt.NDArray[np.int64]:
-        connectivity_zone = self._connectivity_zone()
-        if libtecio.is_64bit(self._handle, self.zone_index):
-            return libtecio.tec_zone_node_map_get_64(
+        connectivity_zone_num = self._connectivity_zone() + 1
+        if libtecio.is_64bit(self._handle, self.zone_index + 1):
+            raw = libtecio.tec_zone_node_map_get_64(
                 self._handle,
-                connectivity_zone,
+                connectivity_zone_num,
                 self.num_elements,
                 self.nodes_per_cell,
             )
-        return libtecio.tec_zone_node_map_get(
-            self._handle,
-            connectivity_zone,
-            self.num_elements,
-            self.nodes_per_cell,
-        ).astype(np.int64)
+        else:
+            raw = libtecio.tec_zone_node_map_get(
+                self._handle,
+                connectivity_zone_num,
+                self.num_elements,
+                self.nodes_per_cell,
+            ).astype(np.int64)
+        # Node numbers from the C library are 1-based; convert to 0-based indices
+        # that point directly into the corresponding coordinate array.
+        return raw - 1
 
     def _load_face_neighbor_meta(
         self,
     ) -> tuple[FaceNeighborMode, int, bool | None] | None:
+        zone_num = self.zone_index + 1
         num_connections = libtecio.tec_zone_face_nbr_get_num_connections(
-            self._handle, self.zone_index
+            self._handle, zone_num
         )
         if num_connections == 0:
             return None
-        mode = libtecio.tec_zone_face_nbr_get_mode(self._handle, self.zone_index)
+        mode = libtecio.tec_zone_face_nbr_get_mode(self._handle, zone_num)
         # SZL has no completeness concept: no tecZoneFaceNbr* function reports
         # it, and none exists to write it either. Always None here, not a gap
         # in this reader, the C API genuinely has nothing to query.
         return (mode, num_connections, None)
 
     def _load_face_connections(self) -> npt.NDArray[np.int64]:
-        num_values = libtecio.tec_zone_face_nbr_get_num_values(
-            self._handle, self.zone_index
-        )
-        if libtecio.tec_zone_face_nbrs_are_64bit(self._handle, self.zone_index):
-            return libtecio.tec_zone_face_nbr_get_connections_64(
-                self._handle, self.zone_index, num_values
+        zone_num = self.zone_index + 1
+        num_values = libtecio.tec_zone_face_nbr_get_num_values(self._handle, zone_num)
+        if libtecio.tec_zone_face_nbrs_are_64bit(self._handle, zone_num):
+            flat = libtecio.tec_zone_face_nbr_get_connections_64(
+                self._handle, zone_num, num_values
             )
-        return libtecio.tec_zone_face_nbr_get_connections(
-            self._handle, self.zone_index, num_values
-        ).astype(np.int64)
+        else:
+            flat = libtecio.tec_zone_face_nbr_get_connections(
+                self._handle, zone_num, num_values
+            ).astype(np.int64)
+        assert self.face_neighbor_mode is not None  # only called when connections exist
+        return convert_face_connections_to_zero_based(flat, self.face_neighbor_mode)
 
     def _load_auxdata(self) -> TecplotAuxDataReader:
-        return TecplotSzlZoneAuxDataReader(self._handle, self.zone_index)
+        return TecplotSzlZoneAuxDataReader(self._handle, self.zone_index + 1)
 
 
 def _build_szl_zone(
@@ -433,7 +441,7 @@ def _build_szl_zone(
     queries the C library for the zone type first, cheap, one call, then dispatches to
     the matching class.
     """
-    zone_type = ZoneType(libtecio.tec_zone_get_type(handle, zone_index))
+    zone_type = ZoneType(libtecio.tec_zone_get_type(handle, zone_index + 1))
     if zone_type == ZoneType.ORDERED:
         return TecplotSzlOrderedZoneReader(handle, zone_index, num_vars)
     return TecplotSzlFEZoneReader(handle, zone_index, num_vars)
@@ -524,8 +532,7 @@ class TecplotSzlReader(TecplotReader):
         if self._zone_list is None:
             handle = self._check_handle()
             self._zone_list = ZoneList([
-                _build_szl_zone(handle, i + 1, self.num_vars)
-                for i in range(self.num_zones)
+                _build_szl_zone(handle, i, self.num_vars) for i in range(self.num_zones)
             ])
         return self._zone_list
 
@@ -537,7 +544,7 @@ class TecplotSzlReader(TecplotReader):
         return self._dataset_auxdata
 
     def _var_auxdata_at(self, var_index: int) -> TecplotAuxDataReader:
-        return TecplotSzlVarAuxDataReader(self._check_handle(), var_index)
+        return TecplotSzlVarAuxDataReader(self._check_handle(), var_index + 1)
 
     def close(self) -> None:
         """Close the file reader handle."""

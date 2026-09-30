@@ -315,7 +315,7 @@ class TestWriteIJKZone:
         Demonstrates:
         - ``strand_id``/``solution_time`` for animation; zones sharing a strand_id
           animate together in Tecplot 360
-        - ``var_sharing={"x": 1, "y": 1, "z": 1}``: x, y, z shared from zone 1 by
+        - ``var_sharing={"x": 0, "y": 0, "z": 0}``: x, y, z shared from zone 0 by
           name; only the scalar is supplied for later zones
         """
         i, j, k = 6, 5, 4
@@ -330,9 +330,9 @@ class TestWriteIJKZone:
             for t in solution_times:
                 c = scalar_field(x + t, y + t, z).astype(np.float64)
                 w.write_ordered_zone(
-                    data=[x, y, z, c] if w.current_zone == 0 else [c],
+                    data=[x, y, z, c] if w.current_zone == -1 else [c],
                     var_sharing=(
-                        None if w.current_zone == 0 else {"x": 1, "y": 1, "z": 1}
+                        None if w.current_zone == -1 else {"x": 0, "y": 0, "z": 0}
                     ),
                     strand_id=1,
                     solution_time=float(t),
@@ -352,7 +352,7 @@ class TestWriteIJKZone:
         """Zone dimensions are taken from the shared source, not the local array.
 
         Demonstrates:
-        - A second zone shares x, y, z via ``var_sharing={"x": 1, "y": 1, "z": 1}``
+        - A second zone shares x, y, z via ``var_sharing={"x": 0, "y": 0, "z": 0}``
           and supplies only the scalar; ``data`` contains only active variables
         - The writer resolves ``(imax, jmax, kmax)`` from the shared source
         - Read-back: shared coordinate reports ``shared_zone``; local scalar reads its
@@ -372,7 +372,7 @@ class TestWriteIJKZone:
                 data=[x, y, z, c0], variables=["x", "y", "z", "c"], title="zone_1"
             )
             w.write_ordered_zone(
-                data=[c1], var_sharing={"x": 1, "y": 1, "z": 1}, title="zone_2"
+                data=[c1], var_sharing={"x": 0, "y": 0, "z": 0}, title="zone_2"
             )
 
         assert path.exists()
@@ -411,14 +411,14 @@ class TestWriteIJKZone:
     def test_write_ijk_passive_variable_by_index(
         self, fmt: str, output_path: Callable
     ) -> None:
-        """``passive_vars`` also accepts 1-based variable indices."""
+        """``passive_vars`` also accepts 0-based variable indices."""
         n = 8
         x = np.linspace(0.0, 1.0, n, dtype=np.float32)
         c = np.sin(2 * np.pi * x).astype(np.float64)
 
         path = _path(output_path, fmt, "write_ijk_passive_by_index")
         with tecio.open(str(path), "w", variables=["x", "unused", "c"]) as w:
-            w.write_ordered_zone(data=[x, c], passive_vars={2})
+            w.write_ordered_zone(data=[x, c], passive_vars={1})
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
@@ -446,7 +446,7 @@ class TestWriteIJKZone:
     def test_write_ijk_var_sharing_by_index(
         self, fmt: str, output_path: Callable
     ) -> None:
-        """Sparse ``var_sharing`` also accepts 1-based variable indices as keys."""
+        """Sparse ``var_sharing`` also accepts 0-based variable indices as keys."""
         n = 8
         x = np.linspace(0.0, 1.0, n, dtype=np.float32)
         c0 = np.sin(2 * np.pi * x).astype(np.float64)
@@ -455,7 +455,7 @@ class TestWriteIJKZone:
         path = _path(output_path, fmt, "write_ijk_sharing_by_index")
         with tecio.open(str(path), "w", variables=["x", "c"]) as w:
             w.write_ordered_zone(data=[x, c0], title="zone_1")
-            w.write_ordered_zone(data=[c1], var_sharing={1: 1}, title="zone_2")
+            w.write_ordered_zone(data=[c1], var_sharing={0: 0}, title="zone_2")
 
         assert path.exists()
         with tecio.open(str(path), "r") as r:
@@ -479,7 +479,7 @@ class TestWriteIJKZone:
             w.write_ordered_zone(data=[x, c0], title="zone_1")
             with pytest.raises(TypeError):
                 w.write_ordered_zone(
-                    data=[c1], var_sharing={"x": 1, 1: 1}, title="zone_2"
+                    data=[c1], var_sharing={"x": 0, 0: 0}, title="zone_2"
                 )
 
     def test_write_ijk_passive_and_shared_conflict_raises(
@@ -500,7 +500,7 @@ class TestWriteIJKZone:
                 w.write_ordered_zone(
                     data=[],
                     passive_vars={"x"},
-                    var_sharing={"x": 1, "y": 1, "z": 1},
+                    var_sharing={"x": 0, "y": 0, "z": 0},
                     title="zone_2",
                 )
 
@@ -519,7 +519,7 @@ class TestWriteIJKZone:
     def test_write_ijk_sparse_index_out_of_range_raises(
         self, fmt: str, output_path: Callable
     ) -> None:
-        """A 1-based index outside the variable list in passive_vars raises."""
+        """A 0-based index outside the variable list in passive_vars raises."""
         n = 8
         x = np.linspace(0.0, 1.0, n, dtype=np.float32)
         path = _path(output_path, fmt, "write_ijk_sparse_index_out_of_range")
@@ -573,10 +573,10 @@ class TestWriteIJKZone:
             with pytest.warns(tecio.EmptyZoneWarning):
                 w.write_ordered_zone(
                     data=[],
-                    var_sharing={"x": 1, "y": 1, "z": 1, "c": 1},
+                    var_sharing={"x": 0, "y": 0, "z": 0, "c": 0},
                     title="zone_skipped",
                 )
-            assert w.current_zone == 1  # skipped zone did not advance the count
+            assert w.current_zone == 0  # skipped zone did not advance the count
             w.write_ordered_zone(data=[x, y, z, c1], title="zone_2")
 
         with tecio.open(str(path), "r") as r:
@@ -674,7 +674,7 @@ class TestWriteIJKZone:
         with pytest.raises(ValueError):
             with tecio.open(str(path), "w", variables=["x", "y", "z", "c"]) as w:
                 w.write_ordered_zone(data=[x, y, z, c])
-                w.write_ordered_zone(data=[bad_c], var_sharing={"x": 1, "y": 1, "z": 1})
+                w.write_ordered_zone(data=[bad_c], var_sharing={"x": 0, "y": 0, "z": 0})
 
 
 # ======================================================================================
@@ -1001,12 +1001,12 @@ class TestWriteFEZone:
                 data=[x, y, z],
                 variables=["x", "y", "z"],
                 title="shared",
-                con_sharing=1,
+                con_sharing=0,
                 face_neighbors=face_neighbors,
                 face_neighbor_mode=FaceNeighborMode.LOCAL_ONE_TO_ONE,
             )
-            source_meta = w.meta.zone(1)
-            shared_meta = w.meta.zone(2)
+            source_meta = w.meta.zone(0)
+            shared_meta = w.meta.zone(1)
 
         assert source_meta.face_neighbor_mode == FaceNeighborMode.LOCAL_ONE_TO_ONE
         assert source_meta.num_face_connections == len(face_neighbors)
@@ -1048,7 +1048,7 @@ class TestWriteFEZone:
                     data=[x, y, z],
                     variables=["x", "y", "z"],
                     title="shared",
-                    con_sharing=1,
+                    con_sharing=0,
                     face_neighbors=face_neighbors,
                     face_neighbor_mode=FaceNeighborMode.GLOBAL_ONE_TO_ONE,
                 )
@@ -1059,8 +1059,8 @@ class TestWriteFEZone:
     @pytest.mark.parametrize(
         ("bad_face_neighbors", "match"),
         [
-            (np.array([[1, 99, 2]]), "face 99"),
-            (np.array([[99, 1, 2]]), "cell 99"),
+            (np.array([[0, 99, 1]]), "face 99"),
+            (np.array([[99, 1, 1]]), "cell 99"),
         ],
         ids=["bad_face_index", "bad_cell_index"],
     )
@@ -1109,17 +1109,17 @@ class TestWriteFEZone:
         broken, it's specifically the known SZL library limitation.
         """
         x, y, nodes = create_FE_quad()
-        # Degenerate cell 1: repeat its last node, mimicking a triangle
+        # Degenerate cell 0: repeat its last node, mimicking a triangle
         # written as a quad, exactly how the reference file above was
         # constructed (repeat the last node_map column).
         nodes = nodes.copy()
-        nodes[0, 3] = nodes[0, 2]  # cell 1: [1, 2, 5, 4] -> [1, 2, 5, 5]
+        nodes[0, 3] = nodes[0, 2]  # cell 0: [0, 1, 4, 3] -> [0, 1, 4, 4]
 
         # Both connections reference only real (non-degenerate) faces:
-        # cell 1's face 2 and cell 2's face 4, the shared edge 2-5. Neither
-        # references face 3 (now degenerate), matching what Tecplot itself
+        # cell 0's face 1 and cell 1's face 3, the shared edge 1-4. Neither
+        # references face 2 (now degenerate), matching what Tecplot itself
         # omits for a cell like this.
-        face_neighbors = np.array([[1, 2, 2], [2, 4, 1]], dtype=np.int64)
+        face_neighbors = np.array([[0, 1, 1], [1, 3, 0]], dtype=np.int64)
 
         path = _path(output_path, fmt, "write_fe_face_neighbors_degenerate")
 
@@ -1181,9 +1181,9 @@ class TestWriteFEZone:
         - FE zones cannot share coordinates across zones without also sharing
           connectivity (node maps differ per-zone in general), so this exercises both
           ``var_sharing`` and ``con_sharing`` together
-        - ``var_sharing={"x": 1, "y": 1, "z": 1}``: sparse, by name, same as the
+        - ``var_sharing={"x": 0, "y": 0, "z": 0}``: sparse, by name, same as the
           ordered-zone case
-        - ``shared_connectivity`` and shared-variable forwarding are now
+        - ``shared_connectivity`` and shared-variable forwarding are
           consistent across all three readers
         """
         x, y, z, nodes = create_FE_tet()
@@ -1198,12 +1198,12 @@ class TestWriteFEZone:
                 c = np.sin(x + t).astype(np.float64)
                 w.write_fe_zone(
                     zone_type=ZoneType.FETETRAHEDRON,
-                    data=[x, y, z, c] if w.current_zone == 0 else [c],
+                    data=[x, y, z, c] if w.current_zone == -1 else [c],
                     var_sharing=(
-                        None if w.current_zone == 0 else {"x": 1, "y": 1, "z": 1}
+                        None if w.current_zone == -1 else {"x": 0, "y": 0, "z": 0}
                     ),
-                    node_map=nodes if w.current_zone == 0 else None,
-                    con_sharing=None if w.current_zone == 0 else 1,
+                    node_map=nodes if w.current_zone == -1 else None,
+                    con_sharing=None if w.current_zone == -1 else 0,
                     title=f"zone_t{step + 1}",
                     strand_id=1,
                     solution_time=float(t),
@@ -1261,8 +1261,8 @@ class TestWriteFEZone:
         """A shared variable's implied length is validated, not just node_map.
 
         Demonstrates:
-        - With connectivity and coordinates shared from zone 1 (``con_sharing=1``,
-          ``var_sharing={"x": 1, "y": 1, "z": 1}``), an incorrectly-sized scalar is
+        - With connectivity and coordinates shared from zone 0 (``con_sharing=0``,
+          ``var_sharing={"x": 0, "y": 0, "z": 0}``), an incorrectly-sized scalar is
           still caught even though ``node_map`` itself is omitted for this zone
         """
         x, y, z, nodes = create_FE_tet()
@@ -1282,8 +1282,8 @@ class TestWriteFEZone:
                 w.write_fe_zone(
                     zone_type=ZoneType.FETETRAHEDRON,
                     data=[c[0:-2]],
-                    var_sharing={"x": 1, "y": 1, "z": 1},
-                    con_sharing=1,
+                    var_sharing={"x": 0, "y": 0, "z": 0},
+                    con_sharing=0,
                 )
 
     def test_write_fe_unsupported_zone_type_raises(
@@ -1308,8 +1308,8 @@ class TestWriteFEZone:
         """An FE zone with no active variables warns and is skipped.
 
         Demonstrates:
-        - Coordinates and connectivity both shared from zone 1
-          (``con_sharing=1``, ``var_sharing`` covering every variable)
+        - Coordinates and connectivity both shared from zone 0
+          (``con_sharing=0``, ``var_sharing`` covering every variable)
           -> :class:`tecio.EmptyZoneWarning`, no :exc:`ValueError`
         - The writer is still usable afterward
         """
@@ -1332,11 +1332,11 @@ class TestWriteFEZone:
                 w.write_fe_zone(
                     zone_type=ZoneType.FETETRAHEDRON,
                     data=[],
-                    var_sharing={"x": 1, "y": 1, "z": 1, "c": 1},
-                    con_sharing=1,
+                    var_sharing={"x": 0, "y": 0, "z": 0, "c": 0},
+                    con_sharing=0,
                     title="zone_skipped",
                 )
-            assert w.current_zone == 1  # skipped zone did not advance the count
+            assert w.current_zone == 0  # skipped zone did not advance the count
             w.write_fe_zone(
                 zone_type=ZoneType.FETETRAHEDRON,
                 data=[x, y, z, c1],

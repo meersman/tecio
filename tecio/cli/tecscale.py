@@ -28,7 +28,7 @@ conversion and format conversion to be performed in a single step.
 
 :Options:
     ``-v INDEX_OR_NAME``, ``--variable INDEX_OR_NAME``
-        Variable to transform, specified as either a one-based integer index or a name
+        Variable to transform, specified as either a 0-based integer index or a name
         string (case-insensitive). Required.
 
     ``-s FLOAT``, ``--scale FLOAT``
@@ -38,7 +38,7 @@ conversion and format conversion to be performed in a single step.
         Additive offset :math:`b` applied after scaling. Defaults to ``0.0``.
 
     ``-z INDEX``, ``--zone INDEX``
-        One-based zone index to restrict the transformation to. If omitted, all zones
+        0-based zone index to restrict the transformation to. If omitted, all zones
         are processed.
 
     ``-o PATH``, ``--output PATH``
@@ -59,19 +59,19 @@ conversion and format conversion to be performed in a single step.
 Examples:
     Convert pressure from kPa to psi by index::
 
-        $ tecscale -v 4 -s 0.145038 flow.szplt
+        $ tecscale -v 3 -s 0.145038 flow.szplt
 
     Same conversion using the variable name::
 
         $ tecscale -v Pressure -s 0.145038 flow.szplt
 
-    Shift temperature from Kelvin to Celsius in zone 2 only::
+    Shift temperature from Kelvin to Celsius in the second zone only::
 
-        $ tecscale -v Temperature --offset -273.15 -z 2 flow.szplt
+        $ tecscale -v Temperature --offset -273.15 -z 1 flow.szplt
 
     Scale and offset in one step, writing to ASCII DAT::
 
-        $ tecscale -v 3 -s 0.3048 flow.szplt -o flow_ft.dat
+        $ tecscale -v 2 -s 0.3048 flow.szplt -o flow_ft.dat
 
     Call directly from a Python session::
 
@@ -113,12 +113,12 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
         epilog=(
             "Example usage:\n"
-            "  Scale variable 4 by 1e-3 (Pa -> kPa)\n"
-            "    $ tecscale -v 4 -s 1e-3 <file>\n"
+            "  Scale variable 3 by 1e-3 (Pa -> kPa)\n"
+            "    $ tecscale -v 3 -s 1e-3 <file>\n"
             "  Same using variable name\n"
             "    $ tecscale -v Pressure -s 1e-3 <file>\n"
-            "  Offset temperature in zone 2 only\n"
-            "    $ tecscale -v Temperature --offset -273.15 -z 2 <file>\n"
+            "  Offset temperature in zone 1 only\n"
+            "    $ tecscale -v Temperature --offset -273.15 -z 1 <file>\n"
         ),
         formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
             prog, width=70, max_help_position=24
@@ -136,7 +136,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         required=True,
         metavar="INDEX_OR_NAME",
         help=(
-            "Variable to scale: either a 1-based integer index or the "
+            "Variable to scale: either a 0-based integer index or the "
             "variable name (case-insensitive)."
         ),
     )
@@ -162,7 +162,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="INDEX",
         help=(
-            "1-based zone index to apply the transformation to. Default is all zones."
+            "0-based zone index to apply the transformation to. Default is all zones."
         ),
     )
     parser.add_argument(
@@ -192,10 +192,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def _resolve_variable(spec: str, var_names: list[str]) -> int | None:
-    """Return a 0-based variable index from a name or 1-based integer string.
+    """Return a 0-based variable index from a name or 0-based integer string.
 
     Args:
-        spec:      User-supplied string (e.g. ``"3"`` or ``"Pressure"``).
+        spec:      User-supplied string (e.g. ``"2"`` or ``"Pressure"``).
         var_names: Ordered list of variable names from the reader.
 
     Returns:
@@ -208,16 +208,11 @@ def _resolve_variable(spec: str, var_names: list[str]) -> int | None:
     # Try integer first.
     try:
         idx = int(spec)
-        if idx < 1 or idx > len(var_names):
-            # print(
-            #     f"Error: variable index {idx} out of range [1, {len(var_names)}].",
-            #     file=sys.stderr,
-            # )
-            # sys.exit(1)
+        if idx < 0 or idx >= len(var_names):
             raise IndexError(
-                f"Error: variable index {idx} out of range [1, {len(var_names)}]."
+                f"Error: variable index {idx} out of range [0, {len(var_names) - 1}]."
             )
-        return idx - 1
+        return idx
     except ValueError:
         pass
 
@@ -277,17 +272,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             # Validate zone if specified.
             if args.zone is not None and (
-                args.zone < 1 or args.zone > reader.num_zones
+                args.zone < 0 or args.zone >= reader.num_zones
             ):
                 print(
                     f"Error: zone index {args.zone} out of range "
-                    f"[1, {reader.num_zones}].",
+                    f"[0, {reader.num_zones - 1}].",
                     file=sys.stderr,
                 )
                 return 1
 
             print(
-                f"Scaling '{var_names[var_idx0]}' (var {var_idx0 + 1}): "
+                f"Scaling '{var_names[var_idx0]}' (var {var_idx0}): "
                 f"new = old * {args.scale} + {args.offset}"
             )
             if args.zone is not None:
@@ -309,14 +304,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # Forward all variable-level aux data.
                 auxvar: dict[int, dict[str, str]] = {}
                 for i in range(num_vars):
-                    var_aux = reader.get_var_auxdata(i + 1)
+                    var_aux = reader.get_var_auxdata(i)
                     if len(var_aux) > 0:
-                        auxvar[i + 1] = dict(var_aux.items())
+                        auxvar[i] = dict(var_aux.items())
                 if auxvar:
                     writer.add_auxvar_dict(auxvar)
 
-                for i, zone in enumerate(reader.zones):
-                    zone_num = i + 1
+                for zone_num, zone in enumerate(reader.zones):
                     zt = zone.zone_type
 
                     if zt in (ZoneType.FEPOLYGON, ZoneType.FEPOLYHEDRON):
@@ -386,7 +380,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         writer.write_fe_zone(
                             zone_type=zt,
                             data=data,
-                            node_map=None if con_sharing else zone.node_map,
+                            node_map=None if con_sharing is not None else zone.node_map,
                             con_sharing=con_sharing,
                             **fe_kw,
                         )

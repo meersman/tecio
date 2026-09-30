@@ -1,11 +1,11 @@
 r"""Add, remove, or export dataset, zone, or variable level auxiliary data.
 
-Tecplot's auxiliary data mechanism attaches arbitrary ``name=value`` metadata to a
+The Tecplot auxiliary data mechanism attaches arbitrary ``name=value`` metadata to a
 dataset, a zone, or a variable (solver name, run date, units, a description, or any
-other annotation that doesn't belong in the numerical data itself). Managing this
-after the fact ordinarily means writing a one-off script against the TecIO API.
-``tecaux`` does this from the command line, in a single read/write pass, in three
-mutually exclusive modes:
+other annotation that doesn't belong in the numerical data itself). Managing this after
+the fact ordinarily means writing a one-off script against the TecIO API.  ``tecaux``
+does this from the command line, in a single read/write pass, in three mutually
+exclusive modes:
 
 * By default (no ``--strip``/``--export-json``): merges new auxiliary entries (from
   ``-d``/``-z``/``-v`` and/or ``-j``) into a copy of the input file. Every zone,
@@ -35,15 +35,14 @@ mutually exclusive modes:
         for multiple pairs.
 
     ``-z INDEX KEY=VALUE``, ``--zone INDEX KEY=VALUE``
-        A ``name=value`` pair to set as zone-level auxiliary data on the one-based zone
-        ``INDEX`` -- or on every zone if ``INDEX`` is the literal word ``all``. Repeat
-        the flag for multiple pairs and/or multiple zones; each occurrence takes exactly
-        one zone and one pair, so ``-z 1 A=1 -z 1 B=2`` sets both ``A`` and ``B`` on
-        zone 1.
+        A ``name=value`` pair to set as zone-level auxiliary data on the 0-based zone
+        ``INDEX``, or on every zone if ``INDEX`` is the literal word ``all``. Repeat the
+        flag for multiple pairs and/or multiple zones; each occurrence takes exactly one
+        zone and one pair, so ``-z 0 A=1 -z 0 B=2`` sets both ``A`` and ``B`` on zone 0.
 
     ``-v INDEX_OR_NAME KEY=VALUE``, ``--variable INDEX_OR_NAME KEY=VALUE``
         A ``name=value`` pair to set as variable-level auxiliary data on the variable
-        given by a one-based index or a name (case-insensitive) -- or on every variable
+        given by a 0-based index or a name (case-insensitive), r on every variable
         if the target is the literal word ``all``. Repeatable, same as ``-z``.
 
     ``-j PATH``, ``--json PATH``
@@ -78,12 +77,12 @@ mutually exclusive modes:
         {
           "AUXDATASET": {"Solver": "MyCFD", "Version": "2.1"},
           "AUXZONE": {
-            "1": {"Description": "Wing"},
+            "0": {"Description": "Wing"},
             "all": {"Batch": "2024"}
           },
           "AUXVAR": {
             "Pressure": {"Units": "Pa"},
-            "1": {"Source": "Experiment"}
+            "0": {"Source": "Experiment"}
           }
         }
 
@@ -93,12 +92,12 @@ mutually exclusive modes:
     ``AUXZONE`` is the natural third member of that family even though zone-level aux
     has no "zone"-prefixed name internally.
 
-    In ``"AUXZONE"``/``"AUXVAR"``, a key is either a one-based index, a variable name
+    In ``"AUXZONE"``/``"AUXVAR"``, a key is either a 0-based index, a variable name
     (``"AUXVAR"`` only), or the literal string ``"all"`` meaning every zone/variable
     (the same three forms ``-z``/``-v`` accept on the command line). Every JSON key must
-    be a quoted string, including numeric indices (``"1"``, not ``1``).
+    be a quoted string, including numeric indices (``"0"``, not ``0``).
 
-    ``--export-json`` writes this exact format back out, keyed by exact 1-based index
+    ``--export-json`` writes this exact format back out, keyed by exact 0-based index
     (never ``"all"``, even if every zone happens to share identical aux content) and
     omitting any zone/variable/level with nothing to report.
 
@@ -117,9 +116,9 @@ Examples:
 
         $ tecaux -d Solver=MyCFD -d Version=2.1 flow.szplt
 
-    Two pairs on zone 1, one pair on zone 2::
+    Two pairs on zone 0, one pair on zone 1::
 
-        $ tecaux -z 1 Description=Wing -z 1 Area=120sqm -z 2 Description=Fuselage \
+        $ tecaux -z 0 Description=Wing -z 0 Area=120sqm -z 1 Description=Fuselage \
               flow.szplt
 
     Annotate a single variable by name::
@@ -134,9 +133,9 @@ Examples:
 
         $ tecaux --data Solver=MyCFD \
               --data Version=2.1 \
-              --zone 1 Case=A \
-              --zone 1 Description=Wing \
-              --zone 2 Case=B \
+              --zone 0 Case=A \
+              --zone 0 Description=Wing \
+              --zone 1 Case=B \
               --variable Pressure Units=Pa \
               -o tagged.szplt flow.szplt
 
@@ -226,8 +225,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "Example usage:\n"
             "  Dataset-level metadata (repeat the flag for multiple pairs)\n"
             "    $ tecaux -d Solver=MyCFD -d Version=2.1 <file>\n"
-            "  Two pairs on zone 1, one pair on zone 2\n"
-            "    $ tecaux -z 1 Description=Wing -z 1 Area=120sqm -z 2 Case=B <file>\n"
+            "  Two pairs on zone 0, one pair on zone 1\n"
+            "    $ tecaux -z 0 Description=Wing -z 0 Area=120sqm -z 1 Case=B <file>\n"
             "  A single variable by name\n"
             "    $ tecaux -v Pressure Units=Pa <file>\n"
             "  Every zone at once\n"
@@ -265,7 +264,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar=("INDEX", "KEY=VALUE"),
         help=(
             "A name=value pair to set as zone-level auxiliary data on the "
-            "given one-based zone index, or on every zone if INDEX is "
+            "given 0-based zone index, or on every zone if INDEX is "
             "'all'. Repeatable, one pair per occurrence."
         ),
     )
@@ -279,7 +278,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar=("INDEX_OR_NAME", "KEY=VALUE"),
         help=(
             "A name=value pair to set as variable-level auxiliary data on "
-            "the given variable (1-based index or name), or on every "
+            "the given variable (0-based index or name), or on every "
             "variable if the target is 'all'. Repeatable, one pair per "
             "occurrence."
         ),
@@ -377,10 +376,10 @@ def _parse_kv(token: str) -> tuple[str, str]:
 
 
 def _resolve_variable(spec: str, var_names: list[str]) -> int | None:
-    """Return a 0-based variable index from a name or 1-based integer string.
+    """Return a 0-based variable index from a name or 0-based integer string.
 
     Args:
-        spec:      User-supplied string (e.g. ``"3"`` or ``"Pressure"``).
+        spec:      User-supplied string (e.g. ``"2"`` or ``"Pressure"``).
         var_names: Ordered list of variable names from the reader.
 
     Returns:
@@ -393,9 +392,9 @@ def _resolve_variable(spec: str, var_names: list[str]) -> int | None:
     except ValueError:
         pass
     else:
-        if idx < 1 or idx > len(var_names):
+        if idx < 0 or idx >= len(var_names):
             return None
-        return idx - 1
+        return idx
 
     spec_lower = spec.lower()
     for i, name in enumerate(var_names):
@@ -441,7 +440,7 @@ def _consolidate_groups(
     Args:
         groups:  ``[(target, {key: value}), ...]`` -- target is ``None`` ("every
                  zone"/"every variable") or a raw string to resolve.
-        resolve: Callable taking the raw target string and returning a 1-based index for
+        resolve: Callable taking the raw target string and returning a 0-based index for
                  a specific target, or raising ``_ArgError`` if it can't be resolved.
 
     Returns:
@@ -529,7 +528,7 @@ def _collect_all_aux(reader: TecplotReader) -> dict[str, Any]:
     ``AUXDATASET``/``AUXZONE``/``AUXVAR`` structure, so a file exported with
     ``--export-json`` can be fed straight back in with ``-j`` (to the same
     file, a modified copy, or an entirely different one) without any
-    reshaping. Zones/variables are keyed by their exact 1-based index --
+    reshaping. Zones/variables are keyed by their exact 0-based index --
     never collapsed into an ``"all"`` entry even when every zone happens to
     share the same aux content, since a later zone added to the file
     wouldn't have had that entry originally and shouldn't silently inherit
@@ -558,15 +557,15 @@ def _collect_all_aux(reader: TecplotReader) -> dict[str, Any]:
     for i, zone in enumerate(reader.zones):
         entries = dict(zone.auxdata.items())
         if entries:
-            zone_aux[str(i + 1)] = entries
+            zone_aux[str(i)] = entries
     if zone_aux:
         result["AUXZONE"] = zone_aux
 
     var_aux: dict[str, dict[str, str]] = {}
     for i in range(reader.num_vars):
-        entries = dict(reader.get_var_auxdata(i + 1).items())
+        entries = dict(reader.get_var_auxdata(i).items())
         if entries:
-            var_aux[str(i + 1)] = entries
+            var_aux[str(i)] = entries
     if var_aux:
         result["AUXVAR"] = var_aux
 
@@ -596,7 +595,7 @@ def _process_zone(
     var_sharing: dict[str, int] = {}
 
     for var in zone.variables:
-        sv = var.shared_zone  # 1-based source zone index, or None
+        sv = var.shared_zone  # 0-based source zone index, or None
 
         if var.is_passive():
             passive_vars.add(var.name)
@@ -673,7 +672,7 @@ def _write_zone_data(
         writer.write_fe_zone(
             zone_type=zt,
             data=writer_data,
-            node_map=None if con_sharing else zone.node_map,
+            node_map=None if con_sharing is not None else zone.node_map,
             con_sharing=con_sharing,
             **fe_kw,
         )
@@ -752,7 +751,7 @@ def _run_strip_or_export(args: argparse.Namespace, src: Path) -> int:
                         zt = zone.zone_type
                         if zt in _FE_POLY:
                             print(
-                                f"Warning: zone {i + 1} ('{zone.title}') is "
+                                f"Warning: zone {i} ('{zone.title}') is "
                                 f"{zt.name} and cannot be copied -- skipping.",
                                 file=sys.stderr,
                             )
@@ -864,8 +863,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     raise _ArgError(
                         f"Zone target must be an index or 'all', got: {raw!r}"
                     ) from exc
-                if idx < 1 or idx > num_zones:
-                    raise _ArgError(f"Zone index {idx} out of range [1, {num_zones}].")
+                if idx < 0 or idx >= num_zones:
+                    raise _ArgError(
+                        f"Zone index {idx} out of range [0, {num_zones - 1}]."
+                    )
                 return idx
 
             def _resolve_var_target(raw: str) -> int:
@@ -875,7 +876,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         f"Could not resolve variable target {raw!r}.  "
                         f"Available: {var_names}"
                     )
-                return idx0 + 1  # keyed 1-based, matching zone targets
+                return idx0  # keyed 0-based, matching zone targets
 
             try:
                 zone_broadcast, zone_by_target = _consolidate_groups(
@@ -911,15 +912,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                 auxvar: dict[int, dict[str, str]] = {}
                 for i in range(num_vars):
-                    one_based = i + 1
-                    existing = dict(reader.get_var_auxdata(one_based).items())
+                    existing = dict(reader.get_var_auxdata(i).items())
                     merged = {
                         **existing,
                         **var_broadcast,
-                        **var_by_target.get(one_based, {}),
+                        **var_by_target.get(i, {}),
                     }
                     if merged:
-                        auxvar[one_based] = merged
+                        auxvar[i] = merged
                 if auxvar:
                     writer.add_auxvar_dict(auxvar)
 
@@ -929,8 +929,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # already open (eager), so that automatic trigger never fires.
                 writer.flush_aux()
 
-                for i, zone in enumerate(reader.zones):
-                    zone_num = i + 1
+                for zone_num, zone in enumerate(reader.zones):
                     zt = zone.zone_type
 
                     if zt in _FE_POLY:
