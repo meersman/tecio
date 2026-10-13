@@ -52,10 +52,11 @@ From the [Tecplot Data Format Guide](https://tecplot.azureedge.net/products/360/
   can be specified to be zero-based. C and C++ programmers in particular
   should be wary of off-by-one errors when dealing with Tecplot data.
 
-The `tecio` Python library follows Python convention instead wherever a
-Python object is referenced, and follows Tecplot's convention wherever
-Tecplot's own numbering is the thing being reported or requested. Knowing
-which is which for a given property avoids of off-by-one bugs.
+`tecio`'s Python API follows standard Python convention everywhere instead:
+every zone, variable, node, and cell index it accepts or reports is 0-based,
+the same as indexing a `list` or a NumPy array. This applies uniformly, from
+container indexing to `zone_index`/`var_index` to every function or method
+parameter that names a zone or variable.
 
 Container indexing is 0-based:
 
@@ -64,42 +65,46 @@ r.zones[0]  # the FIRST zone
 r.zones[0].variables[0]  # the FIRST variable in that zone
 ```
 
-For read zones, `zone_index` reports the equivalent Tecplot 1-based index:
+`zone_index` reports that same 0-based position:
 
 ```python
-r.zones[0].zone_index  # == 1
-r.zones[2].zone_index  # == 3
+r.zones[0].zone_index  # == 0
+r.zones[2].zone_index  # == 2
 ```
 
-For read variables, `var_index` reports the equivalent Tecplot 1-based index,
-and `zone_index reports the parent zone Tecplot 1-based index for that
-variable:
+For read variables, `var_index` reports the 0-based position within its
+zone, and `zone_index` reports the 0-based index of the parent zone:
 
 ```python
-r.zones[0].variables[0].var_index  # == 1
-r.zones[2].variables[0].zone_index  # == 3
+r.zones[0].variables[0].var_index  # == 0
+r.zones[2].variables[0].zone_index  # == 2
 ```
 
-Data access method `get_array` similary uses 0-based indexing:
+Data access method `get_array` also uses 0-based indexing:
 
 ```python
 r.zones[0].get_array(0)  # data array for FIRST variable
 r.zones[0].get_array([1, 3, 5])  # tuple of data arrays for 2nd, 4th and 6th variables
 ```
 
-**Special case** of the indexing rule is auxilary data access. Reader methods
-to output `AUXZONE` and `AUXVARIABLE` items take the 1-based index as the
-argument (same as `zone_index` and `var_index` propetries):
+Auxiliary data access follows the same rule. `get_var_auxdata` and
+`get_zone_auxdata` take a 0-based index, same as `zone_index` and
+`var_index`:
 
 ```python
-r.get_var_auxdata(1)  # the FIRST variable's aux data
-r.get_var_auxdata(0)  # raises IndexError
+r.get_var_auxdata(0)  # the FIRST variable's aux data
+r.get_zone_auxdata(0)  # the FIRST zone's aux data
 ```
 
-```python
-r.get_zone_auxdata(1)  # the FIRST zone's aux data
-r.get_zone_auxdata(0)  # raises IndexError
-```
+Two places keep Tecplot's native 1-based numbering on purpose, since they
+hand values to (or read them from) something other than this Python API:
+the raw {mod}`tecio.libtecio` C function wrappers, which pass zone/variable/
+node arguments straight through to TecIO, and the `tec2mat` CLI, which
+converts every index to 1-based on the way into its `.mat` output so the
+same values work directly in MATLAB. The *text* of ASCII `.dat`/`.tec` files
+is also 1-based, matching how Tecplot 360 itself reads and writes that
+format, but values `tecio` parses back out of a `.dat` file follow the same
+0-based convention as every other format.
 
 ---
 

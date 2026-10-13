@@ -47,7 +47,7 @@ already committed.
 | `title` | `str` | Dataset title |
 | `variables` | `list[str] \| None` | Variable name list, `None` before the file is opened (lazy-open) |
 | `file_type` | `FileType` | `FULL`, `GRID`, or `SOLUTION` |
-| `current_zone` | `int` | 1-based index of the most recently written zone, `0` before any zone is written |
+| `current_zone` | `int` | 0-based index of the most recently written zone, `-1` before any zone is written |
 
 `meta` (below) is a running, read-only summary of everything committed to
 the file so far (title, variables, aux-item counts, and a per-zone record
@@ -75,8 +75,8 @@ dimensions default to `1`).
 | `title` | `str \| None` | `None` | ✓ | ✓ | ✓ |
 | `variables` | `list[str] \| None` | `None` | ✓ | ✓ | ✓ |
 | `value_locations` | `Sequence[ValueLocation] \| None` | `None` | ✓ | ✓ | ✓ |
-| `passive_vars` | `Sequence[bool \| int] \| None` | `None` | ✓ | ✓ | ✓ |
-| `var_sharing` | `Sequence[int] \| None` | `None` | ✓ | ✓ | ✓ |
+| `passive_vars` | `Collection[int \| str] \| None` | `None` | ✓ | ✓ | ✓ |
+| `var_sharing` | `Mapping[int \| str, int] \| None` | `None` | ✓ | ✓ | ✓ |
 | `solution_time` | `float` | `0.0` | ✓ | ✓ | ✓ |
 | `strand_id` | `int` | `0` | ✓ | ✓ | ✓ |
 | `aux` | `dict[str, Any] \| None` | `None` | ✓ | ✓ | ✓ |
@@ -87,6 +87,11 @@ dimensions default to `1`).
 it from memory immediately, rather than holding everything until `close()`;
 useful for very large datasets. Every other parameter behaves identically
 across all three formats.
+
+`var_sharing` maps a variable (by name or 0-based index) to the 0-based
+index of the zone to share it from, e.g. `{"x": 0, "y": 0}` shares `x` and
+`y` from zone 0. `passive_vars` takes variable names or 0-based indices,
+e.g. `{"x"}` or `[3]`.
 
 ## `write_fe_zone`
 
@@ -104,7 +109,14 @@ ordered zones), plus:
 | `flush` | `bool` | `False` | ✓ | — | — |
 
 Node and cell counts are inferred from `node_map`, or, if `node_map` is
-omitted, from the zone referenced by `con_sharing`.
+omitted, from the zone referenced by `con_sharing`. `node_map` holds
+0-based node indices into this zone's coordinate arrays. `con_sharing` is
+the 0-based index of the zone to share connectivity from, or `None` to
+write `node_map` directly. `face_neighbors` cell references, remote-zone
+references, and the face ordinal (0..faces-per-cell - 1) are all 0-based.
+Tecplot 360 itself and the data format guide's face-numbering diagrams
+number faces starting at 1; `tecio` follows Python container-index
+convention here instead, same as everywhere else in the Python API.
 
 ¹ **Known limitation**: DAT's `face_neighbors`/`face_nbr_mode` parameters are
 accepted without error but currently do nothing, the ASCII face-neighbor
