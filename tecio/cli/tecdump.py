@@ -181,7 +181,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("\n\nVariable Auxiliary Data")
         print("-" * 78)
         for i in range(tec.num_vars):
-            var_aux = tec.get_var_auxdata(i + 1)
+            var_aux = tec.get_var_auxdata(i)
             if len(var_aux) > 0:
                 print(f"Var {i + 1:3} Aux Data       : {dict(var_aux)}")
                 for name, value in var_aux.items():

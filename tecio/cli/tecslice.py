@@ -540,9 +540,9 @@ def _build_protected_set(
     required_sources: set[int] = set()
     for zi in keep_indices:
         for var in zones[zi].variables:
-            sv = var.shared_zone  # 1-based, or None
+            sv = var.shared_zone  # 0-based, or None
             if sv is not None:
-                required_sources.add(sv - 1)  # -> 0-based, to match keep_indices
+                required_sources.add(sv)
 
     # A zone needs protection only if it is required but not already kept.
     return required_sources - keep_indices
@@ -560,7 +560,7 @@ def _collect_zone_arrays(
 ]:
     """Read active variable arrays/metadata from *zone*, and passive/sharing sets.
 
-    Sharing references are passed through verbatim as 1-based zone indices.  Zone
+    Sharing references are passed through verbatim as 0-based zone indices.  Zone
     numbering is preserved in the output (every zone is written in source order).
 
     Args:
@@ -582,7 +582,7 @@ def _collect_zone_arrays(
 
     for j in range(num_vars):
         var = zone.variables[j]
-        sv = var.shared_zone  # 1-based source zone index, or None
+        sv = var.shared_zone  # 0-based source zone index, or None
 
         if var.is_passive():
             passive_vars.add(var.name)
@@ -642,7 +642,7 @@ def _write_zone_verbatim(
         writer.write_fe_zone(
             zone_type=zone.zone_type,
             data=data,
-            node_map=None if con_sharing else zone.node_map,
+            node_map=None if con_sharing is not None else zone.node_map,
             con_sharing=con_sharing,
             **fe_kw,
         )
@@ -712,7 +712,7 @@ def _write_zone_protected(
         writer.write_fe_zone(
             zone_type=zone.zone_type,
             data=writer_data,
-            node_map=None if con_sharing else zone.node_map,
+            node_map=None if con_sharing is not None else zone.node_map,
             con_sharing=con_sharing,
             **fe_kw,
         )
@@ -941,9 +941,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # Forward variable-level aux data.
                 auxvar: dict[int, dict[str, str]] = {}
                 for i in range(num_vars):
-                    var_aux = reader.get_var_auxdata(i + 1)
+                    var_aux = reader.get_var_auxdata(i)
                     if len(var_aux) > 0:
-                        auxvar[i + 1] = dict(var_aux.items())
+                        auxvar[i] = dict(var_aux.items())
                 if auxvar:
                     writer.add_auxvar_dict(auxvar)
 
@@ -959,7 +959,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if protected_indices:
                     print(
                         f"Protected (sharing sources): "
-                        f"{sorted(zi + 1 for zi in protected_indices)} "
+                        f"{sorted(protected_indices)} "
                         f"zone(s) written as passive grid anchors."
                     )
 
@@ -971,7 +971,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                     if zt in (ZoneType.FEPOLYGON, ZoneType.FEPOLYHEDRON):
                         print(
-                            f"Warning: zone {zi + 1} ('{zone.title}') is "
+                            f"Warning: zone {zi} ('{zone.title}') is "
                             f"{zt.name} -- skipping.",
                             file=sys.stderr,
                         )
@@ -998,7 +998,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         )
                         if not written:
                             print(
-                                f"Warning: zone {zi + 1} ('{zone.title}') "
+                                f"Warning: zone {zi} ('{zone.title}') "
                                 "IJK slice produced empty dimensions -- "
                                 "skipping.",
                                 file=sys.stderr,
@@ -1007,7 +1007,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                     elif do_ijk and zt != ZoneType.ORDERED:
                         print(
-                            f"Warning: zone {zi + 1} ('{zone.title}') is "
+                            f"Warning: zone {zi} ('{zone.title}') is "
                             f"{zt.name} (unstructured) -- IJK slice ignored, "
                             "written verbatim.",
                             file=sys.stderr,

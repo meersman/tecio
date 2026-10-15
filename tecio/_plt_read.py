@@ -805,6 +805,7 @@ class _PltParser:
         "miscellaneous" ``LOCAL_ONE_TO_ONE`` storage produces, so both
         on-disk mechanisms present identically through the public API, a
         caller shouldn't need to know or care which one a given file used.
+        Cell numbers and the face ordinal are both converted to 0-based.
 
         Read here rather than recorded lazily by offset, unlike the
         "miscellaneous" one-to-one case: the real connection count isn't
@@ -823,9 +824,9 @@ class _PltParser:
         if elem_idx.size == 0:
             return  # flag was set, but every entry is a boundary face
 
-        cz1 = elem_idx + 1
-        fz = face_idx + 1
-        cz2 = raw[elem_idx, face_idx]
+        cz1 = elem_idx
+        fz = face_idx  # already a 0-based position within the row
+        cz2 = raw[elem_idx, face_idx] - 1
         triples = np.stack([cz1, fz, cz2], axis=1).ravel()
 
         meta.face_neighbor_mode = FaceNeighborMode.LOCAL_ONE_TO_ONE
@@ -938,8 +939,8 @@ class TecplotPltVariableReader(TecplotVariableReader):
         Args:
             file_path:  Path to the ``.plt`` file on disk.
             zone_meta:  Parsed metadata for the parent zone.
-            zone_index: 1-based zone index (for API parity with SZL).
-            var_index:  1-based variable index.
+            zone_index: 0-based zone index (for API parity with SZL).
+            var_index:  0-based variable index.
             var_names:  All variable names for the dataset.
             byte_order: NumPy byte-order prefix (``"<"`` or ``">"``).
             all_metas: All zones' parsed metadata, in file order (needed to resolve
@@ -966,7 +967,7 @@ class TecplotPltVariableReader(TecplotVariableReader):
         share cannot be resolved, e.g. when ``all_metas`` was not supplied at
         construction.
         """
-        idx = self.var_index - 1
+        idx = self.var_index
         meta = self._meta
         if meta.shared_zone[idx] < 0:
             return meta
@@ -986,27 +987,27 @@ class TecplotPltVariableReader(TecplotVariableReader):
     @property
     def name(self) -> str:
         """Variable name string."""
-        return self._var_names[self.var_index - 1]
+        return self._var_names[self.var_index]
 
     @property
     def data_type(self) -> DataType:
         """Data type enum for this variable in this zone."""
-        return self._meta.var_data_types[self.var_index - 1]
+        return self._meta.var_data_types[self.var_index]
 
     @property
     def value_location(self) -> ValueLocation:
         """Value location (NODAL or CELL_CENTERED)."""
-        return self._meta.value_locations[self.var_index - 1]
+        return self._meta.value_locations[self.var_index]
 
     def is_passive(self) -> bool:
         """True if this variable is passive in this zone."""
-        return self._meta.is_passive[self.var_index - 1]
+        return self._meta.is_passive[self.var_index]
 
     @property
     def shared_zone(self) -> int | None:
-        """Source zone index (1-based) if this variable is shared, else None."""
-        sz = self._meta.shared_zone[self.var_index - 1]
-        return sz + 1 if sz >= 0 else None
+        """Source zone index if this variable is shared, else None."""
+        sz = self._meta.shared_zone[self.var_index]
+        return sz if sz >= 0 else None
 
     @property
     def num_values(self) -> int:
@@ -1017,7 +1018,7 @@ class TecplotPltVariableReader(TecplotVariableReader):
         meta = self._resolve_data_meta()
         if meta is None:
             return 0
-        offset_info = meta.var_offsets.get(self.var_index - 1)
+        offset_info = meta.var_offsets.get(self.var_index)
         if offset_info is None:
             return 0
         _, count, _ = offset_info
@@ -1058,7 +1059,7 @@ class TecplotPltVariableReader(TecplotVariableReader):
         if meta is None:
             return None
 
-        offset_info = meta.var_offsets.get(self.var_index - 1)
+        offset_info = meta.var_offsets.get(self.var_index)
         if offset_info is None:
             return None
 
@@ -1097,7 +1098,7 @@ class TecplotPltVariableReader(TecplotVariableReader):
         # zone's own for well-formed files.
         if full_read and meta.zone_type == ZoneType.ORDERED:
             ni, nj, nk = meta.i_max, meta.j_max, meta.k_max
-            if meta.value_locations[self.var_index - 1] == ValueLocation.CELL_CENTERED:
+            if meta.value_locations[self.var_index] == ValueLocation.CELL_CENTERED:
                 # On disk: i * j * (k-1) values in Fortran order. Ghost padding occupies
                 # the last row in I and J after reshape, so reshape to (ni, nj, nk-1)
                 # then slice to (ni-1, nj-1, nk-1) to discard the ghost values and
@@ -1132,7 +1133,7 @@ def _load_plt_variables(
             file_path=file_path,
             zone_meta=meta,
             zone_index=zone_index,
-            var_index=i + 1,
+            var_index=i,
             var_names=var_names,
             byte_order=byte_order,
             all_metas=all_metas,
@@ -1249,7 +1250,7 @@ class TecplotPltFEZoneReader(TecplotFEZoneReader):
             num_nodes=meta.num_nodes,
             num_elements=meta.num_elements,
             shared_connectivity=(
-                meta.connectivity_shared_zone + 1
+                meta.connectivity_shared_zone
                 if meta.connectivity_shared_zone >= 0
                 else None
             ),
@@ -1315,7 +1316,7 @@ class TecplotPltFEZoneReader(TecplotFEZoneReader):
             fp.seek(meta.connectivity_offset)
             flat = np.fromfile(fp, dtype=dt, count=count)
 
-        return flat.reshape(self.num_elements, -1).astype(np.int64) + 1
+        return flat.reshape(self.num_elements, -1).astype(np.int64)
 
     def _load_face_neighbor_meta(
         self,
@@ -1333,10 +1334,10 @@ class TecplotPltFEZoneReader(TecplotFEZoneReader):
     def _load_face_connections(self) -> npt.NDArray[np.int64]:
         meta = self._meta
         if meta.face_connections_eager is not None:
-            # Eager cache is either the "raw" mechanism (already confirmed
-            # correctly 1-based on disk, no adjustment) or a "many" mode
-            # record from the offset-based mechanism below (not validated
-            # against real data either way, left as-is rather than guessing).
+            # Eager cache is either the "raw" mechanism (already converted to
+            # the public convention when recorded) or a "many" mode record
+            # from the offset-based mechanism below (not validated against
+            # real data either way, left as-is rather than guessing).
             return meta.face_connections_eager
 
         assert meta.face_connections_offset is not None  # narrowed: one-to-one modes
@@ -1346,10 +1347,14 @@ class TecplotPltFEZoneReader(TecplotFEZoneReader):
             fp.seek(meta.face_connections_offset)
             flat = np.fromfile(fp, dtype=dt, count=count)
         # Confirmed 0-based on disk against known-good data (cross-checked
-        # triple-for-triple against the equivalent hand-written DAT file),
-        # same convention as node_map, +1 for every value: cell, face, and
-        # neighbor-cell references are all indices here, none are counts.
-        return flat.astype(np.int64) + 1
+        # triple-for-triple against the equivalent hand-written DAT file). Cell
+        # references, remote-zone references, and the face ordinal (second
+        # value of each record) are all already 0-based on disk here, matching
+        # the public convention directly, so no conversion is needed.
+        one_to_one = FaceNeighborMode.LOCAL_ONE_TO_ONE
+        values_per = 3 if meta.face_neighbor_mode is one_to_one else 4
+        records = flat.astype(np.int64).reshape(-1, values_per)
+        return records.ravel()
 
     def _load_auxdata(self) -> TecplotAuxDataReader:
         return TecplotPltAuxDataReader(self._meta.auxdata)
@@ -1464,7 +1469,7 @@ class TecplotPltReader(TecplotReader):
                 _build_plt_zone(
                     file_path=self._path,
                     meta=meta,
-                    zone_index=i + 1,
+                    zone_index=i,
                     num_vars=self.num_vars,
                     var_names=self._var_names,
                     byte_order=self._byte_order,
@@ -1482,4 +1487,4 @@ class TecplotPltReader(TecplotReader):
         return self._dataset_auxdata
 
     def _var_auxdata_at(self, var_index: int) -> TecplotAuxDataReader:
-        return TecplotPltAuxDataReader(self._raw_var_auxdata.get(var_index - 1, {}))
+        return TecplotPltAuxDataReader(self._raw_var_auxdata.get(var_index, {}))

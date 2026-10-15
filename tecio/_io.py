@@ -162,7 +162,7 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
         var_sharing: dict[str, int] = {}
 
         for var in zone.variables:
-            sv = var.shared_zone  # None, or the 1-based source-zone index shared from
+            sv = var.shared_zone  # None, or the 0-based source-zone index shared from
             if var.is_passive():
                 passive_vars.add(var.name)
             elif sv is not None:
@@ -187,12 +187,11 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
             # Forward connectivity sharing: when shared, pass ``con_sharing`` and omit
             # the node map so the writer derives the node/cell counts from the source
             # zone; otherwise write this zone's own node map.
-            cv = zone.shared_connectivity  # None, or 1-based source-zone index
-            con_sharing = cv if cv is not None else 0
+            con_sharing = zone.shared_connectivity  # None, or 0-based source-zone index
             writer.write_fe_zone(
                 zone_type=zone.zone_type,
                 data=data,
-                node_map=None if con_sharing else zone.node_map,
+                node_map=None if con_sharing is not None else zone.node_map,
                 con_sharing=con_sharing,
                 **common_kw,
             )
@@ -283,13 +282,13 @@ class AppendWrite:
                 :class:`~tecio.libtecio.ValueLocation` for active variables. Defaults
                 to all :attr:`~tecio.libtecio.ValueLocation.NODAL`.
             passive_vars (list | tuple | set | None): Variables to mark passive: a list,
-                tuple, or set of variable names, or of 1-based indices. Defaults to all
+                tuple, or set of variable names, or of 0-based indices. Defaults to all
                 active.
             var_sharing (dict[str | int, int] | None): Variables to share from another
-                zone: a ``{variable: source zone}`` mapping (name or 1-based index to
-                1-based zone index, counting all zones including those copied from the
+                zone: a ``{variable: source zone}`` mapping (name or 0-based index to
+                0-based zone index, counting all zones including those copied from the
                 original file). Defaults to no sharing. Sharing grid coordinates from
-                zone 1 is a common pattern for transient data to avoid duplicating large
+                zone 0 is a common pattern for transient data to avoid duplicating large
                 arrays.
             solution_time (float): Solution time for transient data. Defaults to
                 ``0.0``.
@@ -299,11 +298,11 @@ class AppendWrite:
                 pairs. Defaults to ``None``.
 
         Example:
-            Append a time step, sharing the grid from zone 1:
+            Append a time step, sharing the grid from zone 0:
 
             >>> tec.write_ordered_zone(
             ...     data=[p_new],  # only the non-shared variable
-            ...     var_sharing={"x": 1, "y": 1},
+            ...     var_sharing={"x": 0, "y": 0},
             ...     solution_time=5.0,
             ...     strand_id=1,
             ... )
@@ -330,21 +329,22 @@ class AppendWrite:
                 must have length ``num_nodes``; CELL_CENTERED arrays must have length
                 ``num_cells``. Both are inferred from ``node_map``.
             node_map (array-like | None): Integer array of shape ``(num_cells,
-                nodes_per_cell)`` with **1-based** node indices. ``num_nodes =
-                node_map.max()``. The 32- or 64-bit write path is chosen automatically.
+                nodes_per_cell)`` with 0-based node indices. ``num_nodes =
+                node_map.max() + 1``. The 32- or 64-bit write path is chosen
+                automatically.
             title (str | None): Zone title. Defaults to ``"FE_Zone_{n}"``.
             value_locations (Sequence[ValueLocation] | None): Per-variable value
                 location for active variables. Defaults to all
                 :attr:`~tecio.libtecio.ValueLocation.NODAL`.
             passive_vars (list | tuple | set | None): Variables to mark passive: a list,
-                tuple, or set of variable names, or of 1-based indices. Defaults to all
+                tuple, or set of variable names, or of 0-based indices. Defaults to all
                 active.
             var_sharing (dict[str | int, int] | None): Variables to share from another
-                zone: a ``{variable: source zone}`` mapping (name or 1-based index to
-                1-based zone index). Defaults to no sharing.
-            con_sharing (int): Zone index to share connectivity from (1-based).  ``0`` =
-                write connectivity directly. Cannot be used with GLOBAL face-neighbor
-                modes. Defaults to ``0``.
+                zone: a ``{variable: source zone}`` mapping (name or 0-based index to
+                0-based zone index). Defaults to no sharing.
+            con_sharing (int | None): Zone index to share connectivity from (0-based).
+                ``None`` = write connectivity directly. Cannot be used with GLOBAL
+                face-neighbor modes. Defaults to ``None``.
             face_neighbors (array-like | None): Face-neighbor connectivity. When
                 provided, ``num_face_cons`` is set automatically.
             face_nbr_mode (FaceNeighborMode | None): Face-neighbor mode. Defaults to
@@ -384,7 +384,7 @@ class AppendWrite:
 
     @property
     def current_zone(self) -> int:
-        """Index of the most recently written zone (1-based)."""
+        """0-based index of the most recently written zone, -1 before any write."""
         return self._writer.current_zone
 
     # -- Close and finalise ------------------------------------------------------------
@@ -488,16 +488,16 @@ class AppendReadWrite(AppendWrite):
         return self._reader.num_auxdata_items
 
     @property
-    def var_auxdata(self) -> list[TecplotAuxDataReader | None]:
+    def var_auxdata(self) -> list[TecplotAuxDataReader]:
         """Per-variable auxiliary data list from the *original* file."""
         return self._reader.var_auxdata
 
     def get_var_auxdata(self, var_index: int) -> TecplotAuxDataReader:
-        """Return variable aux data for *var_index* (1-based)."""
+        """Return variable aux data for *var_index* (0-based)."""
         return self._reader.get_var_auxdata(var_index)
 
     def get_zone_auxdata(self, zone_index: int) -> TecplotAuxDataReader:
-        """Return zone aux data for *zone_index* (1-based)."""
+        """Return zone aux data for *zone_index* (0-based)."""
         return self._reader.get_zone_auxdata(zone_index)
 
 

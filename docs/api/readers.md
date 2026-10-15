@@ -134,12 +134,11 @@ already computed for you from `value_location` and the owning zone.
 ```
 
 Every concrete variable reader also carries a real, working `var_index`
-(1-based, same convention as `zone_index`), not currently promoted to this
+(0-based, same convention as `zone_index`), not currently promoted to this
 shared base class the way `zone_index` was for zones, so it's absent from
 the generated page above and doesn't type-check against code written against
 this abstract interface, but it's there and correct at runtime, since
-`zone.variables[i]` always returns a concrete instance. See {doc}`index` for
-the full 1-based/0-based picture.
+`zone.variables[i]` always returns a concrete instance. See {doc}`index`.
 
 ## `TecplotAuxDataReader`
 

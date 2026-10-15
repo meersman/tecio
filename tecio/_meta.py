@@ -56,7 +56,7 @@ class ZoneMeta:
     variable-type arrays of a ``TECZNE142`` zone header.
 
     Attributes:
-        index:                1-based zone index returned by the C library.
+        index:                0-based index of this zone within the dataset.
         title:                Zone title.
         zone_type:            The zone's :class:`~tecio.libtecio.ZoneType`.
         solution_time:        Solution time (``0.0`` for static zones).
@@ -72,8 +72,8 @@ class ZoneMeta:
                               else ``None`` if it has none.
         value_locations:      Per-variable value location, full dataset length.
         passive_vars:         Per-variable passive flags, full dataset length.
-        shared_vars:          Per-variable share-from zone index (1-based; ``0`` for not
-                              shared), full dataset length.
+        shared_vars:          Per-variable share-from zone index, or ``None`` for not
+                              shared, full dataset length.
         data_types:           Per-variable data type, full dataset length.
 
     """
@@ -93,7 +93,7 @@ class ZoneMeta:
     # Per-variable descriptors (length == dataset variable count).
     value_locations: tuple[ValueLocation, ...] = ()
     passive_vars: tuple[bool, ...] = ()
-    shared_vars: tuple[int, ...] = ()
+    shared_vars: tuple[int | None, ...] = ()
     data_types: tuple[DataType, ...] = ()
 
     @property
@@ -133,7 +133,7 @@ class WriterMeta:
                                header has been written (lazy-open).
         num_dataset_aux_items: Count of dataset-level aux items written.
         num_var_aux_items:     Total variable-level aux items written.
-        zones:                 Mapping of 1-based zone index to :class:`ZoneMeta`,
+        zones:                 Mapping of 0-based zone index to :class:`ZoneMeta`,
                                in write order.
     """
 
@@ -173,7 +173,7 @@ class WriterMeta:
         self.num_var_aux_items += count
 
     def record_zone(self, zone: ZoneMeta) -> None:
-        """Register a fully written zone by its 1-based index."""
+        """Register a fully written zone by its 0-based index."""
         self.zones[zone.index] = zone
 
     # -- Retrieval helpers ------------------------------------------------------------

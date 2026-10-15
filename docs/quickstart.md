@@ -43,15 +43,18 @@ with tecio.open("line.szplt", "r") as r:
 ```
 
 :::{note}
-**Python objects are 0-indexed.** The `zones` list and `variables` list on a
-reader both use standard Python (zero-based) indexing: `r.zones[0]` is the
-first zone, `zone.variables[1]` is the second variable.
+**The `tecio` Python API is 0-indexed**. `zones` and `variables` start at 0,
+and `zone_index`/`var_index` properties, and every function or method
+parameter that takes a zone or variable index all use standard Python
+(zero-based) indexing: `r.zones[0]` is the first zone, `zone.variables[1]` is
+the second variable.
 
-**TecIO inputs and outputs are 1-indexed.** Whenever a function in
-`tecio.libtecio` accepts a zone or variable index as an integer argument — for
-example `tec_zone_var_write_float_values(handle, zone=1, var=2, ...)` — those
-indices follow Tecplot's Fortran-style one-based convention.  The high-level
-`tecio.open` API handles this translation automatically.
+Tecplot 360 zone and variable numbers start at one. `tecio` converts between the
+two conventions automatically when a file is opened for reading or writing, so
+a zone shown as "Zone 1" in Tecplot 360 is `r.zones[0]` here, and the first
+variable in a `.dat` file's `VARIABLES = "x", "y"` line is
+`zone.variables[0]`. See {ref}`Indexing Conventions <qs-index-convention>` for
+mre information.
 :::
 
 ---
@@ -60,7 +63,8 @@ indices follow Tecplot's Fortran-style one-based convention.  The high-level
 
 All five simple finite-element cell types supported by Tecplot are shown below
 in a single file, one zone per element type.  The `node_map` argument is a
-``(num_cells, nodes_per_cell)`` integer array of **1-based** node indices.
+``(num_cells, nodes_per_cell)`` integer array of **zero-based** node indices,
+each one an index into that zone's coordinate arrays.
 
 ```python
 import numpy as np
@@ -71,7 +75,7 @@ with tecio.open("fe_cells.szplt", "w") as szlfile:
     # -- Write a FE line segment ---------------------------------------------
     x = np.array([0, 0.5, 1])
     y = np.array([0, 1, 0])
-    nodes = np.array([[1, 2], [2, 3]])
+    nodes = np.array([[0, 1], [1, 2]])
     c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
 
     szlfile.write_fe_zone(
@@ -86,7 +90,7 @@ with tecio.open("fe_cells.szplt", "w") as szlfile:
     # --  Write a FE triangle ------------------------------------------------
     x = np.array([0, 1, 0, 1]) + 2
     y = np.array([0, 0, 1, 1])
-    nodes = np.array([[1, 2, 3], [2, 4, 3]])
+    nodes = np.array([[0, 1, 2], [1, 3, 2]])
     c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
     szlfile.write_fe_zone(
         zone_type=ZoneType.FETRIANGLE,
@@ -100,7 +104,7 @@ with tecio.open("fe_cells.szplt", "w") as szlfile:
     #  -- Write a FE quadrilateral -------------------------------------------
     x = np.array([0, 0.5, 1, 0, 0.5, 1]) + 4
     y = np.array([0, 0, 0, 1, 1, 1])
-    nodes = np.array([[1, 2, 5, 4], [2, 3, 6, 5]])
+    nodes = np.array([[0, 1, 4, 3], [1, 2, 5, 4]])
     c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
     szlfile.write_fe_zone(
         zone_type=ZoneType.FEQUADRILATERAL,
@@ -115,7 +119,7 @@ with tecio.open("fe_cells.szplt", "w") as szlfile:
     x = np.array([0, 1, 0.5, 0.5, 0.5]) + 6
     y = np.array([0, 0, 1, 0.5, 0.5])
     z = np.array([0, 0, 0, 1, -1])
-    nodes = np.array([[1, 2, 3, 4], [1, 3, 2, 5]])
+    nodes = np.array([[0, 1, 2, 3], [0, 2, 1, 4]])
     c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y) * (1.0 + 0.1 * z)
     szlfile.write_fe_zone(
         zone_type=ZoneType.FETETRAHEDRON,
@@ -129,7 +133,7 @@ with tecio.open("fe_cells.szplt", "w") as szlfile:
     x = np.array([0, 1, 1, 0, 0.5, 0.5]) + 8
     y = np.array([0, 0, 1, 1, 0.5, 0.5])
     z = np.array([0, 0, 0, 0, 1, -1])
-    nodes = np.array([[1, 2, 3, 4, 5, 5, 5, 5], [1, 4, 3, 2, 6, 6, 6, 6]])
+    nodes = np.array([[0, 1, 2, 3, 4, 4, 4, 4], [0, 3, 2, 1, 5, 5, 5, 5]])
     c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y) * (1.0 + 0.1 * z)
     szlfile.write_fe_zone(
         zone_type=ZoneType.FEBRICK,
@@ -143,7 +147,7 @@ with tecio.open("fe_cells.szplt", "w") as szlfile:
     x = np.array([0, 1, 0.5, 0, 1, 0.5, 0, 1, 0.5]) + 10
     y = np.array([0, 0, 1, 0, 0, 1, 0, 0, 1])
     z = np.array([0, 0, 0, 1, 1, 1, -1, -1, -1])
-    nodes = np.array([[1, 2, 3, 3, 4, 5, 6, 6], [1, 3, 2, 2, 7, 9, 8, 8]])
+    nodes = np.array([[0, 1, 2, 2, 3, 4, 5, 5], [0, 2, 1, 1, 6, 8, 7, 7]])
     c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y) * (1.0 + 0.1 * z)
     szlfile.write_fe_zone(
         zone_type=ZoneType.FEBRICK,
@@ -157,7 +161,7 @@ with tecio.open("fe_cells.szplt", "w") as szlfile:
     x = np.array([0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0]) + 12
     y = np.array([0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1])
     z = np.array([0, 0, 0, 0, 1, 1, 1, 1, -1, -1, -1, -1])
-    nodes = np.array([[1, 2, 3, 4, 5, 6, 7, 8], [1, 4, 3, 2, 9, 12, 11, 10]])
+    nodes = np.array([[0, 1, 2, 3, 4, 5, 6, 7], [0, 3, 2, 1, 8, 11, 10, 9]])
     c = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y) * (1.0 + 0.1 * z)
     szlfile.write_fe_zone(
         zone_type=ZoneType.FEBRICK,
@@ -184,7 +188,7 @@ Each zone contains two cells.
 :alt: Node numbering for all supported FE zone types
 :width: 100%
 
-Node numbering (red) for each FE zone type. Node indices are 1-based and are
+Node numbering (red) for each FE zone type. Node indices are zero-based and are
 used directly in the `node_map` connectivity array passed to
 {meth}`~tecio.szl.Write.write_fe_zone`.
 ```
@@ -220,7 +224,8 @@ X, Y = np.meshgrid(x, y, indexing="ij")  # shape (nx, ny)
 times = np.linspace(0.0, 4.0 * np.pi, 60)
 
 with tecio.open("transient.szplt", "w", title="Travelling Wave") as w:
-    # Set dataset auxiliary data before the first zone
+    # Set dataset auxiliary data before the first zone. Because the variable
+      indices are the aux data values read by Tepclot, use 1-based indices.
     w.add_auxdataset_dict({
         "Common.XVar": 1,
         "Common.YVar": 2,
@@ -240,11 +245,11 @@ with tecio.open("transient.szplt", "w", title="Travelling Wave") as w:
                 solution_time=t,
             )
         else:
-            # Subsequent zones: share x and y from zone 1, write phi only
+            # Subsequent zones: share x and y from zone 0, write phi only
             w.write_ordered_zone(
                 title=f"t = {t:.3f}",
                 data=[phi],
-                var_sharing=[1, 1, 0],  # x←zone1, y←zone1, phi=new
+                var_sharing={"x": 0, "y": 0},
                 strand_id=1,
                 solution_time=t,
             )
@@ -272,8 +277,11 @@ with tecio.open("transient.szplt", "r") as r:
 
 The `tecio.libtecio` module exposes the TecIO C functions directly.  Using it
 gives full control over data types, zone creation options, and the write
-ordering required by the SZL API.  This example reproduces the 1-D sine curve
-from Example 1 using the low-level SZL write functions.
+ordering required by the SZL API.  Unlike the rest of `tecio`, this module is
+a thin ctypes wrapper with no index translation: zone and variable arguments
+are passed straight through to TecIO, so they follow TecIO's own 1-based
+convention. This example reproduces the 1-D sine curve from Example 1 using
+the low-level SZL write functions.
 
 ```python
 import numpy as np
@@ -329,15 +337,23 @@ new code unless PLT format is specifically required.
 
 | Context | Indexing | Example |
 |---------|----------|---------|
-| Python reader objects (`zone`, `variable`) | **0-based** | `r.zones[0]`, `zone.variables[2]` |
-| `libtecio` function arguments (zone, var) | **1-based** | `tec_zone_var_write_float_values(h, 1, 3, arr)` |
-| `var_sharing` list entries | **1-based** zone number | `var_sharing=[1, 1, 0]` → share from zone 1 |
-| `node_map` connectivity arrays | **1-based** node indices | `np.array([[1, 2, 3]])` |
+| Python reader/writer objects (`zone`, `variable`) | **0-based** | `r.zones[0]`, `zone.variables[2]` |
+| `zone_index` / `var_index` properties | **0-based** | `r.zones[0].zone_index == 0` |
+| `get_var_auxdata`/`get_zone_auxdata` arguments | **0-based** | `r.get_var_auxdata(0)` |
+| `var_sharing` mapping values (source zone) | **0-based** zone number | `var_sharing={"x": 0}` → share from zone 0 |
+| `con_sharing` argument | **0-based** zone number, or `None` | `con_sharing=0` → share from zone 0 |
+| `node_map` connectivity arrays | **0-based** node indices | `np.array([[0, 1, 2]])` |
+| `face_neighbors` cell/zone/face references | **0-based**, including the face ordinal | see {doc}`api/writers` |
+| CLI `-z`/`-v` arguments (`tecextract`, `tecslice`, etc.) | **0-based** | `tecextract -z 0,2 -v 0,1` |
+| `tecio.libtecio` function arguments (zone, var, node, face) | **1-based**, matches TecIO | `tec_zone_var_write_float_values(h, 1, 3, arr)` |
+| Tecplot 360 GUI, macro language, and `.dat`/`.tec` ASCII text | **1-based**, Tecplot's own convention | `VARIABLES = "x", "y"` → variable 1 is `x` |
+| `tec2mat` output (`.mat` struct fields) | **1-based**, so it reads naturally in MATLAB | `node_map`, `face_connections`, `var_shared_from` |
 
-The high-level `tecio.open` API handles the translation between Python
-zero-based indexing and TecIO one-based indexing automatically.  You only need
-to think about one-based indices when calling `libtecio` functions directly or
-when constructing `var_sharing` / `node_map` arrays.
+Everywhere in the Python API, `tecio` works in zero-based indices, the same
+convention as NumPy arrays and Python lists. Two boundaries convert to
+Tecplot's native one-based convention instead, since that's what the reader on
+the other side expects: the raw `tecio.libtecio` C wrappers and the `tec2mat`
+CLI's `.mat` output.
 
 ---
 

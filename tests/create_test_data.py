@@ -52,7 +52,7 @@ def create_FE_lineseg() -> tuple[
     """Create coordinates and nodemap for FELINESEG zone type.
 
     Node Map:
-    [1]--<C1>--[2]--<C2>--[3]
+    [0]--<C1>--[1]--<C2>--[2]
     """
     # xy coords
     points = np.array([
@@ -64,8 +64,8 @@ def create_FE_lineseg() -> tuple[
     y = points[:, 1]
     # Nodemap
     nodes = np.array([
-        [1, 2],  # line seg AB
-        [2, 3],  # line seg BC
+        [0, 1],  # line seg AB
+        [1, 2],  # line seg BC
     ])
     return x, y, nodes
 
@@ -75,12 +75,12 @@ def create_FE_tri() -> tuple[
 ]:
     r"""Create coordinates and nodemap for FELTRIANGLE zone type.
 
-    Node Map: Two triangles sharing edge 2-3:
-    3 --- 4  Cell 1: 1-2-3
-    |\ C2 |  Cell 2: 2-4-3
+    Node Map: Two triangles sharing edge 1-2:
+    2 --- 3  Cell 1: 0-1-2
+    |\ C2 |  Cell 2: 1-3-2
     | \   |
     |C1 \ |
-    1 --- 2
+    0 --- 1
     """
     points = np.array([
         [0, 0],
@@ -92,8 +92,8 @@ def create_FE_tri() -> tuple[
     y = points[:, 1]
     # Nodemap
     nodes = np.array([
-        [1, 2, 3],
-        [2, 4, 3],
+        [0, 1, 2],
+        [1, 3, 2],
     ])
     return x, y, nodes
 
@@ -103,10 +103,10 @@ def create_FE_quad() -> tuple[
 ]:
     """Create coordinates and nodemap for FEQUADRILATERAL zone type.
 
-    Node Map: Two quads sharing edge 2-5:
-    4 --- 5 --- 6  Cell 1: 1-2-5-4
-    | C1  | C2  |  Cell 2: 2-3-6-5
-    1 --- 2 --- 3
+    Node Map: Two quads sharing edge 1-4:
+    3 --- 4 --- 5  Cell 1: 0-1-4-3
+    | C1  | C2  |  Cell 2: 1-2-5-4
+    0 --- 1 --- 2
     """
     # Can create polygon from the same two FE tri cells above
     points = np.array([
@@ -121,8 +121,8 @@ def create_FE_quad() -> tuple[
     y = points[:, 1]
     # Nodemap
     nodes = np.array([
+        [0, 1, 4, 3],
         [1, 2, 5, 4],
-        [2, 3, 6, 5],
     ])
     return x, y, nodes
 
@@ -177,35 +177,36 @@ def create_FE_tet() -> tuple[
 ]:
     r"""Create coordinates and nodemap for FETETRAHEDRON zone type.
 
-    Node Map: Two tetrahedra sharing base face 1-2-3, apices above (4) and below (5):
+    Node Map: Two tetrahedra sharing base face 0-1-2, apices above (3)
+    and below (4):
 
-        4        <- apex tet 1 (z > 0)
+        3        <- apex tet 1 (z > 0)
        /|\
       / | \
      /  |  \
-    1---+---2   <- shared base triangle
+    0---+---1   <- shared base triangle
      \  |  /
       \ | /
        \|/
-        5        <- apex tet 2 (z < 0)
+        4        <- apex tet 2 (z < 0)
 
-    Cell 1: [1, 2, 3, 4]
-    Cell 2: [1, 3, 2, 5]
+    Cell 1: [0, 1, 2, 3]
+    Cell 2: [0, 2, 1, 4]
     """
     points = np.array([
-        [0.0, 0.0, 0.0],  # 1
-        [1.0, 0.0, 0.0],  # 2
-        [0.5, 1.0, 0.0],  # 3
-        [0.5, 0.5, 1.0],  # 4 - apex of tet 1
-        [0.5, 0.5, -1.0],  # 5 - apex of tet 2
+        [0.0, 0.0, 0.0],  # 0
+        [1.0, 0.0, 0.0],  # 1
+        [0.5, 1.0, 0.0],  # 2
+        [0.5, 0.5, 1.0],  # 3 - apex of tet 1
+        [0.5, 0.5, -1.0],  # 4 - apex of tet 2
     ])
     x = points[:, 0]
     y = points[:, 1]
     z = points[:, 2]
     # Each row: base triangle (CCW from outside) + apex
     nodes = np.array([
-        [1, 2, 3, 4],  # tet 1 - apex above
-        [1, 3, 2, 5],  # tet 2 - apex below
+        [0, 1, 2, 3],  # tet 1 - apex above
+        [0, 2, 1, 4],  # tet 2 - apex below
     ])
     return x, y, z, nodes
 
@@ -218,23 +219,23 @@ def create_FE_pyramid() -> tuple[
 ]:
     """Create coordinates and nodemap for a pyramid using FEBRICK zone type.
 
-    Node: Tecplot represents pyramids as degenerate bricks where nodes 5,6,7,8
-    are all the apex node repeated.
+    Node: Tecplot represents pyramids as degenerate bricks where nodes 4,5,6,7 are all
+    the apex node repeated.
 
     """
     points = np.array([
-        [0.0, 0.0, 0.0],  # 1 - base
-        [1.0, 0.0, 0.0],  # 2 - base
-        [1.0, 1.0, 0.0],  # 3 - base
-        [0.0, 1.0, 0.0],  # 4 - base
-        [0.5, 0.5, 1.0],  # 5 - apex
+        [0.0, 0.0, 0.0],  # 0 - base
+        [1.0, 0.0, 0.0],  # 1 - base
+        [1.0, 1.0, 0.0],  # 2 - base
+        [0.0, 1.0, 0.0],  # 3 - base
+        [0.5, 0.5, 1.0],  # 4 - apex
     ])
     x = points[:, 0]
     y = points[:, 1]
     z = points[:, 2]
-    # Repeat apex node (5) for the top 4 nodes of the brick
+    # Repeat apex node (4) for the top 4 nodes of the brick
     nodes = np.array([
-        [1, 2, 3, 4, 5, 5, 5, 5],
+        [0, 1, 2, 3, 4, 4, 4, 4],
     ])
     return x, y, z, nodes
 
@@ -247,24 +248,24 @@ def create_FE_prism() -> tuple[
 ]:
     """Create coordinates and nodemap for a triangular prism using FEBRICK.
 
-    Note: Represented as degenerate brick: bottom tri nodes 1,2,3 paired with
-    top tri nodes 4,5,6 — each tri edge node repeated to fill 8-node brick.
+    Note: Represented as degenerate brick: bottom tri nodes 0,1,2 paired with
+    top tri nodes 3,4,5 — each tri edge node repeated to fill 8-node brick.
 
     """
     points = np.array([
-        [0.0, 0.0, 0.0],  # 1 - bottom tri
-        [1.0, 0.0, 0.0],  # 2 - bottom tri
-        [0.5, 1.0, 0.0],  # 3 - bottom tri
-        [0.0, 0.0, 1.0],  # 4 - top tri
-        [1.0, 0.0, 1.0],  # 5 - top tri
-        [0.5, 1.0, 1.0],  # 6 - top tri
+        [0.0, 0.0, 0.0],  # 0 - bottom tri
+        [1.0, 0.0, 0.0],  # 1 - bottom tri
+        [0.5, 1.0, 0.0],  # 2 - bottom tri
+        [0.0, 0.0, 1.0],  # 3 - top tri
+        [1.0, 0.0, 1.0],  # 4 - top tri
+        [0.5, 1.0, 1.0],  # 5 - top tri
     ])
     x = points[:, 0]
     y = points[:, 1]
     z = points[:, 2]
-    # Bottom tri: 1,2,3,3 / Top tri: 4,5,6,6
+    # Bottom tri: 0,1,2,2 / Top tri: 3,4,5,5
     nodes = np.array([
-        [1, 2, 3, 3, 4, 5, 6, 6],
+        [0, 1, 2, 2, 3, 4, 5, 5],
     ])
     return x, y, z, nodes
 
@@ -278,28 +279,28 @@ def create_FE_brick() -> tuple[
 ]:
     """Create coordinates and nodemap for FEBRICK zone type."""
     points = np.array([
-        [0, 0, 0],  # 1
-        [1, 0, 0],  # 2
-        [1, 1, 0],  # 3
-        [0, 1, 0],  # 4
-        [0, 0, 1],  # 5
-        [1, 0, 1],  # 6
-        [1, 1, 1],  # 7
-        [0, 1, 1],  # 8
+        [0, 0, 0],  # 0
+        [1, 0, 0],  # 1
+        [1, 1, 0],  # 2
+        [0, 1, 0],  # 3
+        [0, 0, 1],  # 4
+        [1, 0, 1],  # 5
+        [1, 1, 1],  # 6
+        [0, 1, 1],  # 7
     ])
     x = points[:, 0]
     y = points[:, 1]
     z = points[:, 2]
     # Nodemap
     faces = np.array([
-        [1, 2, 3, 4],  # Face 1
-        [1, 4, 8, 5],  # Face 2
-        [5, 8, 7, 6],  # Face 3
-        [2, 6, 7, 3],  # Face 4
-        [6, 2, 1, 5],  # Face 5
-        [3, 7, 8, 4],  # Face 6
+        [0, 1, 2, 3],  # Face 1
+        [0, 3, 7, 4],  # Face 2
+        [4, 7, 6, 5],  # Face 3
+        [1, 5, 6, 2],  # Face 4
+        [5, 1, 0, 4],  # Face 5
+        [2, 6, 7, 3],  # Face 6
     ])
-    nodes = np.array([[1, 2, 3, 4, 5, 6, 7, 8]])
+    nodes = np.array([[0, 1, 2, 3, 4, 5, 6, 7]])
     return x, y, z, faces, nodes
 
 
@@ -313,49 +314,49 @@ def create_FE_two_bricks() -> tuple[
     """Two bricks sharing a face, with explicit face neighbor connectivity.
 
     Node Map:
-      8 --- 7 --- 12
+      7 --- 6 --- 11
      /|    /|    /|
-    5 --- 6 --- 11|
-    | 4 --|-3 --|-9
+    4 --- 5 --- 10|
+    | 3 --|-2 --|-8
     |/    |/    |/
-    1 --- 2 --- 10
+    0 --- 1 --- 9
 
     Notes:
-    - For the first FEBRICK cell shown above the faces are defined as
-    f1: n1-n5-n8-n4 left face (Imin)
-    f2: n2-n3-n7-n6 right face (Imax)
-    f3: n1-n2-n6-n6 front face (Jmin)
-    f4: n3-n4-n8-n7 back face (Jmax)
-    f5: n1-n2-n3-n4 bottom face (Kmin)
-    f6: n5-n6-n7-n8 top face (Kmax)
+    - For the first FEBRICK cell shown above the faces are numbered
+    f0: n0-n4-n7-n3 left face (Imin)
+    f1: n1-n2-n6-n5 right face (Imax)
+    f2: n0-n1-n5-n5 front face (Jmin)
+    f3: n2-n3-n7-n6 back face (Jmax)
+    f4: n0-n1-n2-n3 bottom face (Kmin)
+    f5: n4-n5-n6-n7 top face (Kmax)
 
     """
     points = np.array([
-        [0, 0, 0],  # 1
-        [1, 0, 0],  # 2
-        [1, 1, 0],  # 3
-        [0, 1, 0],  # 4
-        [0, 0, 1],  # 5
-        [1, 0, 1],  # 6
-        [1, 1, 1],  # 7
-        [0, 1, 1],  # 8
-        [2, 0, 0],  # 9
-        [2, 1, 0],  # 10
-        [2, 0, 1],  # 11
-        [2, 1, 1],  # 12
+        [0, 0, 0],  # 0
+        [1, 0, 0],  # 1
+        [1, 1, 0],  # 2
+        [0, 1, 0],  # 3
+        [0, 0, 1],  # 4
+        [1, 0, 1],  # 5
+        [1, 1, 1],  # 6
+        [0, 1, 1],  # 7
+        [2, 0, 0],  # 8
+        [2, 1, 0],  # 9
+        [2, 0, 1],  # 10
+        [2, 1, 1],  # 11
     ])
     x = points[:, 0]
     y = points[:, 1]
     z = points[:, 2]
     nodes = np.array([
-        [1, 2, 3, 4, 5, 6, 7, 8],  # cell 1
-        [2, 9, 10, 3, 6, 11, 12, 7],  # cell 2
+        [0, 1, 2, 3, 4, 5, 6, 7],  # cell 0
+        [1, 8, 9, 2, 5, 10, 11, 6],  # cell 1
     ])
-    # 6 faces per cell: bottom, top, front, back, left, right
-    # 0 = boundary, positive int = 1-based neighbor cell index
+    # 6 faces per cell: left, right, front, back, bottom, top. cz1/cz2 and fz
+    # (the face ordinal) are all.
     face_neighbors = np.array([
-        [1, 2, 2],  # cell 1: right face neighbors cell 2 (cz1, fz, cz2)
-        [2, 1, 1],  # cell 2: left face neighbors cell 1
+        [0, 1, 1],  # cell 0: right face (f1) neighbors cell 1 (cz1, fz, cz2)
+        [1, 0, 0],  # cell 1: left face (f0) neighbors cell 0
     ])
     return x, y, z, nodes, face_neighbors
 
@@ -382,26 +383,26 @@ def create_FE_mixed() -> tuple[
     points = np.array(
         [
             # Base layer (z=0)
-            [0.0, 0.0, 0.0],  #  1
-            [1.0, 0.0, 0.0],  #  2
-            [1.0, 1.0, 0.0],  #  3
-            [0.0, 1.0, 0.0],  #  4
-            [2.0, 0.0, 0.0],  #  5
-            [2.0, 1.0, 0.0],  #  6
-            [3.0, 0.0, 0.0],  #  7
-            [3.0, 1.0, 0.0],  #  8
-            [4.0, 0.0, 0.0],  #  9
-            [4.0, 1.0, 0.0],  # 10
+            [0.0, 0.0, 0.0],  #  0
+            [1.0, 0.0, 0.0],  #  1
+            [1.0, 1.0, 0.0],  #  2
+            [0.0, 1.0, 0.0],  #  3
+            [2.0, 0.0, 0.0],  #  4
+            [2.0, 1.0, 0.0],  #  5
+            [3.0, 0.0, 0.0],  #  6
+            [3.0, 1.0, 0.0],  #  7
+            [4.0, 0.0, 0.0],  #  8
+            [4.0, 1.0, 0.0],  #  9
             # Mid layer (z=1)
-            [2.0, 0.0, 1.0],  # 11
-            [2.0, 1.0, 1.0],  # 12
-            [3.0, 0.0, 1.0],  # 13
-            [3.0, 1.0, 1.0],  # 14
-            [4.0, 0.0, 1.0],  # 15
-            [4.0, 1.0, 1.0],  # 16
+            [2.0, 0.0, 1.0],  # 10
+            [2.0, 1.0, 1.0],  # 11
+            [3.0, 0.0, 1.0],  # 12
+            [3.0, 1.0, 1.0],  # 13
+            [4.0, 0.0, 1.0],  # 14
+            [4.0, 1.0, 1.0],  # 15
             # Apex nodes
-            [0.5, 0.5, 1.0],  # 17 - tet apex
-            [1.5, 0.5, 1.0],  # 18 - pyramid apex
+            [0.5, 0.5, 1.0],  # 16 - tet apex
+            [1.5, 0.5, 1.0],  # 17 - pyramid apex
         ],
         dtype=np.float32,
     )
@@ -410,17 +411,17 @@ def create_FE_mixed() -> tuple[
     y = points[:, 1]
     z = points[:, 2]
 
-    # Cell 1: Tet - base triangle 1,2,3 + apex 17
-    # Cell 2: Pyramid - base quad 2,5,6,3 + apex 18
-    # Cell 3: Prism - bottom tri 5,7,6 + top tri 11,13,12
-    # Cell 4: Hex - bottom quad 7,9,10,8 + top quad 13,15,16,14
+    # Cell 0: Tet - base triangle 0,1,2 + apex 16
+    # Cell 1: Pyramid - base quad 1,4,5,2 + apex 17
+    # Cell 2: Prism - bottom tri 4,6,5 + top tri 10,12,11
+    # Cell 3: Hex - bottom quad 6,8,9,7 + top quad 12,14,15,13
     # fmt: off
     node_map = np.array(
         [
-            1, 2, 3, 17,  # tet: 4 nodes
-            2, 5, 6, 3, 18,  # pyramid: 5 nodes
-            5, 7, 6, 11, 13, 12,  # prism: 6 nodes
-            7, 9, 10, 8, 13, 15, 16, 14,  # hex: 8 nodes
+            0, 1, 2, 16,  # tet: 4 nodes
+            1, 4, 5, 2, 17,  # pyramid: 5 nodes
+            4, 6, 5, 10, 12, 11,  # prism: 6 nodes
+            6, 8, 9, 7, 12, 14, 15, 13,  # hex: 8 nodes
         ],
     )
     # fmt: on

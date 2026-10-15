@@ -233,7 +233,7 @@ class TestAppendWrite:
         arrays = _write_simple_szplt(path)
 
         with tecio.open(str(path), "a") as w:
-            assert w.current_zone == 1  # one zone was copied from original
+            assert w.current_zone == 0  # one zone was copied from original
             w.write_ordered_zone(
                 data=[arrays["x"], arrays["c"]],
                 title="appended_zone",
@@ -252,7 +252,7 @@ class TestAppendWrite:
         arrays = _write_simple_plt(path, n_zones=2)
 
         with tecio.open(str(path), "a") as w:
-            assert w.current_zone == 2  # two zones copied
+            assert w.current_zone == 1  # two zones copied
             w.write_ordered_zone(
                 data=[arrays["x"], arrays["c"]],
                 title="new_zone",
@@ -322,7 +322,7 @@ class TestAppendWrite:
         pts = np.array(
             [[0.0, 0.0], [1.0, 0.0], [0.5, 1.0], [1.0, 1.0]], dtype=np.float32
         )
-        nodes = np.array([[1, 2, 3], [2, 4, 3]], dtype=np.int32)
+        nodes = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
         x, c = pts[:, 0], np.zeros(4, dtype=np.float32)
 
         with tecio.open(str(path), "a") as w:
@@ -366,12 +366,12 @@ class TestAppendWrite:
 
         np.zeros(10, dtype=np.float32)
         with tecio.open(str(src), "a") as w:
-            assert w.current_zone == 2  # two Onera zones copied
+            assert w.current_zone == 1  # two Onera zones copied
             # Append a new tiny zone (all non-Onera variables passive).
             n_vars = len(w.variables)
-            passive_vars = set(range(4, n_vars + 1))  # everything except x, y, z
+            passive_vars = set(range(3, n_vars))  # everything except x, y, z
             pts = np.zeros((10, 3), dtype=np.float32)
-            nodes = np.array([[i + 1, i + 2] for i in range(9)], dtype=np.int32)
+            nodes = np.array([[i, i + 1] for i in range(9)], dtype=np.int32)
             w.write_fe_zone(
                 zone_type=ZoneType.FELINESEG,
                 data=[pts[:, 0], pts[:, 1], pts[:, 2]],
@@ -392,8 +392,8 @@ class TestAppendWrite:
         with tecio.open(str(src), "a") as w:
             x = np.zeros(5, dtype=np.float32)
             n_vars = len(w.variables)
-            passive_vars = set(range(4, n_vars + 1))  # everything except x, y, z
-            nodes = np.array([[1, 2], [2, 3], [3, 4], [4, 5]], dtype=np.int32)
+            passive_vars = set(range(3, n_vars))  # everything except x, y, z
+            nodes = np.array([[0, 1], [1, 2], [2, 3], [3, 4]], dtype=np.int32)
             w.write_fe_zone(
                 zone_type=ZoneType.FELINESEG,
                 data=[x, x, x],
@@ -493,7 +493,7 @@ class TestAppendReadWrite:
             for i, t in enumerate(times):
                 c = np.sin(x_base + t).astype(np.float32)
                 data = [x_base, c] if i == 0 else [c]
-                sharing = None if i == 0 else {"x": 1}
+                sharing = None if i == 0 else {"x": 0}
                 w.write_ordered_zone(
                     data=data,
                     var_sharing=sharing,
@@ -512,7 +512,7 @@ class TestAppendReadWrite:
 
             rw.write_ordered_zone(
                 data=[c_avg],
-                var_sharing={"x": 1},
+                var_sharing={"x": 0},
                 title="time_average",
                 solution_time=float(rw.num_zones),
                 strand_id=2,
@@ -540,8 +540,8 @@ class TestAppendReadWrite:
             assert titles == ["FluidVolume", "WingSurface"]
 
             n_vars = len(rw.variables)
-            passive_vars = set(range(4, n_vars + 1))  # everything except x, y, z
-            nodes = np.array([[1, 2], [2, 3]], dtype=np.int32)
+            passive_vars = set(range(3, n_vars))  # everything except x, y, z
+            nodes = np.array([[0, 1], [1, 2]], dtype=np.int32)
             xyz = np.zeros(3, dtype=np.float32)
             rw.write_fe_zone(
                 zone_type=ZoneType.FELINESEG,

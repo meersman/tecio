@@ -122,6 +122,47 @@ def reshape_face_connections(
     return connections
 
 
+def convert_face_connections_to_zero_based(
+    flat: npt.NDArray[np.int64], mode: FaceNeighborMode
+) -> npt.NDArray[np.int64]:
+    """Convert a flat, fully 1-based face-neighbor array to the public convention.
+
+    Shared by any reader whose source is inherently 1-based throughout (SZL's live C
+    calls, DAT's ASCII text), unlike PLT's binary layout which needs its own,
+    different conversion.
+
+    For the one-to-one modes, every value in a record (cell, face ordinal, and for
+    the global mode, remote zone and remote cell) is an index, so the whole array
+    shifts uniformly. The "many" modes are ragged and mix in two non-index fields
+    (``oz``, the face obscuration flag, and ``nz``, the trailing-reference count)
+    that must stay untouched, so each record is converted individually instead.
+
+    Args:
+        flat: The raw flat array, exactly as returned by the source, fully 1-based.
+        mode: This zone's face-neighbor mode.
+
+    Returns:
+        A new flat array with cell/face/remote-zone fields converted, safe to
+        reshape with :func:`reshape_face_connections`.
+    """
+    one_to_one = (FaceNeighborMode.LOCAL_ONE_TO_ONE, FaceNeighborMode.GLOBAL_ONE_TO_ONE)
+    if mode in one_to_one:
+        return flat - 1
+
+    flat = flat.copy()
+    is_global = mode is FaceNeighborMode.GLOBAL_ONE_TO_MANY
+    i = 0
+    while i < flat.size:
+        nz = int(flat[i + 3])
+        rest_count = 2 * nz if is_global else nz
+        flat[i] -= 1  # local cell number
+        flat[i + 1] -= 1  # face ordinal
+        # flat[i + 2] (oz, the obscuration flag) and nz itself are not indices.
+        flat[i + 4 : i + 4 + rest_count] -= 1  # trailing cell/zone references
+        i += 4 + rest_count
+    return flat
+
+
 def _immutable_setattr(instance: object, name: str, value: object) -> None:
     """Raise, used as every reader class's ``__setattr__``."""
     raise AttributeError(f"{type(instance).__name__} instances are immutable")
@@ -299,7 +340,7 @@ class TecplotVariableReader(ABC):
     @property
     @abstractmethod
     def shared_zone(self) -> int | None:
-        """1-based source zone index if shared, else None."""
+        """0-based source zone index if shared, else None."""
 
     @property
     @abstractmethod
@@ -362,7 +403,7 @@ class TecplotZoneReader(ABC):
     that eagerly building them for every zone in a file would be wasteful.
 
     Args:
-        zone_index: 1-based zone index within the dataset.
+        zone_index: 0-based zone index within the dataset.
         title: Zone title.
         zone_type: The zone's :class:`~tecio.libtecio.ZoneType`.
         solution_time: Solution time, 0.0 for static data.
@@ -429,7 +470,7 @@ class TecplotZoneReader(ABC):
 
     @property
     def zone_index(self) -> int:
-        """1-based zone index within the dataset."""
+        """0-based zone index within the dataset."""
         return self._zone_index
 
     @property
@@ -530,7 +571,7 @@ class TecplotOrderedZoneReader(TecplotZoneReader):
     """Read-only handle to one ORDERED (IJK-structured) zone.
 
     Args:
-        zone_index: 1-based zone index within the dataset.
+        zone_index: 0-based zone index within the dataset.
         title: Zone title.
         solution_time: Solution time, 0.0 for static data.
         strand_id: Strand ID, 0 for static data.
@@ -632,7 +673,7 @@ class TecplotFEZoneReader(TecplotZoneReader):
     before.
 
     Args:
-        zone_index: 1-based zone index within the dataset.
+        zone_index: 0-based zone index within the dataset.
         title: Zone title.
         zone_type: The zone's :class:`~tecio.libtecio.ZoneType`.
         solution_time: Solution time, 0.0 for static data.
@@ -640,7 +681,7 @@ class TecplotFEZoneReader(TecplotZoneReader):
         datapacking: On-disk value layout.
         num_nodes: Number of nodes/points.
         num_elements: Number of elements/cells.
-        shared_connectivity: 1-based source zone index if this zone's
+        shared_connectivity: 0-based source zone index if this zone's
             connectivity is shared, else None.
     """
 
@@ -710,7 +751,7 @@ class TecplotFEZoneReader(TecplotZoneReader):
 
     @property
     def shared_connectivity(self) -> int | None:
-        """1-based source zone index if connectivity is shared, else None."""
+        """0-based source zone index if connectivity is shared, else None."""
         return self._shared_connectivity
 
     @property
@@ -957,7 +998,7 @@ class TecplotReader(ABC):
 
     @abstractmethod
     def _var_auxdata_at(self, var_index: int) -> TecplotAuxDataReader:
-        """Return aux data for variable *var_index* (1-based, unchecked)."""
+        """Return aux data for variable *var_index* (0-based, unchecked)."""
 
     def close(self) -> None:  # noqa: B027
         """Release any open resources. No-op unless overridden.
@@ -994,37 +1035,37 @@ class TecplotReader(ABC):
         return len(self.auxdata)
 
     @property
-    def var_auxdata(self) -> list[TecplotAuxDataReader | None]:
-        """Per-variable auxiliary data, 1-based (index 0 is a placeholder).
+    def var_auxdata(self) -> list[TecplotAuxDataReader]:
+        """Per-variable auxiliary data, 0-based.
 
         Derived from :meth:`get_var_auxdata`, a subclass never implements this
         separately.
         """
-        return [None] + [self.get_var_auxdata(i) for i in range(1, self.num_vars + 1)]
+        return [self.get_var_auxdata(i) for i in range(self.num_vars)]
 
     def get_var_auxdata(self, var_index: int) -> TecplotAuxDataReader:
-        """Return auxiliary data for variable *var_index* (1-based).
+        """Return auxiliary data for variable *var_index*.
 
         Raises:
             IndexError: If *var_index* is out of range.
         """
-        if var_index < 1 or var_index > self.num_vars:
+        if var_index < 0 or var_index >= self.num_vars:
             raise IndexError(
-                f"Variable index {var_index} out of range [1, {self.num_vars}]"
+                f"Variable index {var_index} out of range [0, {self.num_vars - 1}]"
             )
         return self._var_auxdata_at(var_index)
 
     def get_zone_auxdata(self, zone_index: int) -> TecplotAuxDataReader:
-        """Return auxiliary data for zone *zone_index* (1-based).
+        """Return auxiliary data for zone *zone_index*.
 
         Raises:
             IndexError: If *zone_index* is out of range.
         """
-        if zone_index < 1 or zone_index > self.num_zones:
+        if zone_index < 0 or zone_index >= self.num_zones:
             raise IndexError(
-                f"Zone index {zone_index} out of range [1, {self.num_zones}]"
+                f"Zone index {zone_index} out of range [0, {self.num_zones - 1}]"
             )
-        return self.zones[zone_index - 1].auxdata
+        return self.zones[zone_index].auxdata
 
     def __repr__(self) -> str:  # pragma: no cover
         cls = type(self).__name__

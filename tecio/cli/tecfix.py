@@ -241,7 +241,7 @@ def _process_zone(
 
     For each variable:
     - If the variable is already passive or shared, it is forwarded exactly
-      as-is. Sharing references are 1-based zone indices that are identical
+      as-is. Sharing references are 0-based zone indices that are identical
       in the output file because tecfix writes every zone in order without
       skipping any.
     - If the variable is a floating-point type and contains NaN or Inf it is
@@ -261,7 +261,7 @@ def _process_zone(
         ``data``            – arrays for active, non-shared variables.
         ``value_locations`` – value locations aligned with *data*.
         ``passive_vars``    – set of variable names marked passive.
-        ``var_sharing``     – {variable name: 1-based source zone} mapping.
+        ``var_sharing``     – {variable name: 0-based source zone} mapping.
         ``existing_aux``    – dict copied from the zone's original aux data.
         ``fix_auxdata``     – dict describing variables set passive by this tool.
 
@@ -273,7 +273,7 @@ def _process_zone(
     fix_auxdata: dict[str, str] = {}
 
     for j, var in enumerate(zone.variables):
-        sv = var.shared_zone  # 1-based source zone index, or None
+        sv = var.shared_zone  # 0-based source zone index, or None
 
         if var.is_passive():
             passive_vars.add(var.name)
@@ -420,9 +420,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # Forward variable-level aux data.
                 auxvar: dict[int, dict[str, str]] = {}
                 for i in range(num_vars):
-                    var_aux = reader.get_var_auxdata(i + 1)
+                    var_aux = reader.get_var_auxdata(i)
                     if len(var_aux) > 0:
-                        auxvar[i + 1] = dict(var_aux.items())
+                        auxvar[i] = dict(var_aux.items())
                 if auxvar:
                     writer.add_auxvar_dict(auxvar)
 
@@ -506,7 +506,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         writer.write_fe_zone(
                             zone_type=zt,
                             data=writer_data,
-                            node_map=None if con_sharing else zone.node_map,
+                            node_map=None if con_sharing is not None else zone.node_map,
                             con_sharing=con_sharing,
                             **fe_kw,
                         )

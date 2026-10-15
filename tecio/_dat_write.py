@@ -37,6 +37,7 @@ from ._writer import (
     PreparedOrderedZone,
     TecplotWriter,
     VarSharingSpec,
+    convert_face_connections_to_one_based,
     normalize_precision,
     prepare_fe_zone,
     prepare_ordered_zone,
@@ -423,7 +424,8 @@ class TecplotDatWriter(TecplotWriter):
                 ``kmax``; Fortran (column-major) order is assumed. Pass ``None`` to
                 write a zone header only.
             title (str):
-                Zone title. Defaults to ``"IJK_Zone_{current_zone + 1}"``.
+                Zone title. Defaults to ``"IJK_Zone_{index}"``, this zone's 0-based
+                index.
             variables (list[str]):
                 Variable name list. Required on the first call when the file has not
                 been opened yet (lazy-open path); ignored once the file is already
@@ -434,12 +436,12 @@ class TecplotDatWriter(TecplotWriter):
                 ``NODAL``.
             passive_vars (list | tuple | set | None):
                 Variables to mark passive: a list, tuple, or set of variable names, or
-                of 1-based indices, e.g. ``{"x"}`` or ``[4]``. Defaults to all active
+                of 0-based indices, e.g. ``{"x"}`` or ``[3]``. Defaults to all active
                 (``passive_vars=None``).
             var_sharing (Mapping[int | str, int]):
                 Variables to share from another zone: a ``{variable: source zone}``
-                mapping, name or 1-based index to 1-based zone index, e.g. ``{"x": 1,
-                "y": 1}``. Defaults to no sharing.
+                mapping, name or 0-based index to 0-based zone index, e.g. ``{"x": 0,
+                "y": 0}``. Defaults to no sharing.
             solution_time (float):
                 Solution time for transient data. Default to ``0.0`` if not defined.
             strand_id (int):
@@ -471,7 +473,7 @@ class TecplotDatWriter(TecplotWriter):
             KeyError:
                A *passive_vars*/*var_sharing* name doesn't match any dataset variable.
             IndexError:
-               A *passive_vars*/*var_sharing* 1-based index is out of range.
+               A *passive_vars*/*var_sharing* index is out of range.
         """
         if isinstance(datapacking, str):
             try:
@@ -482,15 +484,16 @@ class TecplotDatWriter(TecplotWriter):
                     "use DataPacking.BLOCK, DataPacking.POINT, or their "
                     "string equivalents."
                 ) from None
+        new_zone_index = self.current_zone + 1
         if title is None:
-            title = f"IJK_Zone_{self.current_zone + 1}"
+            title = f"IJK_Zone_{new_zone_index}"
         if variables is None:
             variables = [f"V{i}" for i in range(1, len(data) + 1)]
 
         # Open the file if lazily loaded and flush buffered aux data
         if not self._opened:
             self._open(variables)
-        if self.current_zone == 0:
+        if self.current_zone == -1:
             self.flush_aux()
 
         # Convert input data to NumPy arrays
@@ -565,7 +568,7 @@ class TecplotDatWriter(TecplotWriter):
                 _stage_float_array(buf, cast, self._float_fmt)
 
         self._check_handle().write(buf.getvalue())
-        self.current_zone += 1
+        self.current_zone = new_zone_index
 
         # Finally set zone metadata after successfully completing TecIO calls
         self._meta.record_zone(
@@ -579,7 +582,7 @@ class TecplotDatWriter(TecplotWriter):
                 dimensions=(imax, jmax, kmax),
                 value_locations=tuple(value_locations_global),
                 passive_vars=tuple(bool(p) for p in passive_flags),
-                shared_vars=tuple(int(s) for s in share_idx),
+                shared_vars=tuple(share_idx),
                 data_types=tuple(variable_types_global),
             )
         )
@@ -626,12 +629,11 @@ class TecplotDatWriter(TecplotWriter):
                 ``_FE_SIMPLE``.
             node_map (npt.ArrayLike):
                 Integer array of shape ``(num_cells, nodes_per_cell)`` containing
-                1-based node indices. Required unless ``con_sharing`` is set, in which
+                0-based node indices. Required unless ``con_sharing`` is set, in which
                 case the connectivity are inherited from the source zone instead.
             title (str):
-                Zone title string. Defaults to ``"FE_Zone_{current_zone + 1}"`` if not
-                provided.  Zone title string. Defaults to ``"FE_Zone_{current_zone +
-                1}"`` if not provided.
+                Zone title string. Defaults to ``"FE_Zone_{index}"``, this zone's
+                0-based index.
             variables (list[str]):
                 Variable name list. Required only when the file has not been opened yet
                 (lazy-open path). Ignored on subsequent zones once the file is already
@@ -642,16 +644,16 @@ class TecplotDatWriter(TecplotWriter):
                 ``NODAL``.
             passive_vars (list | tuple | set | None):
                 Variables to mark passive: a list, tuple, or set of variable names, or
-                of 1-based indices, e.g. ``{"x"}`` or ``[4]``. Defaults to all active
+                of 0-based indices, e.g. ``{"x"}`` or ``[3]``. Defaults to all active
                 (``passive_vars=None``).
             var_sharing (Mapping[int | str, int]):
                 Variables to share from another zone: a ``{variable: source zone}``
-                mapping, name or 1-based index to 1-based zone index. Defaults to no
+                mapping, name or 0-based index to 0-based zone index. Defaults to no
                 sharing (None or an empty mapping). Cross-checked against ``node_map`` /
                 ``con_sharing`` for a consistent node/cell count.
             con_sharing (int):
-                Optional zone index that the connectivity is shared from.  ``None`` or
-                ``0`` indicates no sharing (this zone owns its connectivity). The first
+                Optional zone index that the connectivity is shared from. ``None``
+                indicates no sharing (this zone owns its connectivity). The first
                 zone in a dataset must own its connectivity. Connectivity cannot be
                 shared when face neighbor mode is set to global. Connectivity cannot be
                 shared between cell-based and face-based finite element zones.
@@ -713,7 +715,7 @@ class TecplotDatWriter(TecplotWriter):
             KeyError:
                 A *passive_vars*/*var_sharing* name doesn't match any dataset variable.
             IndexError:
-                A *passive_vars*/*var_sharing* 1-based index is out of range.
+                A *passive_vars*/*var_sharing* index is out of range.
         """
         if isinstance(datapacking, str):
             try:
@@ -733,15 +735,16 @@ class TecplotDatWriter(TecplotWriter):
                 f"Zone type {zone_type!r} is not supported by write_fe_zone."
             )
 
+        new_zone_index = self.current_zone + 1
         if title is None:
-            title = f"FE_Zone_{self.current_zone + 1}"
+            title = f"FE_Zone_{new_zone_index}"
         if variables is None:
             variables = [f"V{i}" for i in range(1, len(data) + 1)]
 
         # Open the file if lazily loaded and flush buffered aux data
         if not self._opened:
             self._open(variables)
-        if self.current_zone == 0:
+        if self.current_zone == -1:
             self.flush_aux()
 
         variable_types = [
@@ -834,19 +837,26 @@ class TecplotDatWriter(TecplotWriter):
                 cast = np.asarray(arr, dtype=_DT_TO_DTYPE[dt]).ravel()
                 _stage_float_array(buf, cast, self._float_fmt)
 
-        # Write connectivity (if not shared)
-        if not con_sharing:
+        # Write connectivity (if not shared). Node numbers are 0-based in Python;
+        # ASCII text always uses 1-based node numbers.
+        if con_sharing is None:
             assert node_map is not None
-            conn = np.asarray(node_map, dtype=np.intp).reshape(
-                num_cells, _NODES_PER_ELEM[zone_type]
+            conn = (
+                np.asarray(node_map, dtype=np.intp).reshape(
+                    num_cells, _NODES_PER_ELEM[zone_type]
+                )
+                + 1
             )
             for row in conn:
                 _stage_connectivity_row(buf, row)
 
-        # Write face-neighbor connections (if provided)
+        # Write face-neighbor connections (if provided). Cell and remote-zone
+        # references are 0-based in Python; ASCII text is always fully 1-based.
         if face_neighbors_arr is not None:
             assert face_neighbor_mode is not None  # narrowed above
-            flat = face_neighbors_arr
+            flat = convert_face_connections_to_one_based(
+                face_neighbors_arr, face_neighbor_mode
+            )
             one_to_one = (
                 FaceNeighborMode.LOCAL_ONE_TO_ONE,
                 FaceNeighborMode.GLOBAL_ONE_TO_ONE,
@@ -870,7 +880,7 @@ class TecplotDatWriter(TecplotWriter):
                     i += record_len
 
         self._check_handle().write(buf.getvalue())
-        self.current_zone += 1
+        self.current_zone = new_zone_index
 
         # Finally set zone metadata after successfully completing TecIO calls
         self._meta.record_zone(
@@ -885,7 +895,7 @@ class TecplotDatWriter(TecplotWriter):
                 num_elements=num_cells,
                 value_locations=tuple(value_locations_global),
                 passive_vars=tuple(bool(p) for p in passive_flags),
-                shared_vars=tuple(int(s) for s in share_idx),
+                shared_vars=tuple(share_idx),
                 data_types=tuple(variable_types_global),
                 face_neighbor_mode=(
                     face_neighbor_mode if face_neighbors_arr is not None else None
@@ -898,7 +908,7 @@ class TecplotDatWriter(TecplotWriter):
 
     def _handle_zone_error(self) -> None:
         """Delete the output file if no zone has been committed yet."""
-        if self.current_zone == 0:
+        if self.current_zone == -1:
             if self._fp is not None:
                 self._fp.close()
                 self._fp = None
@@ -928,10 +938,10 @@ class TecplotDatWriter(TecplotWriter):
         solution_time: float = 0.0,
         strand_id: int = 0,
         passive_vars: Sequence[bool | int] | None = None,
-        var_sharing: Sequence[int] | None = None,
+        var_sharing: Sequence[int | None] | None = None,
         value_locations_global: list[ValueLocation] | None = None,
         variable_types_global: list[DataType] | None = None,
-        con_sharing: int = 0,
+        con_sharing: int | None = None,
         aux: dict[str, Any] | None = None,
         datapacking: DataPacking = DataPacking.BLOCK,
         num_face_connections: int = 0,
@@ -988,13 +998,15 @@ class TecplotDatWriter(TecplotWriter):
             if pidx:
                 buf.write(f"{_INDENT}PASSIVEVARLIST=[{','.join(pidx)}]\n")
 
-        if var_sharing and any(var_sharing):
-            entries = [f"[{i + 1}]={z}" for i, z in enumerate(var_sharing) if z]
+        if var_sharing and any(z is not None for z in var_sharing):
+            entries = [
+                f"[{i + 1}]={z + 1}" for i, z in enumerate(var_sharing) if z is not None
+            ]
             if entries:
                 buf.write(f"{_INDENT}VARSHARELIST=({','.join(entries)})\n")
 
-        if con_sharing:
-            buf.write(f"{_INDENT}CONNECTIVITYSHAREZONE={con_sharing}\n")
+        if con_sharing is not None:
+            buf.write(f"{_INDENT}CONNECTIVITYSHAREZONE={con_sharing + 1}\n")
 
         if aux:
             for name, value in aux.items():

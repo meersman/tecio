@@ -21,12 +21,12 @@ subset for use with another tool in a single command.
 
 :Options:
     ``-z LIST``, ``--zones LIST``
-        Comma-separated list of one-based zone indices to extract (e.g. ``-z
-        1,3,5``). If omitted, all zones are written to the output.
+        Comma-separated list of 0-based zone indices to extract (e.g. ``-z
+        0,2,4``). If omitted, all zones are written to the output.
 
     ``-v LIST``, ``--variables LIST``
-        Comma-separated list of one-based variable indices or exact variable
-        names to extract (e.g. ``-v 1,2,5`` or ``-v x,y,pressure``).
+        Comma-separated list of 0-based variable indices or exact variable
+        names to extract (e.g. ``-v 0,1,4`` or ``-v x,y,pressure``).
         Indices and names cannot be mixed in the same list. A name containing a
         comma isn't supported by this syntax. If omitted, all variables are written
         to the output.
@@ -47,13 +47,13 @@ subset for use with another tool in a single command.
     ``--force`` is not set.
 
 Examples:
-    Extract zones 1 and 3::
+    Extract zones 0 and 2::
 
-        $ tecextract -z 1,3 solution.szplt
+        $ tecextract -z 0,2 solution.szplt
 
-    Extract variables 1, 2, and 5::
+    Extract variables 0, 1, and 4::
 
-        $ tecextract -v 1,2,5 solution.szplt
+        $ tecextract -v 0,1,4 solution.szplt
 
     Extract variables by name::
 
@@ -61,7 +61,7 @@ Examples:
 
     Extract a zone subset and convert to ASCII in one step::
 
-        $ tecextract -z 1,2 -o subset.dat solution.szplt
+        $ tecextract -z 0,1 -o subset.dat solution.szplt
 
     Call directly from a Tecplot macro or Python session, passing arguments as a list of
     strings::
@@ -70,9 +70,9 @@ Examples:
 
         tecextract([
             "-z",
-            "1,2",
+            "0,1",
             "-v",
-            "1,2,5",
+            "0,1,4",
             "-o",
             "subset.szplt",
             "solution.szplt",
@@ -106,10 +106,10 @@ from .. import open as tecio_open
 
 
 def _parse_index_list(value: str) -> list[int]:
-    """Parse a comma-separated string of 1-based integers.
+    """Parse a comma-separated string of 0-based integers.
 
     Args:
-        value: String like ``"1,3,5"`` or ``"2"``.
+        value: String like ``"0,2,4"`` or ``"1"``.
 
     Returns:
         List of integers.
@@ -127,7 +127,7 @@ def _parse_index_list(value: str) -> list[int]:
 
 
 def _parse_index_or_name_list(value: str) -> list[int | str]:
-    """Parse a comma-separated string of 1-based integers and/or variable names.
+    """Parse a comma-separated string of 0-based integers and/or variable names.
 
     Each token is parsed as an integer where possible; anything else is kept as a name
     string, resolved against the dataset's real variable list once the file is open
@@ -135,10 +135,10 @@ def _parse_index_or_name_list(value: str) -> list[int | str]:
     yet).
 
     Args:
-        value: String like ``"1,3,pressure"`` or ``"x,y,z"``.
+        value: String like ``"0,2,pressure"`` or ``"x,y,z"``.
 
     Returns:
-        List of ``int`` (1-based index) and/or ``str`` (variable name) tokens, in the
+        List of ``int`` (0-based index) and/or ``str`` (variable name) tokens, in the
         order given.
 
     """
@@ -155,7 +155,7 @@ def _parse_index_or_name_list(value: str) -> list[int | str]:
 def _resolve_variable_tokens(
     tokens: list[int | str], num_vars: int, var_names: list[str]
 ) -> list[int]:
-    """Resolve an index-only or name-only token list into 1-based indices.
+    """Resolve an index-only or name-only token list into 0-based indices.
 
     Args:
         tokens: Output of :func:`_parse_index_or_name_list`.
@@ -163,7 +163,7 @@ def _resolve_variable_tokens(
         var_names: Dataset variable names in order, for exact-match lookup.
 
     Returns:
-        List of validated 1-based indices, same order as *tokens*.
+        List of validated 0-based indices, same order as *tokens*.
 
     Raises:
         ValueError: If *tokens* mixes indices and names, an integer token is out of
@@ -171,7 +171,7 @@ def _resolve_variable_tokens(
 
     Example:
         >>> _resolve_variable_tokens(["x", "y"], 3, ["x", "y", "z"])
-        [1, 2]
+        [0, 1]
     """
     has_int = any(isinstance(t, int) for t in tokens)
     has_name = any(isinstance(t, str) for t in tokens)
@@ -184,14 +184,14 @@ def _resolve_variable_tokens(
     resolved: list[int] = []
     for token in tokens:
         if isinstance(token, int):
-            if token < 1 or token > num_vars:
+            if token < 0 or token >= num_vars:
                 raise ValueError(
-                    f"variable index {token} out of range [1, {num_vars}]."
+                    f"variable index {token} out of range [0, {num_vars - 1}]."
                 )
             resolved.append(token)
         else:
             try:
-                resolved.append(var_names.index(token) + 1)
+                resolved.append(var_names.index(token))
             except ValueError:
                 raise ValueError(
                     f"variable name {token!r} not found; available names: "
@@ -216,14 +216,14 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         epilog=(
             # -|--------------------|---------------------------------------------|
             "Example usage:\n"
-            "  Extract zones 1 and 3\n"
-            "    $ tecextract -z 1,3 <file>\n"
-            "  Extract variables 1, 2, 5\n"
-            "    $ tecextract -v 1,2,5 <file>\n"
+            "  Extract zones 0 and 2\n"
+            "    $ tecextract -z 0,2 <file>\n"
+            "  Extract variables 0, 1, 4\n"
+            "    $ tecextract -v 0,1,4 <file>\n"
             "  Extract variables by name\n"
             "    $ tecextract -v x,y,pressure <file>\n"
             "  Extract and convert format\n"
-            "    $ tecextract -z 1,2 -o subset.dat <file>\n"
+            "    $ tecextract -z 0,1 -o subset.dat <file>\n"
         ),
         formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
             prog, width=70, max_help_position=24
@@ -241,8 +241,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="LIST",
         help=(
-            "Comma-separated list of 1-based zone indices to extract "
-            "(e.g. -z 1,3,5). Default is all zones."
+            "Comma-separated list of 0-based zone indices to extract "
+            "(e.g. -z 0,2,4). Default is all zones."
         ),
     )
     parser.add_argument(
@@ -253,7 +253,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar="LIST",
         help=(
             # -|--------------------|---------------------------------------------|
-            "Comma-separated list of 1-based variable indices or exact variable "
+            "Comma-separated list of 0-based variable indices or exact variable "
             "names to extract. Indices and names cannot be mixed in the same list. "
             "A name containing a comma isn't supported by this syntax. Default is "
             "all variables."
@@ -320,16 +320,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             # Resolve and validate zone filter.
             if args.zones is not None:
                 for z in args.zones:
-                    if z < 1 or z > reader.num_zones:
+                    if z < 0 or z >= reader.num_zones:
                         print(
                             f"Error: zone index {z} out of range "
-                            f"[1, {reader.num_zones}].",
+                            f"[0, {reader.num_zones - 1}].",
                             file=sys.stderr,
                         )
                         return 1
                 zone_set: set[int] = set(args.zones)
             else:
-                zone_set = set(range(1, reader.num_zones + 1))
+                zone_set = set(range(reader.num_zones))
 
             # Resolve and validate variable filter (index or name tokens).
             if args.variables is not None:
@@ -343,12 +343,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 var_set: set[int] = set(resolved_vars)
                 # Ordered list preserving original index order.
                 out_var_indices: list[int] = [
-                    v for v in range(1, num_vars + 1) if v in var_set
+                    v for v in range(num_vars) if v in var_set
                 ]
             else:
-                out_var_indices = list(range(1, num_vars + 1))
+                out_var_indices = list(range(num_vars))
 
-            out_var_names: list[str] = [all_var_names[v - 1] for v in out_var_indices]
+            out_var_names: list[str] = [all_var_names[v] for v in out_var_indices]
 
             print(f"Extracting: {src}  ->  {dst}")
             print(f"  Zones     : {sorted(zone_set)} of {reader.num_zones}")
@@ -367,14 +367,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                 # Forward variable-level aux data for kept variables.
                 auxvar: dict[int, dict[str, str]] = {}
-                for new_idx, orig_idx in enumerate(out_var_indices, start=1):
+                for new_idx, orig_idx in enumerate(out_var_indices):
                     var_aux = reader.get_var_auxdata(orig_idx)
                     if len(var_aux) > 0:
                         auxvar[new_idx] = dict(var_aux.items())
                 if auxvar:
                     writer.add_auxvar_dict(auxvar)
 
-                # Maps a source zone's 1-based index to its 1-based index in the output
+                # Maps a source zone's 0-based index to its 0-based index in the output
                 # file, populated as zones are actually written:
                 # - A variable/connectivity shared from a zone that's also in this map
                 #   can have its sharing preserved (just pointing at the new, compacted
@@ -383,8 +383,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 #   genuinely has nowhere to point and must fall back to real data.
                 zone_index_map: dict[int, int] = {}
 
-                for i, zone in enumerate(reader.zones):
-                    zone_num = i + 1
+                for zone_num, zone in enumerate(reader.zones):
                     if zone_num not in zone_set:
                         continue
 
@@ -404,7 +403,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     var_sharing: dict[str, int] = {}
 
                     for orig_idx in out_var_indices:
-                        var = zone.variables[orig_idx - 1]
+                        var = zone.variables[orig_idx]
                         is_passive = var.is_passive()
 
                         sv = var.shared_zone
@@ -459,7 +458,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                         writer.write_fe_zone(
                             zone_type=zt,
                             data=data,
-                            node_map=None if con_remapped else zone.node_map,
+                            node_map=(
+                                None if con_remapped is not None else zone.node_map
+                            ),
                             con_sharing=con_remapped,
                             **fe_kw,
                         )

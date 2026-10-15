@@ -32,6 +32,8 @@ from ._writer import (
     normalize_precision,
     prepare_fe_zone,
     prepare_ordered_zone,
+    var_sharing_for_libtecio,
+    zone_for_libtecio,
 )
 
 # --------------------------------------------------------------------------------------
@@ -354,7 +356,7 @@ class TecplotSzlWriter(TecplotWriter):
                       per-variable inference.
         handle:       Raw C file handle from ``tec_file_writer_open``, or ``None``
                       before the file has been opened (or after :meth:`close`).
-        current_var:  1-based index of the variable most recently passed to a
+        current_var:  0-based index of the variable most recently passed to a
                       libtecio write call. Set only while a zone's variable data is
                       being written, and only ever read by user code inspecting the
                       writer, not consumed internally; useful for diagnosing which
@@ -383,7 +385,7 @@ class TecplotSzlWriter(TecplotWriter):
         self.precision: DataType | None = normalize_precision(
             precision, allow_none=True
         )
-        self.current_var = 0
+        self.current_var = -1
         self.handle: ctypes.c_void_p | None = None
         super().__init__(path, title, variables, file_type)
 
@@ -466,7 +468,8 @@ class TecplotSzlWriter(TecplotWriter):
                 ``kmax``; Fortran (column-major) order is assumed. Pass ``None`` to
                 write a zone header only.
             title (str):
-                Zone title. Defaults to ``"IJK_Zone_{current_zone + 1}"``.
+                Zone title. Defaults to ``"IJK_Zone_{index}"``, this zone's 0-based
+                index.
             variables (list[str]):
                 Variable name list. Required on the first call when the file has not
                 been opened yet (lazy-open path); ignored once the file is already
@@ -477,12 +480,12 @@ class TecplotSzlWriter(TecplotWriter):
                 ``NODAL``.
             passive_vars (list | tuple | set | None):
                 Variables to mark passive: a list, tuple, or set of variable names, or
-                of 1-based indices, e.g. ``{"x"}`` or ``[4]``. Defaults to all active
+                of 0-based indices, e.g. ``{"x"}`` or ``[3]``. Defaults to all active
                 (``passive_vars=None``).
             var_sharing (Mapping[int | str, int]):
                 Variables to share from another zone: a ``{variable: source zone}``
-                mapping, name or 1-based index to 1-based zone index, e.g. ``{"x": 1,
-                "y": 1}``. Defaults to no sharing.
+                mapping, name or 0-based index to 0-based zone index, e.g. ``{"x": 0,
+                "y": 0}``. Defaults to no sharing.
             solution_time (float):
                 Solution time for transient data. Default to ``0.0`` if not defined.
             strand_id (int):
@@ -522,7 +525,7 @@ class TecplotSzlWriter(TecplotWriter):
             KeyError:
                A *passive_vars*/*var_sharing* name doesn't match any dataset variable.
             IndexError:
-               A *passive_vars*/*var_sharing* 1-based index is out of range.
+               A *passive_vars*/*var_sharing* index is out of range.
 
         Note:
             If the file is already open, ``data`` and ``variables`` may be omitted to
@@ -569,7 +572,7 @@ class TecplotSzlWriter(TecplotWriter):
         # Open the file if lazily loaded and flush buffered aux data
         if self.handle is None:
             self._open(variables)
-        if self.current_zone == 0:
+        if self.current_zone == -1:
             self.flush_aux()
 
         # Infer per-variable data types from array dtypes
@@ -596,31 +599,36 @@ class TecplotSzlWriter(TecplotWriter):
         value_locations_global = prepared.value_locations_global
         variable_types_global = prepared.variable_types_global
 
-        # Write zone header
-        self.current_zone = libtecio.tec_zone_create_ijk(
-            self._check_handle(),
-            title,
-            imax,
-            jmax,
-            kmax,
-            var_types=variable_types_global,
-            value_locations=value_locations_global,
-            var_sharing=share_idx,
-            pas_vars=passive_flags,
+        # Write zone header. The C library assigns and returns a 1-based zone
+        # number; converted to 0-based for the public current_zone attribute.
+        self.current_zone = (
+            libtecio.tec_zone_create_ijk(
+                self._check_handle(),
+                title,
+                imax,
+                jmax,
+                kmax,
+                var_types=variable_types_global,
+                value_locations=value_locations_global,
+                var_sharing=var_sharing_for_libtecio(share_idx),
+                pas_vars=passive_flags,
+            )
+            - 1
         )
+        zone_num = self.current_zone + 1
 
         # Unsteady options
         if strand_id != 0 or solution_time != 0.0:
             libtecio.tec_zone_set_unsteady_options(
                 handle=self._check_handle(),
-                zone=self.current_zone,
+                zone=zone_num,
                 strand=strand_id,
                 solution_time=solution_time,
             )
 
         # Write aux data
         if aux is not None:
-            _write_zone_aux_data(self._check_handle(), {self.current_zone: aux})
+            _write_zone_aux_data(self._check_handle(), {zone_num: aux})
 
         # Write active data only
         for var_idx, arr, dtype in zip(
@@ -629,8 +637,8 @@ class TecplotSzlWriter(TecplotWriter):
             self.current_var = var_idx
             _write_data(
                 self._check_handle(),
-                zone_num=self.current_zone,
-                var_num=var_idx,
+                zone_num=zone_num,
+                var_num=var_idx + 1,
                 data=arr,
                 dt=dtype,
             )
@@ -651,7 +659,7 @@ class TecplotSzlWriter(TecplotWriter):
                 dimensions=(imax, jmax, kmax),
                 value_locations=tuple(value_locations_global),
                 passive_vars=tuple(bool(p) for p in passive_flags),
-                shared_vars=tuple(int(s) for s in share_idx),
+                shared_vars=tuple(share_idx),
                 data_types=tuple(variable_types_global),
             )
         )
@@ -696,12 +704,11 @@ class TecplotSzlWriter(TecplotWriter):
                 ``_FE_SIMPLE``.
             node_map (npt.ArrayLike):
                 Integer array of shape ``(num_cells, nodes_per_cell)`` containing
-                1-based node indices. Required unless ``con_sharing`` is set, in which
+                0-based node indices. Required unless ``con_sharing`` is set, in which
                 case the connectivity are inherited from the source zone instead.
             title (str):
-                Zone title string. Defaults to ``"FE_Zone_{current_zone + 1}"`` if not
-                provided.  Zone title string. Defaults to ``"FE_Zone_{current_zone +
-                1}"`` if not provided.
+                Zone title string. Defaults to ``"FE_Zone_{index}"``, this zone's
+                0-based index.
             variables (list[str]):
                 Variable name list. Required only when the file has not been opened yet
                 (lazy-open path). Ignored on subsequent zones once the file is already
@@ -712,16 +719,16 @@ class TecplotSzlWriter(TecplotWriter):
                 ``NODAL``.
             passive_vars (list | tuple | set | None):
                 Variables to mark passive: a list, tuple, or set of variable names, or
-                of 1-based indices, e.g. ``{"x"}`` or ``[4]``. Defaults to all active
+                of 0-based indices, e.g. ``{"x"}`` or ``[3]``. Defaults to all active
                 (``passive_vars=None``).
             var_sharing (Mapping[int | str, int]):
                 Variables to share from another zone: a ``{variable: source zone}``
-                mapping, name or 1-based index to 1-based zone index. Defaults to no
+                mapping, name or 0-based index to 0-based zone index. Defaults to no
                 sharing (None or an empty mapping). Cross-checked against ``node_map`` /
                 ``con_sharing`` for a consistent node/cell count.
             con_sharing (int):
-                Optional zone index that the connectivity is shared from.  ``None`` or
-                ``0`` indicates no sharing (this zone owns its connectivity). The first
+                Optional zone index that the connectivity is shared from. ``None``
+                indicates no sharing (this zone owns its connectivity). The first
                 zone in a dataset must own its connectivity. Connectivity cannot be
                 shared when face neighbor mode is set to global. Connectivity cannot be
                 shared between cell-based and face-based finite element zones.
@@ -782,7 +789,7 @@ class TecplotSzlWriter(TecplotWriter):
             KeyError:
                 A *passive_vars*/*var_sharing* name doesn't match any dataset variable.
             IndexError:
-                A *passive_vars*/*var_sharing* 1-based index is out of range.
+                A *passive_vars*/*var_sharing* index is out of range.
 
         Note:
             FE variable arrays are 1-D and node-ordered. ``write_data`` handles dtype
@@ -824,7 +831,7 @@ class TecplotSzlWriter(TecplotWriter):
         # Open the file if lazily loaded and flush buffered aux data
         if self.handle is None:
             self._open(variables)
-        if self.current_zone == 0:
+        if self.current_zone == -1:
             self.flush_aux()
 
         # Infer per-variable data types from array dtypes
@@ -868,34 +875,39 @@ class TecplotSzlWriter(TecplotWriter):
                 "and DAT; use one of those formats if you need it."
             )
 
-        # Write zone header
-        self.current_zone = libtecio.tec_zone_create_fe(
-            self._check_handle(),
-            title,
-            zone_type,
-            num_nodes,
-            num_cells,
-            var_types=variable_types_global,
-            value_locations=value_locations_global,
-            pas_vars=passive_flags,
-            var_sharing=share_idx,
-            con_sharing=con_sharing,
-            num_face_cons=num_face_cons,
-            face_nbr_mode=face_neighbor_mode or FaceNeighborMode.LOCAL_ONE_TO_ONE,
+        # Write zone header. The C library assigns and returns a 1-based zone
+        # number; converted to 0-based for the public current_zone attribute.
+        self.current_zone = (
+            libtecio.tec_zone_create_fe(
+                self._check_handle(),
+                title,
+                zone_type,
+                num_nodes,
+                num_cells,
+                var_types=variable_types_global,
+                value_locations=value_locations_global,
+                pas_vars=passive_flags,
+                var_sharing=var_sharing_for_libtecio(share_idx),
+                con_sharing=zone_for_libtecio(con_sharing),
+                num_face_cons=num_face_cons,
+                face_nbr_mode=face_neighbor_mode or FaceNeighborMode.LOCAL_ONE_TO_ONE,
+            )
+            - 1
         )
+        zone_num = self.current_zone + 1
 
         # Unsteady options
         if strand_id != 0 or solution_time != 0.0:
             libtecio.tec_zone_set_unsteady_options(
                 handle=self._check_handle(),
-                zone=self.current_zone,
+                zone=zone_num,
                 strand=strand_id,
                 solution_time=solution_time,
             )
 
         # Write zone-level aux data
         if aux is not None:
-            _write_zone_aux_data(self._check_handle(), {self.current_zone: aux})
+            _write_zone_aux_data(self._check_handle(), {zone_num: aux})
 
         # Write active data only
         for var_idx, arr, dtype in zip(
@@ -904,19 +916,20 @@ class TecplotSzlWriter(TecplotWriter):
             self.current_var = var_idx
             _write_data(
                 self._check_handle(),
-                zone_num=self.current_zone,
-                var_num=var_idx,
+                zone_num=zone_num,
+                var_num=var_idx + 1,
                 data=arr,
                 dt=dtype,
             )
 
-        # Write connectivity (if not shared)
-        if not con_sharing:
+        # Write connectivity (if not shared). Node numbers are 0-based in
+        # Python; the C library expects 1-based node numbers.
+        if con_sharing is None:
             assert node_map is not None
             _write_connectivity(
                 self._check_handle(),
-                self.current_zone,
-                node_map,
+                zone_num,
+                np.asarray(node_map) + 1,
                 face_neighbors_arr,
             )
 
@@ -937,7 +950,7 @@ class TecplotSzlWriter(TecplotWriter):
                 num_elements=num_cells,
                 value_locations=tuple(value_locations_global),
                 passive_vars=tuple(bool(p) for p in passive_flags),
-                shared_vars=tuple(int(s) for s in share_idx),
+                shared_vars=tuple(share_idx),
                 data_types=tuple(variable_types_global),
                 face_neighbor_mode=(
                     face_neighbor_mode if face_neighbors_arr is not None else None

@@ -37,6 +37,7 @@ from ._reader import (
     TecplotReader,
     TecplotVariableReader,
     TecplotZoneReader,
+    convert_face_connections_to_zero_based,
 )
 
 # --------------------------------------------------------------------------------------
@@ -696,9 +697,9 @@ def _parse_auxdata_line(line: str) -> tuple[str, str]:
 def _apply_varauxdata(line: str, var_auxdata_list: list[dict[str, str]]) -> None:
     """Parse ``VARAUXDATA 1-based-idx name="value"`` and store in list.
 
-    *var_auxdata_list* holds plain, mutable dicts, one per variable (index 0 is an
-    unused placeholder), accumulated during parsing. Wrapped into an immutable
-    TecplotDatAuxDataReader lazily, only once parsing is complete.
+    *var_auxdata_list* holds plain, mutable dicts, one per variable, 0-based,
+    accumulated during parsing. Wrapped into an immutable TecplotDatAuxDataReader
+    lazily, only once parsing is complete.
 
     Example:
         >>> _apply_varauxdata(line, var_auxdata_list)
@@ -706,14 +707,14 @@ def _apply_varauxdata(line: str, var_auxdata_list: list[dict[str, str]]) -> None
     m = re.match(r"(?i)VARAUXDATA\s+(\d+)\s+", line)
     if not m:
         return
-    var_idx = int(m.group(1))  # 1-based
+    var_idx = int(m.group(1)) - 1  # 1-based in text, converted to 0-based
     rest = line[m.end() :]
     eq = rest.find("=")
     if eq < 0:
         return
     name = rest[:eq].strip()
     value = _unquote(rest[eq + 1 :].strip())
-    if 1 <= var_idx < len(var_auxdata_list):
+    if 0 <= var_idx < len(var_auxdata_list):
         var_auxdata_list[var_idx][name] = value
 
 
@@ -927,7 +928,7 @@ class TecplotDatVariableReader(TecplotVariableReader):
 
     @property
     def shared_zone(self) -> int | None:
-        """1-based source zone index if shared, else None."""
+        """0-based source zone index if shared, else None."""
         return self._shared_zone
 
     @property
@@ -1306,9 +1307,9 @@ class TecplotDatReader(TecplotReader):
         # TecplotDatAuxDataReader lazily, only once fully parsed.
         self._dataset_auxdata_raw: dict[str, str] = {}
         self._dataset_auxdata: TecplotAuxDataReader | None = None
-        # Index 0 is an unused placeholder so that 1-based indexing works directly;
-        # populated once num_vars is known, see _parse().
-        self._var_auxdata_raw: list[dict[str, str]] = [{}]
+        # 0-based, one dict per variable; populated once num_vars is known, see
+        # _parse().
+        self._var_auxdata_raw: list[dict[str, str]] = []
         # Raw VARAUXDATA lines seen before the first zone, buffered by
         # _parse_file_header() and applied once _var_auxdata_raw is allocated with the
         # correct length (num_vars isn't known until the header finishes parsing).
@@ -1377,7 +1378,7 @@ class TecplotDatReader(TecplotReader):
         self._parse_file_header(tokens)
 
         # Build per-variable aux data slots now that num_vars is known.
-        self._var_auxdata_raw = [{}] + [{} for _ in range(self.num_vars)]
+        self._var_auxdata_raw = [{} for _ in range(self.num_vars)]
 
         # Now that _var_auxdata exists, apply any VARAUXDATA lines that appeared before
         # the first zone
@@ -1696,12 +1697,15 @@ class TecplotDatReader(TecplotReader):
             else:
                 nodes_per_cell = _NODES_PER_ELEM[zone_type]
                 flat = self._read_int_block(tokens, num_cells * nodes_per_cell)
-                node_map = flat.reshape(num_cells, nodes_per_cell)
+                # Node numbers are 1-based in ASCII; convert to 0-based indices
+                # that point directly into the corresponding coordinate array.
+                node_map = flat.reshape(num_cells, nodes_per_cell) - 1
 
         # -- Read face-neighbor connections (FE zones only, if declared) ---------------
         #
-        # Immediately follows connectivity in the file. Values are already
-        # 1-based in ASCII (unlike PLT's binary layout, no +1 needed here).
+        # Immediately follows connectivity in the file. Values are 1-based in ASCII;
+        # cell references, remote-zone references, and the face ordinal are all
+        # converted to 0-based below.
 
         face_connections: npt.NDArray[np.int64] | None = None
         one_to_one = (
@@ -1714,6 +1718,9 @@ class TecplotDatReader(TecplotReader):
             )
             face_connections = self._read_int_block(
                 tokens, declared_face_connections * values_per
+            )
+            face_connections = convert_face_connections_to_zero_based(
+                face_connections, face_neighbor_mode
             )
         elif face_neighbor_mode is not None:
             # "Many" modes: ragged, each record's own 4th value (nz) gives the
@@ -1729,6 +1736,9 @@ class TecplotDatReader(TecplotReader):
                 pieces.append(rest)
             face_connections = (
                 np.concatenate(pieces) if pieces else np.empty(0, dtype=np.int64)
+            )
+            face_connections = convert_face_connections_to_zero_based(
+                face_connections, face_neighbor_mode
             )
 
         # -- Build ReadVariable and ReadZone objects -----------------------------------
@@ -1758,13 +1768,13 @@ class TecplotDatReader(TecplotReader):
                     self._zones[src_zone_1based - 1].variables[var_idx].values
                 )
 
-        # This zone's own 1-based index
-        zone_index = len(self._zones) + 1
+        # This zone's own 0-based index
+        zone_index = len(self._zones)
 
         read_vars: list[TecplotVariableReader] = [
             TecplotDatVariableReader(
                 zone_index=zone_index,
-                var_index=idx + 1,
+                var_index=idx,
                 name=name,
                 data=_shaped(
                     var_arrays[idx],
@@ -1772,7 +1782,7 @@ class TecplotDatReader(TecplotReader):
                 ),
                 value_location=var_locs.get(idx, ValueLocation.NODAL),
                 is_passive=(idx in passive_set),
-                shared_zone=share_map.get(idx, None),
+                shared_zone=(share_map[idx] - 1 if idx in share_map else None),
             )
             for idx, name in enumerate(self._variable_names)
         ]
@@ -1791,7 +1801,7 @@ class TecplotDatReader(TecplotReader):
                 auxdata=zone_aux,
                 node_map=node_map,
                 datapacking=packing,
-                shared_connectivity=con_share_zone if con_share_zone else None,
+                shared_connectivity=(con_share_zone - 1) if con_share_zone else None,
                 face_neighbor_mode=face_neighbor_mode,
                 num_face_connections=declared_face_connections or None,
                 face_connections=face_connections,

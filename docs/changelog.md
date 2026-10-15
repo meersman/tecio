@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   variables with `passive_vars=["x", "y", "z"]` and shared variables with
   `var_sharing={"x": 1, "y": 1, "z": 1}` (specified as varname or index:
   shared zone index).
+- Changed entire Python to 0-baed indexing. In all Python functions, classes,
+  and methods, any zone or variable index is 0-based. The `libtecio` module
+  wrapper functions maintain 1-based indexing convention, but all reader and
+  writer classes make this conversion automatically.
 
 ---
 

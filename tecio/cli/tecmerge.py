@@ -556,7 +556,7 @@ def _write_zone(
                           not present in this file).
         solution_time:    Override solution time, or ``None`` to keep original.
         strand_id:        Override strand ID, or ``None`` to keep original.
-        zone_index_map:   Map 1-based source zone to 1-based output zone index for
+        zone_index_map:   Map 0-based source zone to 0-based output zone index for
                           variable and connectivity sharing.
         source_path:      Input file this zone came from, recorded as zone-level aux
                           data (``SourceFile``, ``SourceFileName``) on every merged
@@ -658,7 +658,7 @@ def _write_zone(
         writer.write_fe_zone(
             zone_type=zt,
             data=data,
-            node_map=None if con_remapped else zone.node_map,
+            node_map=None if con_remapped is not None else zone.node_map,
             con_sharing=con_remapped,
             **fe_kw,
         )
@@ -785,9 +785,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             for ui, local_idx in enumerate(index_maps[0]):
                 if local_idx is None:
                     continue
-                var_aux = readers[0].get_var_auxdata(local_idx + 1)
+                var_aux = readers[0].get_var_auxdata(local_idx)
                 if len(var_aux) > 0:
-                    auxvar[ui + 1] = dict(var_aux.items())
+                    auxvar[ui] = dict(var_aux.items())
             if auxvar:
                 writer.add_auxvar_dict(auxvar)
 
@@ -843,7 +843,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         grid_var_indices=grid_var_indices,
                         grid_reference=grid_reference,
                     )
-                    zone_index_map[zone_num] = writer.current_zone
+                    zone_index_map[zi] = writer.current_zone
                     if signature is not None and grid_reference is None:
                         # First zone with this signature should write grid, every later
                         # zone with a matching signature shares from it

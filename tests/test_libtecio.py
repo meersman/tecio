@@ -143,7 +143,7 @@ class TestNewApi:
         libtecio.tec_zone_var_write_float_values(handle, izone, 1, x)
         libtecio.tec_zone_var_write_float_values(handle, izone, 2, y)
         libtecio.tec_zone_var_write_double_values(handle, izone, 3, c)
-        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel())
+        libtecio.tec_zone_node_map_write32(handle, izone, (nodes + 1).ravel())
         libtecio.tec_file_writer_close(handle)
 
         assert izone == 1
@@ -177,7 +177,7 @@ class TestNewApi:
         libtecio.tec_zone_var_write_float_values(handle, izone, 1, x)
         libtecio.tec_zone_var_write_double_values(handle, izone, 2, y)
         libtecio.tec_zone_var_write_int32_values(handle, izone, 3, c)
-        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel())
+        libtecio.tec_zone_node_map_write32(handle, izone, (nodes + 1).ravel())
         libtecio.tec_file_writer_close(handle)
 
         assert izone == 1
@@ -211,7 +211,7 @@ class TestNewApi:
         libtecio.tec_zone_var_write_double_values(handle, izone, 1, x)
         libtecio.tec_zone_var_write_double_values(handle, izone, 2, y)
         libtecio.tec_zone_var_write_float_values(handle, izone, 3, c)
-        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel())
+        libtecio.tec_zone_node_map_write32(handle, izone, (nodes + 1).ravel())
         libtecio.tec_file_writer_close(handle)
 
         assert izone == 1
@@ -250,7 +250,7 @@ class TestNewApi:
         libtecio.tec_zone_var_write_float_values(handle, izone, 2, y)
         libtecio.tec_zone_var_write_float_values(handle, izone, 3, z)
         libtecio.tec_zone_var_write_double_values(handle, izone, 4, c)
-        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel())
+        libtecio.tec_zone_node_map_write32(handle, izone, (nodes + 1).ravel())
         libtecio.tec_file_writer_close(handle)
 
         assert izone == 1
@@ -291,7 +291,7 @@ class TestNewApi:
         libtecio.tec_zone_var_write_double_values(handle, izone, 2, y)
         libtecio.tec_zone_var_write_float_values(handle, izone, 3, z)
         libtecio.tec_zone_var_write_int16_values(handle, izone, 4, c)
-        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel())
+        libtecio.tec_zone_node_map_write32(handle, izone, (nodes + 1).ravel())
         libtecio.tec_file_writer_close(handle)
 
         assert izone == 1
@@ -332,7 +332,7 @@ class TestNewApi:
         libtecio.tec_zone_var_write_double_values(handle, izone, 2, y)
         libtecio.tec_zone_var_write_float_values(handle, izone, 3, z)
         libtecio.tec_zone_var_write_uint8_values(handle, izone, 4, c)
-        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel())
+        libtecio.tec_zone_node_map_write32(handle, izone, (nodes + 1).ravel())
         libtecio.tec_file_writer_close(handle)
 
         assert izone == 1
@@ -370,7 +370,7 @@ class TestNewApi:
         libtecio.tec_zone_var_write_float_values(handle, izone, 2, y)
         libtecio.tec_zone_var_write_double_values(handle, izone, 3, z)
         libtecio.tec_zone_var_write_int32_values(handle, izone, 4, c)
-        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel())
+        libtecio.tec_zone_node_map_write32(handle, izone, (nodes + 1).ravel())
         libtecio.tec_file_writer_close(handle)
 
         assert izone == 1
@@ -420,9 +420,11 @@ class TestNewApi:
         libtecio.tec_zone_var_write_float_values(handle, izone, 2, y)
         libtecio.tec_zone_var_write_float_values(handle, izone, 3, z)
         libtecio.tec_zone_var_write_int16_values(handle, izone, 4, c)
-        libtecio.tec_zone_node_map_write32(handle, izone, nodes.ravel())
+        libtecio.tec_zone_node_map_write32(handle, izone, (nodes + 1).ravel())
+        # Cell indices and the face ordinal are all 1-based for this raw API.
+        face_neighbors_1based = face_neighbors + 1
         libtecio.tec_zone_face_nbr_write_connections32(
-            handle, izone, face_neighbors.ravel()
+            handle, izone, face_neighbors_1based.ravel()
         )
         libtecio.tec_file_writer_close(handle)
 
@@ -597,7 +599,7 @@ class TestClassicApi:
         libtecio.tecdat142(x.ravel(), is_double=False)
         libtecio.tecdat142(y.ravel(), is_double=False)
         libtecio.tecdat142(c.ravel(), is_double=True)
-        libtecio.tecnode142(nodes.ravel())
+        libtecio.tecnode142((nodes + 1).ravel())
         libtecio.tecend142()
 
         assert path.exists()
@@ -628,7 +630,7 @@ class TestClassicApi:
         libtecio.tecdat142(x.ravel(), is_double=True)
         libtecio.tecdat142(y.ravel(), is_double=True)
         libtecio.tecdat142(c.ravel(), is_double=False)
-        libtecio.tecnode142(nodes.ravel())
+        libtecio.tecnode142((nodes + 1).ravel())
         libtecio.tecend142()
 
         assert path.exists()
@@ -656,7 +658,7 @@ class TestClassicApi:
         libtecio.tecdat142(x.ravel(), is_double=False)
         libtecio.tecdat142(y.ravel(), is_double=False)
         libtecio.tecdat142(c.ravel(), is_double=True)
-        libtecio.tecnode142(nodes.ravel())
+        libtecio.tecnode142((nodes + 1).ravel())
         libtecio.tecend142()
 
         assert path.exists()
@@ -686,7 +688,7 @@ class TestClassicApi:
         libtecio.tecdat142(y.ravel(), is_double=False)
         libtecio.tecdat142(z.ravel(), is_double=False)
         libtecio.tecdat142(c.ravel(), is_double=True)
-        libtecio.tecnode142(nodes.ravel())
+        libtecio.tecnode142((nodes + 1).ravel())
         libtecio.tecend142()
 
         assert path.exists()
@@ -716,7 +718,7 @@ class TestClassicApi:
         libtecio.tecdat142(y.ravel(), is_double=True)
         libtecio.tecdat142(z.ravel(), is_double=True)
         libtecio.tecdat142(c.ravel(), is_double=True)
-        libtecio.tecnode142(nodes.ravel())
+        libtecio.tecnode142((nodes + 1).ravel())
         libtecio.tecend142()
 
         assert path.exists()
@@ -746,7 +748,7 @@ class TestClassicApi:
         libtecio.tecdat142(y.ravel(), is_double=False)
         libtecio.tecdat142(z.ravel(), is_double=False)
         libtecio.tecdat142(c.ravel(), is_double=False)
-        libtecio.tecnode142(nodes.ravel())
+        libtecio.tecnode142((nodes + 1).ravel())
         libtecio.tecend142()
 
         assert path.exists()
@@ -775,7 +777,7 @@ class TestClassicApi:
         libtecio.tecdat142(y.ravel(), is_double=False)
         libtecio.tecdat142(z.ravel(), is_double=False)
         libtecio.tecdat142(c.ravel(), is_double=True)
-        libtecio.tecnode142(nodes.ravel())
+        libtecio.tecnode142((nodes + 1).ravel())
         libtecio.tecend142()
 
         assert path.exists()
@@ -812,8 +814,10 @@ class TestClassicApi:
         libtecio.tecdat142(y.ravel(), is_double=False)
         libtecio.tecdat142(z.ravel(), is_double=False)
         libtecio.tecdat142(c.ravel(), is_double=False)
-        libtecio.tecnode142(nodes.ravel())
-        libtecio.tecface142(face_neighbors.ravel())
+        libtecio.tecnode142((nodes + 1).ravel())
+        # Cell indices and the face ordinal are all 1-based for this raw API.
+        face_neighbors_1based = face_neighbors + 1
+        libtecio.tecface142(face_neighbors_1based.ravel())
         libtecio.tecend142()
 
         assert path.exists()
