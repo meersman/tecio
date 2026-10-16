@@ -1,12 +1,12 @@
 function zones = tecmat2struct(d)
-% Reshape a loaded tec2mat .mat struct into a struct array indexed by zone,
-% with dataset variables accessible by their real Tecplot name.
+% Reshape a loaded tec2mat .mat struct into a struct array of zones with
+% dataset variables accessible by name.
 %
-% tec2mat's own output (info, zone_1, zone_2, ...) addresses variables by
-% position (var_1, var_2, ...) because a real Tecplot variable name is
-% frequently not a valid MATLAB identifier (e.g. "X [ft]"). When the
-% variable names in a particular file ARE known in advance to be valid
-% identifiers, this function lets you address them by name instead, e.g.
+% tec2mat outputs (info, zone_1, zone_2, ...) and variables by position
+% (var_1, var_2, ...) because valid Tecplot variable names can include
+% characters that are not valid MATLAB identifiers (e.g. "X [ft]"). When the
+% variable names are known to be valid identifiers, this function lets you
+% reformat the structures such that variables can be accessed by name, e.g.
 % plot(zones(1).x, zones(1).pressure) instead of plot(zone_1.var_1,
 % zone_1.var_3).
 %
@@ -15,7 +15,7 @@ function zones = tecmat2struct(d)
 %
 % Args:
 %     d: struct returned by load() on a tec2mat .mat file, i.e. the struct
-%        has fields info, zone_1, zone_2, ... as documented in tec2mat.
+%        has fields info, zone_1, zone_2, ...
 %
 % Returns:
 %     zones: 1 x info.num_zones struct array. Every element has the same
@@ -38,13 +38,13 @@ function zones = tecmat2struct(d)
 %                                       zones(i) is self-contained.
 %
 % Notes:
-%  - A variable name that is not a valid MATLAB identifier is skipped with
-%    a warning; it remains accessible the original way, via
-%    zone_<n>.var_<k> and info.var_names{k}.
-%  - Resolving shared variables/connectivity copies the referenced zone's
-%    data into every zone that shares it, trading memory for convenience;
-%    this can matter for a file whose zones heavily share a static grid
-%    across many time steps.
+%  - A variable name that is not a valid MATLAB identifier is skipped with a
+%    warning; it remains accessible the original way, via zone_<n>.var_<k> and
+%    info.var_names{k}.
+%  - Shared variables/connectivity are branched (copied from referenced zone's
+%    data into every zone that shares it). This can create large memory
+%    usage for files whose zones heavily share a static grid across many time
+%    steps.
 %
 % Example:
 %     d = load('flow.mat');
@@ -60,15 +60,14 @@ numZones = double(d.info.num_zones);
 numVars = double(d.info.num_vars);
 varNames = d.info.var_names;
 
-% Reserved field names already used for zone metadata; a variable whose name
-% collides with one of these is skipped rather than overwriting metadata.
+% Reserved field names already used for zone metadata (variable names that
+% collides with a reserved metadat name is skipped).
 reserved = {'title', 'zone_type', 'solution_time', 'strand_id', ...
     'I', 'J', 'K', 'num_nodes', 'num_elements', 'node_map', ...
     'face_neighbor_mode', 'num_face_connections', 'face_connections'};
 
-% Validate variable names up front (once) so every zone gets the exact same
-% set of variable fields, in the same order -- required for a valid struct
-% array, and avoids repeating the same warning once per zone.
+% Validate variable names up once so every zone gets the exact same set of
+% variable fields in the same order.
 validName = false(1, numVars);
 for vi = 1:numVars
     name = strtrim(char(varNames{vi}));
