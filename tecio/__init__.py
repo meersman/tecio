@@ -4,6 +4,8 @@ Wraps the TecIO C library for ``.szplt``, ``.plt``, and ``.dat`` formats.
 Requires Python 3.10+, NumPy, and a Tecplot 360 installation.
 """
 
+# ruff: noqa: A004
+
 from importlib import metadata
 
 try:

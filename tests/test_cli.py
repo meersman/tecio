@@ -725,6 +725,59 @@ class TestTecmerge:
             assert r.zones[0].solution_time == pytest.approx(0.0)
             assert r.zones[_NUM_ZONES * 2].solution_time == pytest.approx(4.0)
 
+    def test_strand_offset_shifts_per_zone_position_strand(
+        self, tmp_path: Path
+    ) -> None:
+        """--strand-offset shifts the default per-zone-position strand IDs."""
+        src1 = _copy_onera("szplt", tmp_path, "t0")
+        src2 = _copy_onera("dat", tmp_path, "t1")
+        dst = tmp_path / "transient_offset.szplt"
+        ret = tecmerge([
+            "--assign-time-strands",
+            "-s",
+            "0.0",
+            "-d",
+            "1.0",
+            "--strand-offset",
+            "100",
+            "-o",
+            str(dst),
+            str(src1),
+            str(src2),
+        ])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            # Without an offset, zones within each file get strand 1, 2, ...;
+            # with --strand-offset 100 they become 101, 102, ...
+            for zi in range(_NUM_ZONES):
+                assert r.zones[zi].strand_id == zi + 1 + 100
+                assert r.zones[_NUM_ZONES + zi].strand_id == zi + 1 + 100
+
+    def test_strand_offset_shifts_fixed_strand(self, tmp_path: Path) -> None:
+        """--strand-offset also shifts a --strand override, not just the default."""
+        src1 = _copy_onera("szplt", tmp_path, "t0")
+        src2 = _copy_onera("dat", tmp_path, "t1")
+        dst = tmp_path / "transient_fixed_offset.szplt"
+        ret = tecmerge([
+            "--assign-time-strands",
+            "-s",
+            "0.0",
+            "-d",
+            "1.0",
+            "--strand",
+            "1",
+            "--strand-offset",
+            "100",
+            "-o",
+            str(dst),
+            str(src1),
+            str(src2),
+        ])
+        assert ret == 0
+        with tecio.open(str(dst), "r") as r:
+            for zone in r.zones:
+                assert zone.strand_id == 101
+
     def test_missing_start_with_assign_ts_returns_1(self, tmp_path: Path) -> None:
         """--assign-time-strands without -s/--start returns exit code 1."""
         assert (
@@ -799,20 +852,18 @@ class TestTecmerge:
 
 
 class TestTecscale:
-    """Tests for tecscale - scales and/or offsets a variable."""
+    """Tests for tecscale - scales and/or offsets one or more variables."""
+
+    @staticmethod
+    def _read(path: Path, zone: int, var: int) -> np.ndarray:
+        """Return one variable of one zone as a flat float64 array."""
+        with tecio.open(str(path), "r") as r:
+            return r.zones[zone].variables[var].values.ravel().astype(np.float64)
 
     def test_scale_by_index(self, onera_path: Path, tmp_path: Path) -> None:
         """Scale variable 0 (x) by a constant factor; output is readable."""
         dst = tmp_path / "scaled.szplt"
-        ret = tecscale([
-            "-v",
-            "0",
-            "-s",
-            "2.0",
-            "-o",
-            str(dst),
-            str(onera_path),
-        ])
+        ret = tecscale(["-v", "0", "-s", "2.0", "-o", str(dst), str(onera_path)])
         assert ret == 0
         assert _is_readable(dst)
 
@@ -822,7 +873,7 @@ class TestTecscale:
         ret = tecscale([
             "-v",
             "Pressure",
-            "-s",
+            "--scale",
             "1e-3",
             "-o",
             str(dst),
@@ -831,14 +882,12 @@ class TestTecscale:
         assert ret == 0
         assert _is_readable(dst)
 
-    def test_scale_with_offset(self, onera_path: Path, tmp_path: Path) -> None:
-        """Applying both scale and offset returns exit code 0."""
+    def test_offset_only(self, onera_path: Path, tmp_path: Path) -> None:
+        """Offset alone leaves the scale at its default of 1."""
         dst = tmp_path / "scaled.szplt"
         ret = tecscale([
             "-v",
             "Temperature",
-            "-s",
-            "1.0",
             "--offset",
             "-273.15",
             "-o",
@@ -846,7 +895,54 @@ class TestTecscale:
             str(onera_path),
         ])
         assert ret == 0
-        assert dst.exists()
+        with tecio.open(str(onera_path), "r") as r:
+            names = [v.name for v in r.zones[0].variables]
+        t_idx = names.index("Temperature")
+        orig = self._read(onera_path, 0, t_idx)
+        np.testing.assert_allclose(self._read(dst, 0, t_idx), orig - 273.15, rtol=1e-5)
+
+    def test_scale_with_offset(self, onera_path: Path, tmp_path: Path) -> None:
+        """Scale and offset together apply new = old * scale + offset."""
+        dst = tmp_path / "scaled.szplt"
+        ret = tecscale([
+            "-v",
+            "0",
+            "-s",
+            "2.0",
+            "--offset",
+            "5.0",
+            "-o",
+            str(dst),
+            str(onera_path),
+        ])
+        assert ret == 0
+        orig = self._read(onera_path, 0, 0)
+        np.testing.assert_allclose(self._read(dst, 0, 0), orig * 2.0 + 5.0, rtol=1e-5)
+
+    def test_offset_before_scale(self, onera_path: Path, tmp_path: Path) -> None:
+        """The order of --scale and --offset after -v does not matter."""
+        dst = tmp_path / "scaled.szplt"
+        ret = tecscale([
+            "-v",
+            "0",
+            "--offset",
+            "5.0",
+            "-s",
+            "2.0",
+            "-o",
+            str(dst),
+            str(onera_path),
+        ])
+        assert ret == 0
+        orig = self._read(onera_path, 0, 0)
+        np.testing.assert_allclose(self._read(dst, 0, 0), orig * 2.0 + 5.0, rtol=1e-5)
+
+    def test_variable_alone_is_identity(self, onera_path: Path, tmp_path: Path) -> None:
+        """A bare -v with no --scale/--offset defaults to scale 1, offset 0."""
+        dst = tmp_path / "scaled.szplt"
+        assert tecscale(["-v", "0", "-o", str(dst), str(onera_path)]) == 0
+        orig = self._read(onera_path, 0, 0)
+        np.testing.assert_allclose(self._read(dst, 0, 0), orig, rtol=1e-5)
 
     def test_scale_single_zone(self, onera_path: Path, tmp_path: Path) -> None:
         """-z restricts scaling to zone 0 only."""
@@ -866,25 +962,13 @@ class TestTecscale:
         assert dst.exists()
 
     def test_scale_values_correct(self, tmp_path: Path) -> None:
-        """Scaled values in zone 0 equal original × scale_factor."""
+        """Scaled values in zone 0 equal original x scale_factor."""
         src = _ONERA["szplt"]
         dst = tmp_path / "scaled.szplt"
         scale = 2.0
-        tecscale([
-            "-v",
-            "0",
-            "-s",
-            str(scale),
-            "--force",
-            "-o",
-            str(dst),
-            str(src),
-        ])
-        with tecio.open(str(src), "r") as r_orig:
-            orig = r_orig.zones[0].variables[0].values.ravel().astype(np.float64)
-        with tecio.open(str(dst), "r") as r_scaled:
-            scaled = r_scaled.zones[0].variables[0].values.ravel().astype(np.float64)
-        np.testing.assert_allclose(scaled, orig * scale, rtol=1e-5)
+        tecscale(["-v", "0", "-s", str(scale), "--force", "-o", str(dst), str(src)])
+        orig = self._read(src, 0, 0)
+        np.testing.assert_allclose(self._read(dst, 0, 0), orig * scale, rtol=1e-5)
 
     def test_unscaled_zone_unchanged(self, tmp_path: Path) -> None:
         """When -z 0 is active, zone 1 values are identical to source."""
@@ -902,11 +986,108 @@ class TestTecscale:
             str(dst),
             str(src),
         ])
+        np.testing.assert_allclose(
+            self._read(dst, 1, 9), self._read(src, 1, 9), rtol=1e-5
+        )
+
+    def test_multiple_variables_in_one_pass(self, tmp_path: Path) -> None:
+        """Each -v binds the --scale/--offset that follow it, not the others."""
+        src = _ONERA["szplt"]
+        dst = tmp_path / "scaled.szplt"
+        ret = tecscale([
+            "-v",
+            "0",
+            "-s",
+            "2.0",
+            "-v",
+            "Temperature",
+            "--offset",
+            "-273.15",
+            "--force",
+            "-o",
+            str(dst),
+            str(src),
+        ])
+        assert ret == 0
         with tecio.open(str(src), "r") as r_src:
-            orig = r_src.zones[1].variables[9].values.ravel().astype(np.float64)
-        with tecio.open(str(dst), "r") as r_dst:
-            copy = r_dst.zones[1].variables[9].values.ravel().astype(np.float64)
-        np.testing.assert_allclose(copy, orig, rtol=1e-5)
+            names = [v.name for v in r_src.zones[0].variables]
+        temp_idx = names.index("Temperature")
+        np.testing.assert_allclose(
+            self._read(dst, 0, 0), self._read(src, 0, 0) * 2.0, rtol=1e-5
+        )
+        np.testing.assert_allclose(
+            self._read(dst, 0, temp_idx),
+            self._read(src, 0, temp_idx) - 273.15,
+            rtol=1e-5,
+        )
+
+    def test_options_do_not_leak_to_next_variable(self, tmp_path: Path) -> None:
+        """A second -v without its own flags falls back to the defaults."""
+        src = _ONERA["szplt"]
+        dst = tmp_path / "scaled.szplt"
+        ret = tecscale([
+            "-v",
+            "0",
+            "-s",
+            "2.0",
+            "--offset",
+            "5.0",
+            "-v",
+            "1",
+            "--force",
+            "-o",
+            str(dst),
+            str(src),
+        ])
+        assert ret == 0
+        np.testing.assert_allclose(
+            self._read(dst, 0, 1), self._read(src, 0, 1), rtol=1e-5
+        )
+
+    def test_repeated_same_variable_keeps_last(self, tmp_path: Path) -> None:
+        """Naming the same variable twice in one call keeps only the last -v."""
+        src = _ONERA["szplt"]
+        dst = tmp_path / "scaled.szplt"
+        tecscale([
+            "-v",
+            "0",
+            "-s",
+            "999.0",
+            "-v",
+            "0",
+            "-s",
+            "2.0",
+            "--force",
+            "-o",
+            str(dst),
+            str(src),
+        ])
+        np.testing.assert_allclose(
+            self._read(dst, 0, 0), self._read(src, 0, 0) * 2.0, rtol=1e-5
+        )
+
+    def test_scale_before_variable_errors(
+        self, onera_path: Path, tmp_path: Path
+    ) -> None:
+        """--scale or --offset with no preceding -v is an argparse error."""
+        for flag in ("--scale", "--offset"):
+            with pytest.raises(SystemExit) as exc:
+                tecscale([
+                    flag,
+                    "2.0",
+                    "-v",
+                    "0",
+                    "-o",
+                    str(tmp_path / "scaled.szplt"),
+                    str(onera_path),
+                ])
+            assert exc.value.code == 2
+
+    def test_missing_variable_errors(self, onera_path: Path, tmp_path: Path) -> None:
+        """Omitting -v entirely is an argparse error."""
+        with pytest.raises(SystemExit) as exc:
+            tecscale(["-s", "2.0", "-o", str(tmp_path / "s.szplt"), str(onera_path)])
+        assert exc.value.code == 2
 
     def test_invalid_variable_name_returns_1(
         self, onera_path: Path, tmp_path: Path
@@ -931,6 +1112,24 @@ class TestTecscale:
             tecscale([
                 "-v",
                 "99",
+                "-o",
+                str(tmp_path / "scaled.szplt"),
+                str(onera_path),
+            ])
+            == 1
+        )
+
+    @pytest.mark.parametrize("flag", ["--scale", "--offset"])
+    def test_non_numeric_value_returns_1(
+        self, flag: str, onera_path: Path, tmp_path: Path
+    ) -> None:
+        """A non-numeric --scale/--offset returns exit code 1 rather than raising."""
+        assert (
+            tecscale([
+                "-v",
+                "0",
+                flag,
+                "not-a-number",
                 "-o",
                 str(tmp_path / "scaled.szplt"),
                 str(onera_path),

@@ -493,12 +493,12 @@ def _load_json_aux(
     if not isinstance(data, dict):
         raise _ArgError(f"JSON file {path!r} must contain an object at the top level.")
 
-    _KNOWN_KEYS = {"AUXDATASET", "AUXZONE", "AUXVAR"}
-    unknown: set[str] = {str(k) for k in data} - _KNOWN_KEYS
+    _known_keys = {"AUXDATASET", "AUXZONE", "AUXVAR"}
+    unknown: set[str] = {str(k) for k in data} - _known_keys
     if unknown:
         raise _ArgError(
             f"Unrecognized top-level key(s) in {path!r}: {sorted(unknown)}.  "
-            f"Expected one of: {sorted(_KNOWN_KEYS)}."
+            f"Expected one of: {sorted(_known_keys)}."
         )
 
     def _as_str_dict(obj: Any, where: str) -> dict[str, str]:
@@ -647,15 +647,15 @@ def _write_zone_data(
 
     """
     zt = zone.zone_type
-    common_kw: dict[str, Any] = dict(
-        title=zone.title,
-        value_locations=writer_locs,
-        passive_vars=passive_vars,
-        var_sharing=var_sharing,
-        solution_time=zone.solution_time,
-        strand_id=zone.strand_id,
-        aux=zone_aux,
-    )
+    common_kw: dict[str, Any] = {
+        "title": zone.title,
+        "value_locations": writer_locs,
+        "passive_vars": passive_vars,
+        "var_sharing": var_sharing,
+        "solution_time": zone.solution_time,
+        "strand_id": zone.strand_id,
+        "aux": zone_aux,
+    }
 
     if isinstance(zone, TecplotOrderedZoneReader):
         writer.write_ordered_zone(data=writer_data, **common_kw)

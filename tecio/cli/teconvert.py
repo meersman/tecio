@@ -249,15 +249,15 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
         if len(zone.auxdata) > 0:
             zone_aux = dict(zone.auxdata.items())
 
-        common_kw: dict[str, Any] = dict(
-            title=zone.title,
-            value_locations=value_locations,
-            passive_vars=passive_vars,
-            var_sharing=var_sharing,
-            solution_time=zone.solution_time,
-            strand_id=zone.strand_id,
-            aux=zone_aux,
-        )
+        common_kw: dict[str, Any] = {
+            "title": zone.title,
+            "value_locations": value_locations,
+            "passive_vars": passive_vars,
+            "var_sharing": var_sharing,
+            "solution_time": zone.solution_time,
+            "strand_id": zone.strand_id,
+            "aux": zone_aux,
+        }
 
         if isinstance(zone, TecplotOrderedZoneReader):
             writer.write_ordered_zone(data=data, **common_kw)

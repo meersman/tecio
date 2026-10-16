@@ -35,6 +35,8 @@ Note:
     is raised if such zones are encountered in the source file.
 """
 
+# ruff: noqa: A001 N806
+
 from __future__ import annotations
 
 import os
@@ -171,15 +173,15 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
                 data.append(var.values)  # ty: ignore[invalid-argument-type]
                 value_locations.append(var.value_location)
 
-        common_kw: dict[str, Any] = dict(
-            title=zone.title,
-            value_locations=value_locations,
-            passive_vars=passive_vars,
-            var_sharing=var_sharing,
-            solution_time=zone.solution_time,
-            strand_id=zone.strand_id,
-            aux=dict(zone.auxdata.items()) or None,
-        )
+        common_kw: dict[str, Any] = {
+            "title": zone.title,
+            "value_locations": value_locations,
+            "passive_vars": passive_vars,
+            "var_sharing": var_sharing,
+            "solution_time": zone.solution_time,
+            "strand_id": zone.strand_id,
+            "aux": dict(zone.auxdata.items()) or None,
+        }
 
         if isinstance(zone, TecplotOrderedZoneReader):
             writer.write_ordered_zone(data=data, **common_kw)
