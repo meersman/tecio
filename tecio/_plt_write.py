@@ -132,10 +132,9 @@ def _write_data(data: npt.ArrayLike, dtype: np.dtype | DataType | None = None) -
     # Convert input array-like data to NumPy arrays
     arr = np.asarray(data)
 
-    if dtype is not None:
-        data_type = _infer_data_type(dtype)
-    else:
-        data_type = dtype_to_datatype[arr.dtype]
+    data_type = (
+        _infer_data_type(dtype) if dtype is not None else dtype_to_datatype[arr.dtype]
+    )
 
     # tecdat142 already returns a contiguous array so no need to cast before calling
     if data_type in (DataType.FLOAT, DataType.INT16, DataType.BYTE):

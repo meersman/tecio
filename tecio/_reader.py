@@ -613,17 +613,17 @@ class TecplotOrderedZoneReader(TecplotZoneReader):
         return f"I={self._i}, J={self._j}, K={self._k}"
 
     @property
-    def I(self) -> int:  # noqa: E743 - match Tecplot IJK convention
+    def I(self) -> int:  # noqa: E743 N802
         """Nodal I dimension."""
         return self._i
 
     @property
-    def J(self) -> int:
+    def J(self) -> int:  # noqa: N802
         """Nodal J dimension."""
         return self._j
 
     @property
-    def K(self) -> int:
+    def K(self) -> int:  # noqa: N802
         """Nodal K dimension."""
         return self._k
 

@@ -18,9 +18,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `var_sharing={"x": 1, "y": 1, "z": 1}` (specified as varname or index:
   shared zone index).
 - Changed entire Python to 0-baed indexing. In all Python functions, classes,
-  and methods, any zone or variable index is 0-based. The `libtecio` module
-  wrapper functions maintain 1-based indexing convention, but all reader and
-  writer classes make this conversion automatically.
+  and methods, any zone or variable index is 0-based. The
+  :mod:`~tecio.libtecio` module wrapper functions maintain 1-based indexing
+  convention, but all reader and writer classes make this conversion
+  automatically.
+- Added ability to transform multiple varialbes in single
+  :mod:`~tecio.cli.tecscale` call.
+- Added new `--strand-offset` flag for :mod:`~tecio.cli.tecmerge` to allow for
+  multiple transient data files to be loaded without automerging overlapping
+  strand IDs (eg create strand ids 101, 102, 103, ...).
+- Added first version of Tecplot data writer plugin for Paraview,
+  `TecplotTecioWriter.py`.
+- Added MATLAB function to reformat zone structures created by
+  :mod:`~tecio.cli.tec2mat` into struct array of zones wth arrays accessible
+  by variable name, `tecmat2struct`.
 
 ---
 

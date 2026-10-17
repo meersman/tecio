@@ -8,19 +8,21 @@ in Tecplot or writing a dedicated script. ``tecscale`` applies the linear transf
 
 .. math::
 
-    v' = v \cdot s + b
+    v' = a \cdot v + b
 
-to every value in a selected variable array, where :math:`s` is the scale factor and
-:math:`b` is the additive offset. The transformation can be restricted to a single zone
-and the output format is controlled by the output file extension, allowing unit
-conversion and format conversion to be performed in a single step.
+to every value in a selected variable array, where :math:`a` is the scale factor and
+:math:`b` is the additive offset. Variable transformations with ``-v``/``--variable``
+are repeatable for multiple scale and offset operations to be applied in a single pass
+over the file. The transformation can be restricted to a single zone and the output
+format is controlled by the output file extension, allowing unit conversion and format
+conversion to be performed in a single step.
 
 :Usage:
 
 .. code:: bash
 
-    tecscale [-h] -v INDEX_OR_NAME [-s FLOAT] [--offset FLOAT] [-z INDEX]
-             [-o PATH] [-f] PATH
+    tecscale [-h] -v INDEX_OR_NAME [-s SCALE] [--offset OFFSET]
+             [-v ... [-s ...] [--offset ...]] [-z INDEX] [-o PATH] [-f] PATH
 
 :Positional Arguments:
     ``PATH``
@@ -28,14 +30,18 @@ conversion and format conversion to be performed in a single step.
 
 :Options:
     ``-v INDEX_OR_NAME``, ``--variable INDEX_OR_NAME``
-        Variable to transform, specified as either a 0-based integer index or a name
-        string (case-insensitive). Required.
+        A variable to transform (index or name, case-insensitive), applied as ``new =
+        old * scale + offset``. Repeatable: give one ``-v`` per variable to transform
+        several variables in one pass. Transformations applied to the same variable more
+        than once keeps only the last occurrence.
 
-    ``-s FLOAT``, ``--scale FLOAT``
-        Multiplicative scale factor :math:`s`. Defaults to ``1.0``.
+    ``-s SCALE``, ``--scale SCALE``
+        Multiplicative scale factor :math:`s` for the most recent ``-v``. Defaults to
+        ``1`` (no scaling). Must follow the ``-v`` it applies to.
 
-    ``--offset FLOAT``
-        Additive offset :math:`b` applied after scaling. Defaults to ``0.0``.
+    ``--offset OFFSET``
+        Additive offset :math:`b` for the most recent ``-v``. Defaults to ``0`` (no
+        shift). Must follow the ``-v`` it applies to.
 
     ``-z INDEX``, ``--zone INDEX``
         0-based zone index to restrict the transformation to. If omitted, all zones
@@ -51,13 +57,13 @@ conversion and format conversion to be performed in a single step.
         exits with an error rather than silently clobbering an existing file.
 
 :Returns:
-    A new Tecplot file written to the output path with the selected variable transformed
-    in all processed zones. Exit code is ``0`` on success and non-zero if the input file
-    cannot be read, the variable cannot be resolved, or the output file already exists
-    and ``--force`` is not set.
+    A new Tecplot file written to the output path with the selected variable(s)
+    transformed in all processed zones. Exit code ``0`` on success and non-zero if the
+    input file cannot be read, a variable cannot be resolved, a ``SCALE``/``OFFSET``
+    isn't a valid number, or the output file already exists and ``--force`` is not set.
 
 Examples:
-    Convert pressure from kPa to psi by index::
+    Convert pressure from kPa to psi by index (scale only, offset 0)::
 
         $ tecscale -v 3 -s 0.145038 flow.szplt
 
@@ -65,9 +71,13 @@ Examples:
 
         $ tecscale -v Pressure -s 0.145038 flow.szplt
 
-    Shift temperature from Kelvin to Celsius in the second zone only::
+    Shift temperature from Kelvin to Celsius in the second zone only (offset only)::
 
         $ tecscale -v Temperature --offset -273.15 -z 1 flow.szplt
+
+    Scale pressure and shift temperature in a single pass::
+
+        $ tecscale -v Pressure -s 0.145038 -v Temperature --offset -273.15 flow.szplt
 
     Scale and offset in one step, writing to ASCII DAT::
 
@@ -103,6 +113,49 @@ from .. import open as tecio_open
 # --------------------------------------------------------------------------------------
 
 
+class _AddVariable(argparse.Action):
+    """Start a new ``[spec, scale, offset]`` entry with default scale 1, offset 0."""
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: str | None = None,
+    ) -> None:
+        """Append a default-valued entry for the variable spec in ``values``."""
+        entries = getattr(namespace, self.dest, None) or []
+        entries.append([values, "1", "0"])
+        setattr(namespace, self.dest, entries)
+
+
+class _SetField(argparse.Action):
+    """Set one field of the most recent ``-v`` entry."""
+
+    field = 0
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: str | None = None,
+    ) -> None:
+        """Store ``values`` in this action's field of the last ``-v`` entry."""
+        entries = getattr(namespace, self.dest, None)
+        if not entries:
+            parser.error(f"{option_string} must follow a -v/--variable.")
+        entries[-1][self.field] = values
+
+
+class _SetScale(_SetField):
+    field = 1
+
+
+class _SetOffset(_SetField):
+    field = 2
+
+
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="tecscale",
@@ -119,6 +172,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "    $ tecscale -v Pressure -s 1e-3 <file>\n"
             "  Offset temperature in zone 1 only\n"
             "    $ tecscale -v Temperature --offset -273.15 -z 1 <file>\n"
+            "  Scale two variables in one pass\n"
+            "    $ tecscale -v Pressure -s 1e-3 -v Temperature --offset -273.15 <file>\n"
         ),
         formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
             prog, width=70, max_help_position=24
@@ -132,28 +187,32 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "-v",
         "--variable",
-        type=str,
+        dest="variable",
+        action=_AddVariable,
         required=True,
         metavar="INDEX_OR_NAME",
         help=(
-            "Variable to scale: either a 0-based integer index or the "
-            "variable name (case-insensitive)."
+            "A variable to transform (0-based integer index or name, "
+            "case-insensitive): new = old * SCALE + OFFSET, with SCALE and OFFSET "
+            "from the -s/--scale and --offset that follow it (defaults 1 and 0). "
+            "Repeatable: give one -v per variable to transform several in a "
+            "single pass."
         ),
     )
     parser.add_argument(
         "-s",
         "--scale",
-        type=float,
-        default=1.0,
-        metavar="FLOAT",
-        help="Multiplicative scale factor. Default: 1.0.",
+        dest="variable",
+        action=_SetScale,
+        metavar="SCALE",
+        help="Scale factor for the preceding -v. Default 1 (no scaling).",
     )
     parser.add_argument(
         "--offset",
-        type=float,
-        default=0.0,
-        metavar="FLOAT",
-        help="Additive offset applied after scaling. Default: 0.0.",
+        dest="variable",
+        action=_SetOffset,
+        metavar="OFFSET",
+        help="Additive offset for the preceding -v. Default 0 (no shift).",
     )
     parser.add_argument(
         "-z",
@@ -229,13 +288,49 @@ def _resolve_variable(spec: str, var_names: list[str]) -> int | None:
     return None
 
 
+def _resolve_transforms(
+    raw_specs: list[list[str]], var_names: list[str]
+) -> dict[int, tuple[float, float]] | None:
+    """Resolve repeated ``-v`` entries into a ``{var_index: (scale, offset)}`` map.
+
+    Args:
+        raw_specs: ``args.variable`` as the argparse actions built it: one
+            ``[spec, scale_str, offset_str]`` entry per ``-v`` occurrence, with the
+            defaults ``"1"`` and ``"0"`` where ``-s``/``--offset`` were omitted.
+        var_names: Ordered list of variable names from the reader.
+
+    Returns:
+        A mapping from 0-based variable index to ``(scale, offset)``, or ``None`` if
+        any entry fails to resolve (an error is already printed to stderr). A variable
+        named more than once keeps only its last occurrence.
+
+    """
+    transforms: dict[int, tuple[float, float]] = {}
+    for spec, scale_str, offset_str in raw_specs:
+        var_idx = _resolve_variable(spec, var_names)
+        if var_idx is None:
+            return None
+        try:
+            scale = float(scale_str)
+            offset = float(offset_str)
+        except ValueError:
+            print(
+                f"Error: scale/offset for variable '{spec}' must be numbers, "
+                f"got scale={scale_str!r} offset={offset_str!r}.",
+                file=sys.stderr,
+            )
+            return None
+        transforms[var_idx] = (scale, offset)
+    return transforms
+
+
 # --------------------------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------------------------
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Scale and/or offset a variable in a Tecplot file.
+    """Scale and/or offset one or more variables in a Tecplot file.
 
     Returns:
         Exit code -- ``0`` on success, ``1`` on error.
@@ -248,10 +343,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Error: input file not found: {src}", file=sys.stderr)
         return 1
 
-    if args.output is not None:
-        dst = Path(args.output)
-    else:
-        dst = src.with_stem(src.stem + "_scaled")
+    dst = (
+        Path(args.output)
+        if args.output is not None
+        else src.with_stem(src.stem + "_scaled")
+    )
 
     if dst.exists() and not args.force:
         print(
@@ -265,9 +361,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             var_names: list[str] = reader.variables
             num_vars: int = reader.num_vars
 
-            # Resolve target variable.
-            var_idx0: int | None = _resolve_variable(args.variable, var_names)
-            if var_idx0 is None:
+            # Resolve every -v occurrence into {var_index: (scale, offset)}.
+            transforms = _resolve_transforms(args.variable, var_names)
+            if transforms is None:
                 return 1
 
             # Validate zone if specified.
@@ -281,10 +377,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 return 1
 
-            print(
-                f"Scaling '{var_names[var_idx0]}' (var {var_idx0}): "
-                f"new = old * {args.scale} + {args.offset}"
-            )
+            for var_idx, (scale, offset) in sorted(transforms.items()):
+                print(
+                    f"Scaling '{var_names[var_idx]}' (var {var_idx}): "
+                    f"new = old * {scale} + {offset}"
+                )
             if args.zone is not None:
                 print(f"  Zone {args.zone} only.")
             else:
@@ -342,11 +439,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                             passive_vars.add(var.name)
                             continue
 
-                        if apply_scale and j == var_idx0:
+                        if apply_scale and j in transforms:
                             # Apply transformation, promoting to float64 to
                             # preserve precision across the operation.
+                            scale, offset = transforms[j]
                             arr = arr.astype(np.float64)
-                            arr = arr * args.scale + args.offset
+                            arr = arr * scale + offset
 
                         data.append(arr)
                         value_locations.append(var.value_location)
@@ -355,15 +453,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if len(zone.auxdata) > 0:
                         zone_aux = dict(zone.auxdata.items())
 
-                    common_kw: dict[str, Any] = dict(
-                        title=zone.title,
-                        value_locations=value_locations,
-                        passive_vars=passive_vars,
-                        var_sharing=var_sharing,
-                        solution_time=zone.solution_time,
-                        strand_id=zone.strand_id,
-                        aux=zone_aux,
-                    )
+                    common_kw: dict[str, Any] = {
+                        "title": zone.title,
+                        "value_locations": value_locations,
+                        "passive_vars": passive_vars,
+                        "var_sharing": var_sharing,
+                        "solution_time": zone.solution_time,
+                        "strand_id": zone.strand_id,
+                        "aux": zone_aux,
+                    }
 
                     if isinstance(zone, TecplotOrderedZoneReader):
                         writer.write_ordered_zone(data=data, **common_kw)

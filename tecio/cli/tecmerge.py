@@ -19,8 +19,8 @@ duplicated in every merged zone.
 .. code:: bash
 
     tecmerge [-h] -o PATH [-f] [--title STRING] [--assign-time-strands]
-             [-s VALUE] [-d VALUE | -e VALUE] [--strand ID] [--merge-grid [LIST]]
-             FILE [FILE ...]
+             [-s VALUE] [-d VALUE | -e VALUE] [--strand ID] [--strand-offset N]
+             [--merge-grid [LIST]] FILE [FILE ...]
 
 :Positional Arguments:
     ``FILE [FILE ...]``
@@ -66,6 +66,15 @@ duplicated in every merged zone.
         Override: force every zone to this single strand ID instead of the default
         per-zone-position assignment described under ``--assign-time-strands``. Has no
         effect without ``--assign-time-strands``.
+
+    ``--strand-offset N``
+        Added to every assigned strand ID (the per-zone-position default, or
+        ``--strand`` if given). Lets separate ``tecmerge`` runs land on
+        non-overlapping strand ranges, e.g. one run's zones get strands 1, 2, 3 and a
+        second run with ``--strand-offset 100`` gets 101, 102, 103, so opening both
+        outputs together in Tecplot doesn't auto-group zones from different merges onto
+        the same strand. Has no effect without ``--assign-time-strands``. Defaults to
+        ``0``.
 
     ``--merge-grid [LIST]``
         Detect and share grid data (coordinate variables, and for FE zones,
@@ -113,6 +122,14 @@ Examples:
 
         $ tecmerge --assign-time-strands -s 0.0 -d 0.1 --strand 1 \\
                    "step_*.szplt" -o transient.szplt
+
+    Merge two separate time series so both can be opened together without the
+    Tecplot GUI auto-grouping their zones onto shared strands::
+
+        $ tecmerge --assign-time-strands -s 0.0 -d 0.1 \\
+                   "groupA_*.szplt" -o groupA.szplt
+        $ tecmerge --assign-time-strands -s 0.0 -d 0.1 --strand-offset 100 \\
+                   "groupB_*.szplt" -o groupB.szplt
 
     Merge a multiblock time series, sharing each block's grid across timesteps
     instead of duplicating it::
@@ -282,6 +299,20 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "Override: force every zone to this single strand ID instead "
             "of the default per-zone-position assignment (see "
             "--assign-time-strands)."
+        ),
+    )
+    ts.add_argument(
+        "--strand-offset",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "Added to every assigned strand ID (the default per-zone-position "
+            "value, or --strand if given). Lets separate tecmerge runs land on "
+            "non-overlapping strand ranges (e.g. --strand-offset 100 on a second "
+            "run) so the Tecplot GUI doesn't auto-group zones from different "
+            "merges when the outputs are opened together. Has no effect without "
+            "--assign-time-strands. Defaults to 0 (no change)."
         ),
     )
 
@@ -626,15 +657,15 @@ def _write_zone(
     s_time = solution_time if solution_time is not None else zone.solution_time
     s_id = strand_id if strand_id is not None else zone.strand_id
 
-    common_kw: dict[str, Any] = dict(
-        title=zone.title,
-        value_locations=value_locations,
-        passive_vars=passive_vars,
-        var_sharing=var_sharing,
-        solution_time=s_time,
-        strand_id=s_id,
-        aux=zone_aux,
-    )
+    common_kw: dict[str, Any] = {
+        "title": zone.title,
+        "value_locations": value_locations,
+        "passive_vars": passive_vars,
+        "var_sharing": var_sharing,
+        "solution_time": s_time,
+        "strand_id": s_id,
+        "aux": zone_aux,
+    }
 
     if isinstance(zone, TecplotOrderedZoneReader):
         writer.write_ordered_zone(data=data, **common_kw)
@@ -733,6 +764,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.strand is not None
             else "per-zone-position strand (1, 2, 3, ... by zone order in each file)"
         )
+        if args.strand_offset:
+            strand_desc += f", offset by {args.strand_offset:+d}"
         print(f"\nTime assignment: {strand_desc}, times={[f'{t:.6g}' for t in times]}")
 
     try:
@@ -815,13 +848,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                         continue
 
                     # Automatically set all. --strand overrides this with a single,
-                    # fixed strand ID for every zone instead.
+                    # fixed strand ID for every zone instead. --strand-offset then
+                    # shifts whichever value was chosen.
                     if times is None:
                         s_id = None
                     elif args.strand is not None:
-                        s_id = args.strand
+                        s_id = args.strand + args.strand_offset
                     else:
-                        s_id = zone_num
+                        s_id = zone_num + args.strand_offset
 
                     grid_reference: int | None = None
                     signature: tuple[ZoneType, int, int] | None = None

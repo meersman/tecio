@@ -75,24 +75,47 @@ exclude = ["archive*", "test*"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
+target-version = "py311"
 output-format = "concise"
+output-prefer-rule-codes = true
 
 [tool.ruff.format]
 preview = true
 docstring-code-format = true
+line-ending = "lf"
 
 [tool.ruff.lint]
 select = [
+   # Groups
    "E",    # pycodestyle
+   "W",    # pycodestyle
    "D",    # pydocstyle
    "F",    # Pyflakes
    "UP",   # pyupgrade
    "B",    # flake8-bugbear
    "SIM",  # flake8-simplify
+   "A",    # flake8-builtins
+   "C4",   # flake8-comprehensions
+   "T10",  # flake8-debugger
    "I",    # isort
+   "N",    # pip8-naming
+
+   # Explicit preview rules
+   "DOC102",
+   #"DOC201",
+   "DOC202",
+   "DOC402",
+   "DOC403",
+   #"DOC501",
 ]
-ignore = ["D203", "D213", "SIM105"]
+extend-ignore = [
+    "D203",
+    "D213",
+    "SIM105"
+]
+preview = true
+explicit-preview-rules = true
+fixable = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
@@ -100,7 +123,11 @@ ignore = ["D203", "D213", "SIM105"]
     "ANN",    # don't require type annotations in tests
     "D",      # don't require docstrings in tests
 ]
+"plugins/paraview/*.py" = ["N"]
 "docs/_demos/**/*.py" = ["E", "D"]
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 96
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

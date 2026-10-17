@@ -582,9 +582,7 @@ class TestOpenErrors:
         # low-level classic API, since the high-level writer does not expose
         # poly zones.
         path = tmp_path / "poly.plt"
-        from tecio import libtecio
-        from tecio.libtecio import ValueLocation as VL
-        from tecio.libtecio import ZoneType as ZT
+        from tecio import ValueLocation, ZoneType, libtecio
 
         pts = np.array(
             [
@@ -620,12 +618,16 @@ class TestOpenErrors:
         libtecio.tecini142(str(path), variables=["x", "y", "c"])
         libtecio.tecpolyzne142(
             "oct",
-            ZT.FEPOLYGON,
+            ZoneType.FEPOLYGON,
             num_nodes=8,
             num_faces=nf,
             num_elements=1,
             total_num_face_nodes=len(fn_nodes),
-            value_locations=[VL.NODAL, VL.NODAL, VL.CELL_CENTERED],
+            value_locations=[
+                ValueLocation.NODAL,
+                ValueLocation.NODAL,
+                ValueLocation.CELL_CENTERED,
+            ],
         )
         libtecio.tecdat142(x, is_double=False)
         libtecio.tecdat142(y, is_double=False)

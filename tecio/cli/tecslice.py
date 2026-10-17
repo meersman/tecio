@@ -617,15 +617,15 @@ def _write_zone_verbatim(
         dict(zone.auxdata.items()) if len(zone.auxdata) > 0 else None
     )
 
-    kw: dict[str, Any] = dict(
-        title=zone.title,
-        value_locations=locs,
-        passive_vars=passive_vars,
-        var_sharing=var_sharing,
-        solution_time=zone.solution_time,
-        strand_id=zone.strand_id,
-        aux=zone_aux,
-    )
+    kw: dict[str, Any] = {
+        "title": zone.title,
+        "value_locations": locs,
+        "passive_vars": passive_vars,
+        "var_sharing": var_sharing,
+        "solution_time": zone.solution_time,
+        "strand_id": zone.strand_id,
+        "aux": zone_aux,
+    }
 
     if isinstance(zone, TecplotOrderedZoneReader):
         writer.write_ordered_zone(data=data, **kw)
@@ -687,15 +687,15 @@ def _write_zone_protected(
         dict(zone.auxdata.items()) if len(zone.auxdata) > 0 else None
     )
 
-    kw: dict[str, Any] = dict(
-        title=zone.title,
-        value_locations=writer_locs,
-        passive_vars=passive_vars,
-        var_sharing=var_sharing,
-        solution_time=zone.solution_time,
-        strand_id=0,  # force stationary so it is invisible in time animation
-        aux=zone_aux,
-    )
+    kw: dict[str, Any] = {
+        "title": zone.title,
+        "value_locations": writer_locs,
+        "passive_vars": passive_vars,
+        "var_sharing": var_sharing,
+        "solution_time": zone.solution_time,
+        "strand_id": 0,  # force stationary so it is invisible in time animation
+        "aux": zone_aux,
+    }
 
     if isinstance(zone, TecplotOrderedZoneReader):
         writer.write_ordered_zone(data=writer_data, **kw)

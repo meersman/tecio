@@ -1,6 +1,6 @@
 """Library of functions that create various data types for tecio tests."""
 
-# ruff: noqa: F403, F405
+# ruff: noqa: F403, F405, N802
 
 import numpy as np
 import numpy.typing as npt

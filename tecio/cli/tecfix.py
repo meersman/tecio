@@ -343,10 +343,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # Determine output path (irrelevant for --dry-run but computed early so we
     # can catch conflicts before doing any work).
-    if args.output is not None:
-        dst = Path(args.output)
-    else:
-        dst = src.with_stem(src.stem + "_fixed")
+    dst = (
+        Path(args.output)
+        if args.output is not None
+        else src.with_stem(src.stem + "_fixed")
+    )
 
     if not args.dry_run and dst.exists() and not args.force:
         print(
@@ -481,15 +482,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                         # Rebuild merged_aux to pick up the SolutionTime entry.
                         merged_aux = {**existing_aux, **fix_auxdata} or None
 
-                    common_kw: dict[str, Any] = dict(
-                        title=zone.title,
-                        value_locations=writer_locs,
-                        passive_vars=passive_vars,
-                        var_sharing=var_sharing,
-                        solution_time=sol_time,
-                        strand_id=strand,
-                        aux=merged_aux,
-                    )
+                    common_kw: dict[str, Any] = {
+                        "title": zone.title,
+                        "value_locations": writer_locs,
+                        "passive_vars": passive_vars,
+                        "var_sharing": var_sharing,
+                        "solution_time": sol_time,
+                        "strand_id": strand,
+                        "aux": merged_aux,
+                    }
 
                     if isinstance(zone, TecplotOrderedZoneReader):
                         writer.write_ordered_zone(data=writer_data, **common_kw)

@@ -300,10 +300,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Error: input file not found: {src}", file=sys.stderr)
         return 1
 
-    if args.output is not None:
-        dst = Path(args.output)
-    else:
-        dst = src.with_stem(src.stem + "_extract")
+    dst = (
+        Path(args.output)
+        if args.output is not None
+        else src.with_stem(src.stem + "_extract")
+    )
 
     if dst.exists() and not args.force:
         print(
@@ -430,15 +431,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if len(zone.auxdata) > 0:
                         zone_aux = dict(zone.auxdata.items())
 
-                    common_kw: dict[str, Any] = dict(
-                        title=zone.title,
-                        value_locations=value_locations,
-                        passive_vars=passive_vars,
-                        var_sharing=var_sharing,
-                        solution_time=zone.solution_time,
-                        strand_id=zone.strand_id,
-                        aux=zone_aux,
-                    )
+                    common_kw: dict[str, Any] = {
+                        "title": zone.title,
+                        "value_locations": value_locations,
+                        "passive_vars": passive_vars,
+                        "var_sharing": var_sharing,
+                        "solution_time": zone.solution_time,
+                        "strand_id": zone.strand_id,
+                        "aux": zone_aux,
+                    }
 
                     if isinstance(zone, TecplotOrderedZoneReader):
                         writer.write_ordered_zone(data=data, **common_kw)

@@ -1,8 +1,8 @@
-function f = fecplot(dim, x, y, z, c, node_map, varargin)
+function f = contourfe(dim, x, y, z, c, node_map, varargin)
 % Filled patch contour for unstructured 2D/3D surface zones
 %
 % Call:
-%     h = feplot(dim, x, y, z, c, node_map, ...)
+%     h = contourfe(dim, x, y, z, c, node_map, ...)
 %
 % Args:
 %     dim: 2 or 3

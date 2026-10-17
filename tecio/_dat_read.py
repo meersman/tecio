@@ -986,9 +986,9 @@ class TecplotDatOrderedZoneReader(TecplotOrderedZoneReader):
         self,
         zone_index: int,
         title: str,
-        I: int,  # noqa: E741 - matches Tecplot's own IJK convention
-        J: int,
-        K: int,
+        I: int,  # noqa: E741 N803
+        J: int,  # noqa: N803
+        K: int,  # noqa: N803
         solution_time: float,
         strand_id: int,
         variables: list[TecplotVariableReader],
@@ -1582,11 +1582,11 @@ class TecplotDatReader(TecplotReader):
                 active_count = self.num_vars - len(passive_set) - len(share_map)
                 num_nodes = self._infer_ordered_point_count(tokens, active_count)
                 I = num_nodes  # noqa E741
-                J = K = 1
+                J = K = 1  # noqa: N806
             else:
-                I = int(kv.get("I", "1") or "1")  # noqa E741
-                J = int(kv.get("J", "1") or "1")
-                K = int(kv.get("K", "1") or "1")
+                I = int(kv.get("I", "1") or "1")  # noqa: E741 N806
+                J = int(kv.get("J", "1") or "1")  # noqa: N806
+                K = int(kv.get("K", "1") or "1")  # noqa: N806
                 num_nodes = I * J * K
             num_cells = max(I - 1, 1) * max(J - 1, 1) * max(K - 1, 1)
         else:
@@ -1814,9 +1814,9 @@ class TecplotDatReader(TecplotReader):
         zone_index: int,
         title: str,
         zone_type: ZoneType,
-        I: int,  # noqa: E741 - matches Tecplot's own IJK convention
-        J: int,
-        K: int,
+        I: int,  # noqa: E741 N803
+        J: int,  # noqa: N803
+        K: int,  # noqa: N803
         solution_time: float,
         strand_id: int,
         variables: list[TecplotVariableReader],
