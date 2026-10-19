@@ -1,7 +1,9 @@
 r"""Read Tecplot PLT (``.plt``) binary files.
 
-A pure-Python / NumPy reader for Tecplot PLT binary files (format versions v112 and
-v191), no C library involved.
+A pure-Python / NumPy reader for Tecplot PLT binary files, no C library involved.
+Format versions v112 and v191 (current) are read natively by this module; legacy
+versions v75, v107, and v111 are also supported, read-only (see :mod:`._plt_legacy`
+for v75; v107/v111 are handled here as small deltas on the v112 parser).
 
 Notes:
     * **No byte-swapping boilerplate.** The INT32 value of ``1`` written immediately
@@ -15,14 +17,25 @@ Notes:
       499.0 (text) are detected and skipped without parsing their contents.
     * **v112 and v191 zone headers.** Zone marker ``299.0`` -> v112 header; ``298.0`` ->
       v191 header. Both are fully supported.
+    * **Legacy versions (read-only).** v75 (magic ``#!TDV75 ``) does not have fields for
+      StrandID, SolutionTime, value location, face-neighbor, or aux-data. v107
+      (``#!TDV107``) and v111 (``#!TDV111``) are structurally v112 with two deltas each:
+      v107 has no file-level FileType field and no per-zone "face neighbors complete"
+      flag; v111 has one extra always-0 zone-header INT32 of unidentified
+      purpose. Legacy files are read-only; :mod:`._plt_write` only ever writes the
+      current format.
 
 Limitations:
     * FEPOLYGON and FEPOLYHEDRON zones are parsed for metadata but face-map reading is
       not yet implemented (``node_map`` returns None for those types).
     * Bit-packed data (DataType 6) is not supported and raises NotImplementedError.
+    * Legacy files have no passive-variable.
 
 Format reference:
-    Tecplot 360 Data Format Guide, Binary PLT v112 / v191.
+    Tecplot 360 Data Format Guide, Binary PLT v112 / v191, for the current format.  An
+    archived data format guide for v75 (see :mod:`._plt_legacy`).  v107/v111 deltas were
+    derived empirically from real files written by Tecplot's 2006/2008 writers,
+    cross-checked byte-for-byte against the same dataset written by later writers.
 """
 
 from __future__ import annotations
@@ -58,7 +71,10 @@ from ._reader import (
 # Constants
 # --------------------------------------------------------------------------------------
 
-# Magic strings for the two supported file versions.
+# Magic strings for supported file versions.
+_MAGIC_V75: bytes = b"#!TDV75 "
+_MAGIC_V107: bytes = b"#!TDV107"
+_MAGIC_V111: bytes = b"#!TDV111"
 _MAGIC_V112: bytes = b"#!TDV112"
 _MAGIC_V191: bytes = b"#!TDV191"
 
@@ -273,6 +289,27 @@ class _ZoneMeta:
     connectivity_offset: int | None = None
     connectivity_count: int = 0  # total int32 values
 
+    # -- Legacy (v75) on-disk quirks. False/empty/0 for every non-legacy file. --------
+    # v75's Format field packs POINT/BLOCK packing together with ORDERED/FE zone
+    # type; True means this zone's variable data is interleaved by node/element
+    # rather than stored as one contiguous block per variable. See _plt_legacy.
+    is_point_format: bool = False
+    # v75 connectivity indices are 1-based on disk; every later version is 0-based on
+    # disk, so 1 is subtracted when read. See TecplotPltFEZoneReader._load_node_map.
+    connectivity_is_one_based: bool = False
+    # Structured dtype for one interleaved row (point_field_by_var maps a 0-based
+    # variable index to its field name), plus where the row block starts and how
+    # many rows it holds. Only meaningful when is_point_format is True.
+    point_row_dtype: np.dtype | None = None
+    point_field_by_var: dict[int, str] = field(default_factory=dict)
+    point_data_offset: int = 0
+    point_num_rows: int = 0
+    # Cache of the one-pass full-zone row read, shared by every variable in this
+    # zone so reading all of them costs one disk pass rather than one per
+    # variable. Populated on first full read; never invalidated, this dataclass
+    # (and its cache) live only as long as the TecplotPltReader that owns them.
+    point_format_cache: npt.NDArray[Any] | None = None
+
 
 # --------------------------------------------------------------------------------------
 class _PltParser:
@@ -316,8 +353,21 @@ class _PltParser:
         self._detect_version_and_endian(fp)
         byte_order = self.byte_order
 
-        # FileType
-        self.file_type = FileType(_read_int32(fp, byte_order))
+        if self._file_version == "v75":
+            # v75's header, zone, and data-section layouts are all different enough to
+            # move the data field order to its own module. The other legacy versions are
+            # similar enough to v112 to handle with a couple conditional read statements
+            # below.
+            from ._plt_legacy import parse_v75_header
+
+            parse_v75_header(self, fp)
+            return
+
+        # v107 has no file-level FileType field at all. v111 and later all have it.
+        if self._file_version != "v107":
+            self.file_type = FileType(_read_int32(fp, byte_order))
+        else:
+            self.file_type = FileType.FULL
 
         # Dataset title
         self.title = _read_string(fp, byte_order)
@@ -375,14 +425,21 @@ class _PltParser:
     def _detect_version_and_endian(self, fp: io.BufferedIOBase) -> None:
         """Read magic bytes and INT32=1 endian probe; set ``self.byte_order``."""
         magic = fp.read(8)
-        if magic == _MAGIC_V112:
+        if magic == _MAGIC_V75:
+            self._file_version = "v75"
+        elif magic == _MAGIC_V107:
+            self._file_version = "v107"
+        elif magic == _MAGIC_V111:
+            self._file_version = "v111"
+        elif magic == _MAGIC_V112:
             self._file_version = "v112"
         elif magic == _MAGIC_V191:
             self._file_version = "v191"
         else:
             raise PltReadError(
                 f"Unrecognised PLT magic number: {magic!r}.  "
-                "Expected b'#!TDV112' or b'#!TDV191'."
+                "Expected one of b'#!TDV75 ', b'#!TDV107', b'#!TDV111', "
+                "b'#!TDV112', b'#!TDV191'."
             )
 
         # Next 4 bytes encode the integer 1 in the writer's byte order.
@@ -459,9 +516,15 @@ class _PltParser:
                 ZoneType.FEPOLYGON,
                 ZoneType.FEPOLYHEDRON,
             )
-            if zt in fe_types:
-                # completely specified flag
+            # v107 has no "completely specified" flag here; every later version does.
+            if zt in fe_types and self._file_version != "v107":
                 _read_int32(fp, byte_order)
+
+        # Manual tests with v111 showed one extra INT32 value of 0 here. Its unknow what
+        # the purpose is, but possible that data formats different that what was
+        # manually tested could cause an unreported error here.
+        if self._file_version == "v111":
+            _read_int32(fp, byte_order)
 
         # Dimensions / element counts
         if meta.zone_type == ZoneType.ORDERED:
@@ -580,6 +643,12 @@ class _PltParser:
         over zones in declaration order, matching each data block to the corresponding
         :class:`_ZoneMeta` in ``self.zones``.
         """
+        if self._file_version == "v75":
+            from ._plt_legacy import parse_v75_data_section
+
+            parse_v75_data_section(self, fp)
+            return
+
         byte_order = self.byte_order
         num_vars = len(self.var_names)
 
@@ -1082,6 +1151,9 @@ class TecplotPltVariableReader(TecplotVariableReader):
             start_idx = start_1 - 1
             count = end_1 - start_1
 
+        if meta.is_point_format:
+            return self._get_point_format_values(meta, start_idx, count, full_read)
+
         dt = np.dtype(f"{self._byte_order}{dtype_str}")
         itemsize = dt.itemsize
 
@@ -1111,6 +1183,49 @@ class TecplotPltVariableReader(TecplotVariableReader):
                     data = data.reshape(shape, order="F")
 
         return data
+
+    def _get_point_format_values(
+        self,
+        meta: _ZoneMeta,
+        start_idx: int,
+        count: int,
+        full_read: bool,
+    ) -> npt.NDArray[Any]:
+        """Read one variable's values out of an interleaved (POINT-format) row block.
+
+        POINT-format zones (legacy v75 only) store one row per node/element (all
+        active variables for node 0, then node 1, ...), so a single variable's values
+        are strided across the file rather than contiguous. Every active variable in
+        the row is read together using ``meta.point_row_dtype`` (a structured dtype
+        built once at parse time, with the byte order already baked into each field so
+        no separate byte-swap pass is needed), and this variable's column is then
+        selected out.
+
+        A full read (the common case, and the only one the point-format writer this
+        package targets ever exercises) is cached on ``meta.point_format_cache`` so
+        that reading every variable of a large POINT-format zone touches disk once
+        rather than once per variable. A copy is always returned, never the cached
+        array's own view, so a caller mutating the result cannot corrupt the shared
+        cache or a later re-read of the same variable.
+        """
+        field_name = meta.point_field_by_var[self.var_index]
+
+        if full_read:
+            rows = meta.point_format_cache
+            if rows is None:
+                with open(self._file_path, "rb") as fp:
+                    fp.seek(meta.point_data_offset)
+                    rows = np.fromfile(
+                        fp, dtype=meta.point_row_dtype, count=meta.point_num_rows
+                    )
+                meta.point_format_cache = rows
+            return np.array(rows[field_name])
+
+        assert meta.point_row_dtype is not None  # narrowed: is_point_format was True
+        with open(self._file_path, "rb") as fp:
+            fp.seek(meta.point_data_offset + start_idx * meta.point_row_dtype.itemsize)
+            rows = np.fromfile(fp, dtype=meta.point_row_dtype, count=count)
+        return np.array(rows[field_name])
 
 
 # ======================================================================================
@@ -1180,7 +1295,9 @@ class TecplotPltOrderedZoneReader(TecplotOrderedZoneReader):
             title=meta.title,
             solution_time=meta.solution_time,
             strand_id=max(meta.strand_id + 1, 0),
-            datapacking=DataPacking.BLOCK,
+            datapacking=(
+                DataPacking.POINT if meta.is_point_format else DataPacking.BLOCK
+            ),
             i=meta.i_max,
             j=meta.j_max,
             k=meta.k_max,
@@ -1246,7 +1363,9 @@ class TecplotPltFEZoneReader(TecplotFEZoneReader):
             zone_type=meta.zone_type,
             solution_time=meta.solution_time,
             strand_id=max(meta.strand_id + 1, 0),
-            datapacking=DataPacking.BLOCK,
+            datapacking=(
+                DataPacking.POINT if meta.is_point_format else DataPacking.BLOCK
+            ),
             num_nodes=meta.num_nodes,
             num_elements=meta.num_elements,
             shared_connectivity=(
@@ -1316,7 +1435,11 @@ class TecplotPltFEZoneReader(TecplotFEZoneReader):
             fp.seek(meta.connectivity_offset)
             flat = np.fromfile(fp, dtype=dt, count=count)
 
-        return flat.reshape(self.num_elements, -1).astype(np.int64)
+        node_map = flat.reshape(self.num_elements, -1).astype(np.int64)
+        if meta.connectivity_is_one_based:
+            # v75 only: 1-based on disk, converted to the 0-based public convention.
+            node_map -= 1
+        return node_map
 
     def _load_face_neighbor_meta(
         self,

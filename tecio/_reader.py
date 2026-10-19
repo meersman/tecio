@@ -1,17 +1,17 @@
 """Shared, format-independent base classes for Tecplot readers.
 
-Every format's reader (SZL, PLT, DAT) exposes the same interface:
-:class:`TecplotReader` (the open file/dataset), :class:`TecplotZoneReader` (one
-zone, split into :class:`TecplotOrderedZoneReader` and
-:class:`TecplotFEZoneReader` since the two topologies don't share properties
-like dimensions or connectivity), :class:`TecplotVariableReader` (one variable
-within a zone, not split by value location or zone topology, neither changes
-which properties exist, only the shape ``get_values()`` returns, which the
-method already computes from ``zone_type``/``value_location``), and
-:class:`TecplotAuxDataReader` (a read-only auxiliary-data mapping). This module
-defines that interface once so the three formats can no longer drift apart, and so
-downstream code (the ParaView plugin, in particular) can be written against
-``TecplotZoneReader``/``TecplotVariableReader`` instead of ``Any``.
+Every format's reader (SZL, PLT, DAT) exposes the same interface: :class:`TecplotReader`
+(the open file/dataset), :class:`TecplotZoneReader` (one zone, split into
+:class:`TecplotOrderedZoneReader` and :class:`TecplotFEZoneReader` since the two
+topologies don't share properties like dimensions or connectivity),
+:class:`TecplotVariableReader` (one variable within a zone, not split by value location
+or zone topology, neither changes which properties exist, only the shape
+``get_values()`` returns, which the method already computes from
+``zone_type``/``value_location``), and :class:`TecplotAuxDataReader` (a read-only
+auxiliary-data mapping). This module defines that interface once so the three formats
+can no longer drift apart, and so downstream code (the ParaView plugin, in particular)
+can be written against ``TecplotZoneReader``/``TecplotVariableReader`` instead of
+``Any``.
 
 Design notes:
     * Instances are immutable: attribute assignment raises :exc:`AttributeError`.
@@ -408,10 +408,14 @@ class TecplotZoneReader(ABC):
         zone_type: The zone's :class:`~tecio.libtecio.ZoneType`.
         solution_time: Solution time, 0.0 for static data.
         strand_id: Strand ID, 0 for static data.
-        datapacking: On-disk value layout. SZL always supplies
-            :attr:`~tecio.libtecio.DataPacking.BLOCK`, binary files have no
-            packing distinction on disk; the field exists purely so code can
-            treat every zone uniformly regardless of source format.
+        datapacking: On-disk value layout. SZL and every PLT version from
+            v107 onward always supply :attr:`~tecio.libtecio.DataPacking.BLOCK`,
+            those formats have no packing distinction on disk; the field
+            exists purely so code can treat every zone uniformly regardless
+            of source format. The legacy PLT v75 format is the one exception:
+            it genuinely stores some zones interleaved by node/element
+            (POINT/FEPOINT), reported here as
+            :attr:`~tecio.libtecio.DataPacking.POINT`.
     """
 
     __slots__ = (
