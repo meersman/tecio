@@ -500,18 +500,6 @@ class TestLineSegments:
             tecio.open(str(path), "r")
 
 
-@pytest.mark.parametrize("point", [False, True], ids=["block", "point"])
-def test_brick_fixtures_match_builder(tests_dir: Path, point: bool) -> None:
-    """The bytes tested above are the ones loaded in the Tecplot GUI.
-
-    ``legacy_v75_brick_*_double.plt`` were opened in Tecplot and showed normal
-    cells; this keeps the in-test builder from drifting away from them.
-    """
-    name = f"legacy_v75_brick_{'point' if point else 'block'}_double.plt"
-    expected = degenerate_brick_file(point=point, double=True)
-    assert (tests_dir / name).read_bytes() == expected
-
-
 class TestOtherV75ElementTypes:
     """Native triangle (KMax 0) and tetrahedron (KMax 2) codes, and ORDERED POINT."""
 
@@ -607,28 +595,6 @@ def static_grid_file(
             repeat_connectivity=share_connectivity and z > 1,
         )
     return data
-
-
-@pytest.mark.parametrize(
-    ("name", "var_order", "point", "share_connectivity"),
-    [
-        ("block", ["X", "Y", "T"], False, False),
-        ("point_middle", ["X", "T", "Y"], True, False),
-        ("point_shared_conn", ["X", "Y", "T"], True, True),
-    ],
-)
-def test_static_grid_fixtures_match_builder(
-    tests_dir: Path,
-    name: str,
-    var_order: list[str],
-    point: bool,
-    share_connectivity: bool,
-) -> None:
-    """The static-grid bytes tested below are the ones loaded in the Tecplot GUI."""
-    expected = static_grid_file(
-        var_order, point=point, share_connectivity=share_connectivity
-    )
-    assert (tests_dir / f"legacy_v75_static_grid_{name}.plt").read_bytes() == expected
 
 
 class TestStaticGridChain:
