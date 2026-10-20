@@ -171,3 +171,10 @@ interface above.
    TecplotPltReader
    TecplotDatReader
 ```
+
+:::{versionadded} 0.4.0
+Read only `TecplotPltReader` support for several legacy PLT binary versions
+(v7.5, v10.7, v11.1). Note that v7.5 PLT files have no fields for passive
+variables, strand/ solution-time, cell-centered data, or auxilary data. See
+{doc}`legacy_plt_versions` for the full version-by-version comparison.
+:::
