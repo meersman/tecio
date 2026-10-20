@@ -30,6 +30,10 @@ Note:
     capability.
 
 Note:
+    Legacy PLT files (v75, v107, v111) are read-only, so ``"a"`` and ``"a+"`` raise
+    :exc:`ValueError` for them.
+
+Note:
     FEPOLYGON and FEPOLYHEDRON zones are not copied during append operations because the
     ``Write`` API does not yet expose a poly-zone writer. A :exc:`NotImplementedError`
     is raised if such zones are encountered in the source file.
@@ -50,7 +54,7 @@ from ._constants import FileType, ValueLocation, ZoneType
 from ._containers import ZoneList
 from ._dat_read import TecplotDatReader, _peek_dat_metadata
 from ._dat_write import TecplotDatWriter
-from ._plt_read import TecplotPltReader
+from ._plt_read import TecplotPltReader, _is_legacy_plt
 from ._plt_write import TecplotPltWriter
 from ._reader import (
     TecplotAuxDataReader,
@@ -89,6 +93,20 @@ _HANDLERS: dict[str, dict[str, Any]] = {
         "a": None,
         "a+": None,
     },
+    ".bbin": {
+        "r": TecplotPltReader,
+        "w": TecplotPltWriter,
+        "x": None,
+        "a": None,
+        "a+": None,
+    },
+    ".bbin8": {
+        "r": TecplotPltReader,
+        "w": TecplotPltWriter,
+        "x": None,
+        "a": None,
+        "a+": None,
+    },
     ".dat": {
         "r": TecplotDatReader,
         "w": TecplotDatWriter,
@@ -104,6 +122,9 @@ _HANDLERS: dict[str, dict[str, Any]] = {
         "a+": None,
     },
 }
+
+# Extensions handled by the PLT reader, which may hold a legacy (read-only) version.
+_PLT_EXTS: frozenset[str] = frozenset({".plt", ".bin", ".bbin", ".bbin8"})
 
 # FE zone types that the Write API supports for zone copying.
 _FE_SIMPLE: frozenset[ZoneType] = frozenset({
@@ -530,12 +551,19 @@ def _open_append(
 
     Raises:
         FileNotFoundError: If *path* does not exist (nothing to append to).
+        ValueError: If *path* is a legacy PLT file (v75, v107, or v111), which is
+            read-only.
     """
     src = Path(path)
     if not src.exists():
         raise FileNotFoundError(
             f"Cannot append to '{src}': file does not exist.  "
             "Use mode='w' to create a new file."
+        )
+    if ext in _PLT_EXTS and _is_legacy_plt(src):
+        raise ValueError(
+            f"Cannot append to '{src}': legacy PLT versions (v75, v107, v111) are "
+            "read-only. Open with mode='r', or convert to a current format first."
         )
 
     ReadCls = _reader_for_ext(ext)
@@ -674,7 +702,7 @@ def open(
         path (str | os.PathLike): File path. Extension determines the format handler:
 
             - ``.szplt`` → :mod:`tecio.szl`
-            - ``.plt`` / ``.bin`` → :mod:`tecio.plt`
+            - ``.plt`` / ``.bin`` / ``.bbin`` / ``.bbin8`` → :mod:`tecio.plt`
             - ``.dat`` / ``.tec`` → :mod:`tecio.dat`
 
         mode (str): Access mode — mirrors Python's built-in :func:`open`:
@@ -689,6 +717,9 @@ def open(
               not exist (use ``'w'`` to create a new file).
             - ``'a+'`` -- Same as ``'a'`` but the returned handle also exposes the full
               read API populated from the original file.
+
+            Legacy PLT files (v75, v107, v111) can only be opened with ``'r'``;
+            ``'a'`` and ``'a+'`` raise :exc:`ValueError` for them.
 
         **kwargs: Forwarded to the underlying handler constructor. The accepted keyword
             arguments differ by mode — see the tables below.
@@ -739,7 +770,8 @@ def open(
         - ``'a+'`` → :class:`~tecio.AppendReadWrite`
 
     Raises:
-        ValueError: Unsupported file extension or unrecognised mode.
+        ValueError: Unsupported file extension, unrecognised mode, or ``'a'``/``'a+'``
+            on a legacy PLT file (v75, v107, v111).
         FileNotFoundError: ``'r'``, ``'a'``, or ``'a+'`` on a missing file.
         FileExistsError: ``'x'`` on an existing file.
         NotImplementedError: Append mode on a file containing FEPOLYGON or FEPOLYHEDRON

@@ -77,6 +77,7 @@ _MAGIC_V107: bytes = b"#!TDV107"
 _MAGIC_V111: bytes = b"#!TDV111"
 _MAGIC_V112: bytes = b"#!TDV112"
 _MAGIC_V191: bytes = b"#!TDV191"
+_LEGACY_MAGICS: frozenset[bytes] = frozenset({_MAGIC_V75, _MAGIC_V107, _MAGIC_V111})
 
 # Floating-point sentinel values used in the header.
 _MARKER_ZONE: float = 299.0  # v112 zone header
@@ -222,6 +223,16 @@ def _peek_float32(fp: io.BufferedIOBase, byte_order: str) -> float:
     val = _read_float32(fp, byte_order)
     fp.seek(pos)
     return val
+
+
+def _is_legacy_plt(file_path: str | os.PathLike) -> bool:
+    """Return True if the file starts with a v75, v107, or v111 magic string.
+
+    Reads only the first 8 bytes, so it is cheap and never raises on a malformed
+    body. A missing or unreadable file raises :exc:`OSError` as usual.
+    """
+    with open(file_path, "rb") as fp:
+        return fp.read(8) in _LEGACY_MAGICS
 
 
 # --------------------------------------------------------------------------------------
@@ -520,7 +531,7 @@ class _PltParser:
             if zt in fe_types and self._file_version != "v107":
                 _read_int32(fp, byte_order)
 
-        # Manual tests with v111 showed one extra INT32 value of 0 here. Its unknow what
+        # Manual tests with v111 showed one extra INT32 value of 0 here. Its unknown what
         # the purpose is, but possible that data formats different that what was
         # manually tested could cause an unreported error here.
         if self._file_version == "v111":
