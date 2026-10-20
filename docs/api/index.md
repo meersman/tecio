@@ -32,7 +32,7 @@ will not need to instantiate {class}`~tecio.TecplotSzlReader`,
 | Extension | Format |
 |-----------|--------|
 | `.szplt` | Tecplot SZL binary (subzone-loadable) |
-| `.plt`, `.bin` | Tecplot PLT binary |
+| `.plt`, `.bin`, `.bbin`, `.bbin8` | Tecplot PLT binary |
 | `.dat`, `.tec` | Tecplot ASCII |
 :::
 
@@ -166,6 +166,8 @@ name.
 
 See {doc}`readers` and {doc}`writers` for each class's full documentation,
 including per-format memory-model notes and parameter comparison tables.
+{class}`~tecio.TecplotPltReader` also reads several older PLT binary versions
+(v75, v107, v111), see {doc}`legacy_plt_versions`.
 
 ---
 
@@ -389,4 +391,5 @@ readers
 writers
 constants
 libtecio
+legacy_plt_versions
 ```
