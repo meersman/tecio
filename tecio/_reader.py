@@ -41,6 +41,7 @@ Design notes:
 
 from __future__ import annotations
 
+import hashlib
 from abc import ABC, abstractmethod
 from collections.abc import ItemsView, Iterator, KeysView, Mapping, ValuesView
 from typing import Any, Final, Literal, TypeAlias, overload
@@ -977,26 +978,26 @@ class TecplotPolyZoneReader(TecplotZoneReader):
     0-based neighbor element and the 0-based zone containing it.
 
     Face-neighbor connections (:class:`~tecio.FaceNeighborMode`) do not apply to poly
-    zones, the left and right elements fulfill that role.
+    zones, the left and right elements play that role.
 
     For a FEPOLYGON zone each face is an edge with exactly 2 nodes. Its
     ``face_node_counts`` is synthesized (all 2) and ``face_nodes`` has
     ``2 * num_faces`` entries.
 
     Args:
-        zone_index:               0-based zone index within the dataset.
-        title:                    Zone title.
-        zone_type:                FEPOLYGON or FEPOLYHEDRON.
-        solution_time:            Solution time, 0.0 for static data.
-        strand_id:                Strand ID, 0 for static data.
-        datapacking:              On-disk value layout.
-        num_nodes:                Number of nodes/points.
-        num_elements:             Number of elements/cells.
-        num_faces:                Number of faces.
-        num_boundary_faces:       Number of boundary faces.
+        zone_index: 0-based zone index within the dataset.
+        title: Zone title.
+        zone_type: FEPOLYGON or FEPOLYHEDRON.
+        solution_time: Solution time, 0.0 for static data.
+        strand_id: Strand ID, 0 for static data.
+        datapacking: On-disk value layout.
+        num_nodes: Number of nodes/points.
+        num_elements: Number of elements/cells.
+        num_faces: Number of faces.
+        num_boundary_faces: Number of boundary faces.
         num_boundary_connections: Total number of boundary connections.
-        shared_connectivity:      0-based source zone index if this zone's connectivity
-                                  is shared, else None.
+        shared_connectivity: 0-based source zone index if this zone's connectivity
+            is shared, else None.
     """
 
     __slots__ = (
@@ -1081,6 +1082,25 @@ class TecplotPolyZoneReader(TecplotZoneReader):
     def shared_connectivity(self) -> int | None:
         """0-based source zone index if connectivity is shared, else None."""
         return self._shared_connectivity
+
+    def _face_map_digest(self) -> str:
+        """Return a hash identifying this zone's grid, for matching grids across zones.
+
+        The face map is read without filling the array cache, so scanning many zones
+        does not keep their arrays in memory.
+        """
+        h = hashlib.blake2b(digest_size=16)
+        h.update(
+            f"{self.zone_type.name}:{self._num_nodes}:{self._num_elements}:"
+            f"{self._num_faces}".encode()
+        )
+        keys: tuple[PolyArrayKey, ...] = ("face_nodes", "face_left", "face_right")
+        if self.zone_type is ZoneType.FEPOLYHEDRON:
+            keys = ("face_node_counts", *keys)
+        for key in keys:
+            arr = np.ascontiguousarray(self._load_array(key))
+            h.update(arr.data)
+        return h.hexdigest()
 
     # -- Lazy face-map arrays ----------------------------------------------------------
 

@@ -440,10 +440,19 @@ def _build_szl_zone(
     A single ``.szplt`` file commonly holds a mix of ORDERED and FE zones, so this
     queries the C library for the zone type first, cheap, one call, then dispatches to
     the matching class.
+
+    Raises:
+        NotImplementedError: For polygon and polyhedron zones, which only the PLT and
+            DAT readers support.
     """
     zone_type = ZoneType(libtecio.tec_zone_get_type(handle, zone_index + 1))
     if zone_type == ZoneType.ORDERED:
         return TecplotSzlOrderedZoneReader(handle, zone_index, num_vars)
+    if zone_type in (ZoneType.FEPOLYGON, ZoneType.FEPOLYHEDRON):  # pragma: no cover
+        raise NotImplementedError(
+            f"Zone {zone_index} is {zone_type.name}; polygon and polyhedron zones "
+            "are not yet supported in SZPLT files."
+        )
     return TecplotSzlFEZoneReader(handle, zone_index, num_vars)
 
 

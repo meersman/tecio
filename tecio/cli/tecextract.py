@@ -97,8 +97,14 @@ from typing import Any
 
 import numpy as np
 
-from .. import TecplotFEZoneReader, TecplotOrderedZoneReader, TecplotSzlWriter, ZoneType
+from .. import (
+    TecplotFEZoneReader,
+    TecplotOrderedZoneReader,
+    TecplotPolyZoneReader,
+    TecplotSzlWriter,
+)
 from .. import open as tecio_open
+from .._writer import poly_face_kwargs
 
 # --------------------------------------------------------------------------------------
 # Helpers
@@ -389,13 +395,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                         continue
 
                     zt = zone.zone_type
-                    if zt in (ZoneType.FEPOLYGON, ZoneType.FEPOLYHEDRON):
-                        print(
-                            f"Warning: zone {zone_num} ('{zone.title}') is "
-                            f"{zt.name} and cannot be written -- skipping.",
-                            file=sys.stderr,
-                        )
-                        continue
 
                     # Build per-variable metadata for the requested subset.
                     data: list[np.ndarray] = []
@@ -443,6 +442,22 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                     if isinstance(zone, TecplotOrderedZoneReader):
                         writer.write_ordered_zone(data=data, **common_kw)
+                    elif isinstance(zone, TecplotPolyZoneReader):
+                        con_src = zone.shared_connectivity
+                        con_remapped = (
+                            zone_index_map.get(con_src) if con_src is not None else None
+                        )
+                        writer.write_poly_zone(
+                            zone_type=zt,
+                            data=data,
+                            con_sharing=con_remapped,
+                            **(
+                                {}
+                                if con_remapped is not None
+                                else poly_face_kwargs(zone)
+                            ),
+                            **common_kw,
+                        )
                     elif isinstance(zone, TecplotFEZoneReader):
                         con_src = zone.shared_connectivity
                         con_remapped = (
@@ -467,8 +482,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         )
                     else:
                         raise NotImplementedError(
-                            f"Zone '{zone.title}' is neither an ordered nor a "
-                            "classic FE zone; extraction is not supported for it."
+                            f"Zone '{zone.title}' is neither an ordered, classic FE "
+                            "nor poly zone; extraction is not supported for it."
                         )
 
                     # Record where this source zone landed in the output, so a later

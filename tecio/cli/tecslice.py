@@ -133,6 +133,7 @@ import numpy as np
 from .. import (
     TecplotFEZoneReader,
     TecplotOrderedZoneReader,
+    TecplotPolyZoneReader,
     TecplotSzlWriter,
     TecplotVariableReader,
     TecplotWriter,
@@ -141,6 +142,7 @@ from .. import (
     ZoneType,
 )
 from .. import open as tecio_open
+from .._writer import poly_face_kwargs
 
 # ---------------------------------------------------------------------------
 # Slice spec types
@@ -629,6 +631,15 @@ def _write_zone_verbatim(
 
     if isinstance(zone, TecplotOrderedZoneReader):
         writer.write_ordered_zone(data=data, **kw)
+    elif isinstance(zone, TecplotPolyZoneReader):
+        con_sharing = zone.shared_connectivity
+        writer.write_poly_zone(
+            zone_type=zone.zone_type,
+            data=data,
+            con_sharing=con_sharing,
+            **({} if con_sharing is not None else poly_face_kwargs(zone)),
+            **kw,
+        )
     elif isinstance(zone, TecplotFEZoneReader):
         con_sharing = zone.shared_connectivity
         fe_kw = kw.copy()
@@ -648,7 +659,7 @@ def _write_zone_verbatim(
         )
     else:
         raise NotImplementedError(
-            f"Zone '{zone.title}' is neither an ordered nor a classic FE "
+            f"Zone '{zone.title}' is neither an ordered, classic FE nor poly "
             "zone; writing is not supported for it."
         )
 
@@ -699,6 +710,15 @@ def _write_zone_protected(
 
     if isinstance(zone, TecplotOrderedZoneReader):
         writer.write_ordered_zone(data=writer_data, **kw)
+    elif isinstance(zone, TecplotPolyZoneReader):
+        con_sharing = zone.shared_connectivity
+        writer.write_poly_zone(
+            zone_type=zone.zone_type,
+            data=writer_data,
+            con_sharing=con_sharing,
+            **({} if con_sharing is not None else poly_face_kwargs(zone)),
+            **kw,
+        )
     elif isinstance(zone, TecplotFEZoneReader):
         con_sharing = zone.shared_connectivity
         fe_kw = kw.copy()
@@ -718,7 +738,7 @@ def _write_zone_protected(
         )
     else:
         raise NotImplementedError(
-            f"Zone '{zone.title}' is neither an ordered nor a classic FE "
+            f"Zone '{zone.title}' is neither an ordered, classic FE nor poly "
             "zone; writing is not supported for it."
         )
 
@@ -968,14 +988,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                 for zi, zone in enumerate(all_zones):
                     zt = zone.zone_type
-
-                    if zt in (ZoneType.FEPOLYGON, ZoneType.FEPOLYHEDRON):
-                        print(
-                            f"Warning: zone {zi} ('{zone.title}') is "
-                            f"{zt.name} -- skipping.",
-                            file=sys.stderr,
-                        )
-                        continue
 
                     if zi in protected_indices:
                         # Write as a passive grid anchor to preserve sharing.

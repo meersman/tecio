@@ -61,7 +61,7 @@ from ._reader import (
 )
 from ._szl_read import TecplotSzlReader
 from ._szl_write import TecplotSzlWriter
-from ._writer import TecplotWriter
+from ._writer import TecplotWriter, poly_face_kwargs
 
 # --------------------------------------------------------------------------------------
 # Dispatch table
@@ -194,25 +194,11 @@ def _copy_zones(reader: TecplotReader, writer: TecplotWriter) -> None:
             writer.write_ordered_zone(data=data, **common_kw)
         elif isinstance(zone, TecplotPolyZoneReader):
             con_sharing = zone.shared_connectivity
-            face_map: dict[str, Any] = {}
-            if con_sharing is None:
-                face_map = {
-                    "face_nodes": zone.face_nodes,
-                    "face_node_counts": zone.face_node_counts,
-                    "face_left": zone.face_left,
-                    "face_right": zone.face_right,
-                }
-                if zone.num_boundary_faces:
-                    face_map.update(
-                        boundary_connection_counts=zone.boundary_connection_counts,
-                        boundary_connection_elements=zone.boundary_connection_elements,
-                        boundary_connection_zones=zone.boundary_connection_zones,
-                    )
             writer.write_poly_zone(
                 zone_type=zone.zone_type,
                 data=data,
                 con_sharing=con_sharing,
-                **face_map,
+                **({} if con_sharing is not None else poly_face_kwargs(zone)),
                 **common_kw,
             )
         elif isinstance(zone, TecplotFEZoneReader):

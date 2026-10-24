@@ -79,7 +79,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from .. import TecplotFEZoneReader, TecplotOrderedZoneReader
+from .. import TecplotFEZoneReader, TecplotOrderedZoneReader, TecplotPolyZoneReader
 from .. import open as tecio_open
 
 
@@ -202,6 +202,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                     elif isinstance(zone, TecplotFEZoneReader):
                         print(f"  Num Nodes            : {zone.num_nodes}")
                         print(f"  Num Elements         : {zone.num_elements}")
+                    elif isinstance(zone, TecplotPolyZoneReader):
+                        print(f"  Num Nodes            : {zone.num_nodes}")
+                        print(f"  Num Elements         : {zone.num_elements}")
+                        print(f"  Num Faces            : {zone.num_faces}")
+                        print(f"  Num Boundary Faces   : {zone.num_boundary_faces}")
+                        print(
+                            f"  Num Boundary Conns   : {zone.num_boundary_connections}"
+                        )
+                        print(f"  Shared Connectivity  : {zone.shared_connectivity}")
                     print(f"  Is Enabled           : {zone.is_enabled()}")
                     print(f"  Solution Time        : {zone.solution_time}")
                     print(f"  Strand ID            : {zone.strand_id}")

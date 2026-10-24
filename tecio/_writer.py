@@ -34,7 +34,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
@@ -48,6 +48,9 @@ from ._constants import (
     ZoneType,
 )
 from ._meta import WriterMeta
+
+if TYPE_CHECKING:
+    from ._reader import TecplotPolyZoneReader
 
 
 class EmptyZoneWarning(UserWarning):
@@ -1433,6 +1436,26 @@ def normalize_precision(
             "DataType.DOUBLE, or None."
         )
     return precision
+
+
+def poly_face_kwargs(zone: TecplotPolyZoneReader) -> dict[str, Any]:
+    """Return the ``write_poly_zone`` face arguments that reproduce *zone*.
+
+    The arrays are passed exactly as the reader returns them (0-based). Boundary
+    connection arrays are included only when the zone has boundary faces. Callers
+    that preserve connectivity sharing should skip this and pass ``con_sharing``.
+    """
+    kwargs: dict[str, Any] = {
+        "face_nodes": zone.face_nodes,
+        "face_node_counts": zone.face_node_counts,
+        "face_left": zone.face_left,
+        "face_right": zone.face_right,
+    }
+    if zone.num_boundary_faces:
+        kwargs["boundary_connection_counts"] = zone.boundary_connection_counts
+        kwargs["boundary_connection_elements"] = zone.boundary_connection_elements
+        kwargs["boundary_connection_zones"] = zone.boundary_connection_zones
+    return kwargs
 
 
 class TecplotWriter(ABC):
